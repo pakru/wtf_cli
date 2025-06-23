@@ -1,0 +1,37 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+coverage.html
+
+# Dependency directories (remove if you use vendoring)
+vendor/
+
+# Go workspace file
+*.work
+
+# Environment variables file
+.env
+
+# Local configuration files (if any, beyond the main ~/.wtf/config.json)
+# config.local.yaml
+# config.local.json
+# config.local.toml
+
+# Project-specific binaries
+wtf
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
