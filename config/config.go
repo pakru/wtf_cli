@@ -6,12 +6,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 // Config represents the application configuration
 type Config struct {
 	LLMProvider string           `json:"llm_provider"`
 	OpenRouter  OpenRouterConfig `json:"openrouter"`
+	Debug       bool             `json:"debug"`
+	DryRun      bool             `json:"dry_run"`
+	LogLevel    string           `json:"log_level"`
 }
 
 // OpenRouterConfig holds the OpenRouter API configuration
@@ -28,11 +33,15 @@ func DefaultConfig() Config {
 			APIKey: "",
 			Model:  "openai/gpt-4o", // Default model
 		},
+		Debug:    false,
+		DryRun:   false,
+		LogLevel: "info",
 	}
 }
 
 // LoadConfig loads the configuration from the specified path
 // If the file doesn't exist, it creates one with default values
+// Environment variables override config file values
 func LoadConfig(configPath string) (Config, error) {
 	// Ensure the directory exists
 	configDir := filepath.Dir(configPath)
@@ -57,10 +66,54 @@ func LoadConfig(configPath string) (Config, error) {
 	// Parse the config file
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("failed to parse config file: %w", err)
+		return Config{}, fmt.Errorf("failed to parse config: %w", err)
 	}
 
+	// Override with environment variables
+	cfg = applyEnvironmentOverrides(cfg)
+
 	return cfg, nil
+}
+
+// applyEnvironmentOverrides applies environment variable overrides to the config
+func applyEnvironmentOverrides(cfg Config) Config {
+	// Debug mode
+	if debugEnv := os.Getenv("WTF_DEBUG"); debugEnv != "" {
+		if debug, err := strconv.ParseBool(debugEnv); err == nil {
+			cfg.Debug = debug
+		}
+	}
+
+	// Dry run mode
+	if dryRunEnv := os.Getenv("WTF_DRY_RUN"); dryRunEnv != "" {
+		if dryRun, err := strconv.ParseBool(dryRunEnv); err == nil {
+			cfg.DryRun = dryRun
+		}
+	}
+
+	// Log level
+	if logLevel := os.Getenv("WTF_LOG_LEVEL"); logLevel != "" {
+		validLevels := []string{"debug", "info", "warn", "error"}
+		logLevel = strings.ToLower(logLevel)
+		for _, valid := range validLevels {
+			if logLevel == valid {
+				cfg.LogLevel = logLevel
+				break
+			}
+		}
+	}
+
+	// API Key override
+	if apiKey := os.Getenv("WTF_API_KEY"); apiKey != "" {
+		cfg.OpenRouter.APIKey = apiKey
+	}
+
+	// Model override
+	if model := os.Getenv("WTF_MODEL"); model != "" {
+		cfg.OpenRouter.Model = model
+	}
+
+	return cfg
 }
 
 // SaveConfig saves the configuration to the specified path

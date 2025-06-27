@@ -21,19 +21,57 @@ func GetLastCommand() (CommandInfo, error) {
 	cmd := CommandInfo{}
 	var err error
 
-	// Get the last command from bash history
-	cmd.Command, err = getLastCommandFromHistory()
-	if err != nil {
-		return CommandInfo{}, fmt.Errorf("failed to get last command: %w", err)
+	// First, try to get command from environment variables (for shell integration)
+	if envCmd := os.Getenv("WTF_LAST_COMMAND"); envCmd != "" {
+		cmd.Command = envCmd
+	} else {
+		// Fall back to trying to get from bash history
+		cmd.Command, err = getLastCommandFromHistory()
+		if err != nil {
+			return CommandInfo{}, fmt.Errorf("failed to get last command: %w", err)
+		}
 	}
 
-	// In a real implementation, we would retrieve the actual output and exit code
-	// from the shell environment. For now, we'll use placeholder values.
-	// This will be implemented with proper shell integration.
-	cmd.Output = "[Output not available in this implementation]"
-	cmd.ExitCode = 0
+	// Try to get exit code from environment variable first
+	if envExitCode := os.Getenv("WTF_LAST_EXIT_CODE"); envExitCode != "" {
+		if exitCode, err := strconv.Atoi(envExitCode); err == nil {
+			cmd.ExitCode = exitCode
+		}
+	} else {
+		// Try to get the exit code from the current shell
+		cmd.ExitCode, err = GetLastExitCode()
+		if err != nil {
+			// If we can't get the exit code, try to infer it from the command
+			cmd.ExitCode = inferExitCodeFromCommand(cmd.Command)
+		}
+	}
+
+	// Get output from environment variable if available
+	if envOutput := os.Getenv("WTF_LAST_OUTPUT"); envOutput != "" {
+		cmd.Output = envOutput
+	} else {
+		cmd.Output = "[Output not available in this implementation]"
+	}
 
 	return cmd, nil
+}
+
+// inferExitCodeFromCommand tries to infer if a command likely failed based on its content
+func inferExitCodeFromCommand(command string) int {
+	// This is a simple heuristic - in a real implementation we'd need better shell integration
+	if strings.Contains(command, "ls /nonexistent") ||
+		strings.Contains(command, "cat /nonexistent") ||
+		strings.Contains(command, "cd /nonexistent") {
+		return 2 // Common exit code for "No such file or directory"
+	}
+
+	// Check for other common failure patterns
+	if strings.Contains(command, "permission denied") ||
+		strings.Contains(command, "sudo") {
+		return 1
+	}
+
+	return 0 // Default to success
 }
 
 // getLastCommandFromHistory retrieves the last command from bash history

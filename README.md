@@ -59,7 +59,10 @@ On first run, `wtf` will create a configuration file at `~/.wtf/config.json`:
   "openrouter": {
     "api_key": "your_openrouter_api_key_here",
     "model": "openai/gpt-4o"
-  }
+  },
+  "debug": false,
+  "dry_run": false,
+  "log_level": "info"
 }
 ```
 
@@ -86,6 +89,42 @@ On first run, `wtf` will create a configuration file at `~/.wtf/config.json`:
    - `anthropic/claude-3.5-sonnet`
    - See [OpenRouter models](https://openrouter.ai/models) for more options
 
+### Environment Variables
+
+You can override configuration settings using environment variables:
+
+```bash
+# API Configuration
+export WTF_API_KEY="your_api_key_here"        # Override API key
+export WTF_MODEL="openai/gpt-4o-mini"         # Override model
+
+# Debug and Development
+export WTF_DEBUG=true                         # Enable debug mode
+export WTF_DRY_RUN=true                       # Enable dry-run (no API calls)
+export WTF_LOG_LEVEL=debug                    # Set log level (debug, info, warn, error)
+
+# Shell Integration (for advanced users)
+export WTF_LAST_COMMAND="ls /nonexistent"     # Override last command
+export WTF_LAST_EXIT_CODE="2"                # Override last exit code
+export WTF_LAST_OUTPUT="error output here"    # Override command output
+```
+
+**Debug Mode Features:**
+- Detailed logging of internal operations
+- Human-readable log format
+- Step-by-step workflow visibility
+
+**Dry-Run Mode:**
+- No actual API calls made
+- Mock responses for testing
+- Safe for development and testing
+- Useful when API key is not available
+
+**Shell Integration:**
+- Use `WTF_LAST_*` variables to simulate commands for testing
+- Useful for development and debugging
+- Future versions will include automatic shell integration
+
 ## Usage
 
 Simply run `wtf` after any command to get intelligent suggestions:
@@ -97,19 +136,23 @@ ls: cannot access '/nonexistent/directory': No such file or directory
 $ wtf
 # wtf analyzes the error and suggests solutions
 
-# Example 2: Successful command
-$ git status
-On branch main
-Your branch is up to date with 'origin/main'.
+# Example 2: Development/Testing with dry-run
+$ export WTF_DRY_RUN=true
 $ wtf
-# wtf might suggest next git actions like commit, push, etc.
+# Shows mock response without API calls
 
-# Example 3: System command
-$ df -h
-Filesystem      Size  Used Avail Use% Mounted on
-/dev/sda1        20G   18G  1.2G  94% /
+# Example 3: Debug mode for troubleshooting
+$ export WTF_DEBUG=true WTF_LOG_LEVEL=debug
 $ wtf
-# wtf analyzes disk usage and suggests cleanup actions
+# Shows detailed debug information
+
+# Example 4: Testing with simulated commands
+$ WTF_LAST_COMMAND="ls /nonexistent" WTF_LAST_EXIT_CODE="2" WTF_DRY_RUN=true wtf
+# Simulates a failed command for testing
+
+# Example 5: Testing successful commands
+$ WTF_LAST_COMMAND="git status" WTF_LAST_EXIT_CODE="0" WTF_DRY_RUN=true wtf
+# Simulates a successful command
 ```
 
 ### What wtf Analyzes
@@ -163,6 +206,8 @@ wtf_cli/
 ├── config/              # Configuration management
 │   ├── config.go
 │   └── config_test.go
+├── logger/              # Structured logging
+│   └── logger.go
 ├── shell/               # Shell history access
 │   ├── history.go
 │   └── history_test.go
@@ -180,6 +225,8 @@ wtf_cli/
 
 **"Configuration error: API key is required"**
 - Make sure you've set your OpenRouter.ai API key in `~/.wtf/config.json`
+- Or use environment variable: `export WTF_API_KEY=your_api_key`
+- Or run in dry-run mode: `export WTF_DRY_RUN=true`
 
 **"Failed to get last command"**
 - Ensure bash history is enabled: `set +H` (if disabled)
@@ -193,12 +240,28 @@ wtf_cli/
 ### Debug Mode
 
 ```bash
-# Run with verbose output (when implemented)
-wtf --debug
+# Enable debug mode with environment variables
+export WTF_DEBUG=true
+export WTF_LOG_LEVEL=debug
+wtf
+
+# Run in dry-run mode (no API calls)
+export WTF_DRY_RUN=true
+wtf
 
 # Check configuration
 cat ~/.wtf/config.json
+
+# Test with mock responses
+WTF_DRY_RUN=true wtf
 ```
+
+**Debug Output Includes:**
+- Configuration loading details
+- Shell command retrieval process
+- System information gathering
+- API call preparation (when not in dry-run)
+- Structured logging with timestamps
 
 ## Contributing
 

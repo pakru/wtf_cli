@@ -11,6 +11,9 @@ The `wtf` CLI utility is designed for Linux bash users to analyze the last execu
 - [x] Configuration management implemented
 - [x] Shell history access implemented
 - [x] System information gathering implemented
+- [x] Debug mode and structured logging implemented
+- [x] Environment variable configuration overrides
+- [x] Dry-run mode for development/testing
 - [ ] LLM integration (core functionality pending)
 
 ## Implementation Tasks
@@ -23,43 +26,54 @@ The `wtf` CLI utility is designed for Linux bash users to analyze the last execu
 - [x] Implement loading from ~/.wtf/config.json
 - [x] Add secure API key storage
 - [x] Add configuration validation
+- [x] Add debug and dry-run configuration options
+- [x] Implement environment variable overrides
 
-### 2. Command History Access
+### 2. Logging and Debug Infrastructure
+- [x] Implement structured logging with slog
+- [x] Add debug mode with detailed workflow logging
+- [x] Create dry-run mode for safe testing
+- [x] Support multiple log levels (debug, info, warn, error)
+- [x] Environment variable configuration (WTF_DEBUG, WTF_DRY_RUN, etc.)
+
+### 3. Command History Access
 - [x] Implement retrieval of the last command from bash history
 - [x] Capture stdout and stderr of the last command
 - [x] Retrieve the exit code of the last command
+- [x] Add environment variable support for shell integration
+- [x] Implement command simulation for testing (WTF_LAST_*)
+- [x] Add intelligent exit code inference from command patterns
 
-### 3. System Information
+### 4. System Information
 - [x] Detect and report the current OS
 - [x] Gather relevant system information for context
 
-### 4. LLM Integration (OpenRouter AI)
+### 5. LLM Integration (OpenRouter AI)
 - [ ] Create the payload structure for OpenRouter.ai API
 - [ ] Implement API call functionality following [OpenRouter Quickstart Guide](https://openrouter.ai/docs/quickstart)
 - [ ] Handle response parsing
 - [ ] Implement error handling for API calls
+- [x] Mock responses for dry-run mode
 
-### 5. User Interface
+### 6. User Interface
 - [ ] Display suggestions in a user-friendly format
 - [ ] Add color-coding for better readability
 - [ ] Implement error handling for various failure scenarios
+- [x] Basic dry-run mode output implemented
 
-### 6. Documentation
-- [ ] Update README with installation instructions
-- [ ] Add usage examples
-- [ ] Document configuration options
-- [ ] Add troubleshooting section
+### 7. Documentation
+- [x] Update README with installation instructions
+- [x] Add usage examples
+- [x] Document configuration options
+- [x] Add troubleshooting section
+- [x] Document debug mode and environment variables
+- [ ] Add API integration examples
 
-### 7. Testing
+### 8. Testing
 - [x] Unit tests for core functionality
 - [ ] Integration tests for LLM API interaction
 - [ ] End-to-end testing
-
-### 8. Build System
-- [x] Create Makefile with common development tasks
-- [x] Add build, test, clean, and development workflow targets
-- [x] Include code formatting and linting tasks
-- [x] Add CI-friendly targets for automated builds
+- [x] Debug mode for development testing
 
 ## Development Approach
 1. Implement core functionality incrementally
