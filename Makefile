@@ -1,4 +1,4 @@
-.PHONY: build test clean run install fmt vet lint help
+.PHONY: build test test-shell test-integration test-install clean run install install-full uninstall fmt vet lint help
 
 # Default target
 all: build
@@ -13,11 +13,29 @@ test:
 	@echo "Running tests..."
 	go test ./...
 
+# Run shell integration tests
+test-shell:
+	@echo "Running shell integration tests..."
+	@bash shell/test_integration.sh
+
+# Run comprehensive end-to-end shell integration test
+test-shell-e2e:
+	@echo "Running end-to-end shell integration test..."
+	@bash scripts/test_shell_integration_e2e.sh
+
+# Test the installation script
+test-install:
+	@echo "Testing installation script..."
+	@bash scripts/test_installation.sh
+
+# Run combined integration tests
+test-integration: test test-shell-e2e
+	@echo "All integration tests completed"
+
 # Run tests with coverage
 test-coverage:
 	@echo "Running tests with coverage..."
 	go test -coverprofile=coverage.out ./...
-	go tool cover -html=coverage.out -o coverage.html
 
 # Clean build artifacts
 clean:
@@ -33,6 +51,16 @@ run: build
 install:
 	@echo "Installing wtf CLI..."
 	go install .
+
+# Full installation with shell integration
+install-full:
+	@echo "Running full WTF CLI installation..."
+	@./scripts/install.sh
+
+# Uninstall WTF CLI
+uninstall:
+	@echo "Uninstalling WTF CLI..."
+	@./scripts/install.sh uninstall
 
 # Format code
 fmt:
@@ -70,6 +98,9 @@ security:
 # Development workflow: format, vet, test, build
 dev: fmt vet test build
 
+# Full development workflow with shell integration tests
+dev-full: fmt vet test-integration build
+
 # CI workflow: tidy, format check, vet, test, build
 ci: tidy fmt-check vet test build
 
@@ -85,16 +116,22 @@ fmt-check:
 help:
 	@echo "Available targets:"
 	@echo "  build         - Build the wtf binary"
-	@echo "  test          - Run tests"
+	@echo "  test          - Run Go tests"
+	@echo "  test-shell    - Run shell integration tests"
+	@echo "  test-integration - Run all tests (Go + Shell)"
+	@echo "  test-install  - Test the installation script"
 	@echo "  test-coverage - Run tests with coverage report"
 	@echo "  clean         - Clean build artifacts"
 	@echo "  run           - Build and run the application"
 	@echo "  install       - Install binary to GOPATH/bin"
+	@echo "  install-full  - Full installation with shell integration"
+	@echo "  uninstall     - Uninstall WTF CLI completely"
 	@echo "  fmt           - Format code"
 	@echo "  vet           - Run go vet"
 	@echo "  lint          - Run golangci-lint"
 	@echo "  tidy          - Tidy dependencies"
 	@echo "  security      - Check for security vulnerabilities"
 	@echo "  dev           - Development workflow (fmt, vet, test, build)"
+	@echo "  dev-full      - Full development workflow with shell integration tests"
 	@echo "  ci            - CI workflow (tidy, fmt-check, vet, test, build)"
 	@echo "  help          - Show this help message"

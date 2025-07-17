@@ -49,27 +49,28 @@ func LoadConfig(configPath string) (Config, error) {
 		return Config{}, fmt.Errorf("failed to create config directory: %w", err)
 	}
 
+	var cfg Config
+
 	// Try to read the config file
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// File doesn't exist, create with default config
-			cfg := DefaultConfig()
+			cfg = DefaultConfig()
 			if err := SaveConfig(configPath, cfg); err != nil {
 				return Config{}, fmt.Errorf("failed to create default config: %w", err)
 			}
-			return cfg, nil
+		} else {
+			return Config{}, fmt.Errorf("failed to read config file: %w", err)
 		}
-		return Config{}, fmt.Errorf("failed to read config file: %w", err)
+	} else {
+		// Parse the config file
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return Config{}, fmt.Errorf("failed to parse config: %w", err)
+		}
 	}
 
-	// Parse the config file
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	// Override with environment variables
+	// Override with environment variables (applies to both default and loaded config)
 	cfg = applyEnvironmentOverrides(cfg)
 
 	return cfg, nil

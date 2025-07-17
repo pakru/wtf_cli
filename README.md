@@ -23,7 +23,26 @@ For detailed functional and non-functional requirements, please see the [SOFTWAR
 
 ### Installation
 
-#### Option 1: Build from Source
+#### Option 1: Automated Installation (Recommended)
+```bash
+# Clone the repository
+git clone <repository-url>
+cd wtf_cli
+
+# Automated installation (recommended)
+./scripts/install.sh
+
+# Or using make
+make install-full
+```
+
+This will:
+- Build and install the WTF CLI binary to `~/.local/bin/wtf`
+- Set up shell integration for automatic command capture
+- Create default configuration file
+- Add necessary entries to your `~/.bashrc`
+
+#### Option 2: Manual Build from Source
 ```bash
 # Clone the repository
 git clone <repository-url>
@@ -36,18 +55,36 @@ make build
 sudo cp wtf /usr/local/bin/
 ```
 
-#### Option 2: Using Go Install
+#### Option 3: Using Go Install
 ```bash
 go install github.com/your-username/wtf_cli@latest
 ```
 
-#### Option 3: Download Binary
+#### Option 4: Download Binary
 ```bash
 # Download the latest release (when available)
 curl -L https://github.com/your-username/wtf_cli/releases/latest/download/wtf -o wtf
 chmod +x wtf
 sudo mv wtf /usr/local/bin/
 ```
+
+### Uninstallation
+
+To completely remove WTF CLI:
+
+```bash
+# Using the installation script
+./scripts/install.sh uninstall
+
+# Or using make
+make uninstall
+```
+
+This will:
+- Remove the WTF CLI binary
+- Remove the `~/.wtf` directory (with confirmation)
+- Remove shell integration from `~/.bashrc`
+- Restore your original bash configuration
 
 ## Configuration
 

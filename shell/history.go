@@ -2,9 +2,11 @@ package shell
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -18,10 +20,15 @@ type CommandInfo struct {
 
 // GetLastCommand retrieves information about the last executed command
 func GetLastCommand() (CommandInfo, error) {
+	// First priority: Try shell integration (JSON file)
+	if shellCmd, err := getCommandFromShellIntegration(); err == nil {
+		return shellCmd, nil
+	}
+
 	cmd := CommandInfo{}
 	var err error
 
-	// First, try to get command from environment variables (for shell integration)
+	// Second priority: Environment variables (for testing)
 	if envCmd := os.Getenv("WTF_LAST_COMMAND"); envCmd != "" {
 		cmd.Command = envCmd
 	} else {
@@ -76,35 +83,113 @@ func inferExitCodeFromCommand(command string) int {
 
 // getLastCommandFromHistory retrieves the last command from bash history
 func getLastCommandFromHistory() (string, error) {
-	// Try using fc command to get the last command
-	// fc -ln -1 will show the last command without line numbers
-	fcCmd := exec.Command("bash", "-c", "fc -ln -1")
-	var out bytes.Buffer
-	fcCmd.Stdout = &out
-	fcCmd.Stderr = os.Stderr
-
-	if err := fcCmd.Run(); err != nil {
-		// If fc fails, try using history command
-		histCmd := exec.Command("bash", "-c", "history 1")
-		var histOut bytes.Buffer
-		histCmd.Stdout = &histOut
-		histCmd.Stderr = os.Stderr
-
-		if err := histCmd.Run(); err != nil {
-			return "", fmt.Errorf("failed to get command history: %w", err)
-		}
-
-		// Parse the output from history command (format: "123 command")
-		historyLine := strings.TrimSpace(histOut.String())
-		parts := strings.SplitN(historyLine, " ", 2)
-		if len(parts) < 2 {
-			return "", fmt.Errorf("unexpected history output format: %s", historyLine)
-		}
-		return strings.TrimSpace(parts[1]), nil
+	// Method 1: Try to read from bash history file directly
+	if cmd, err := getCommandFromHistoryFile(); err == nil && cmd != "" {
+		return cmd, nil
 	}
 
-	// Return the command from fc (which doesn't include line numbers)
-	return strings.TrimSpace(out.String()), nil
+	// Method 2: Try using fc command with interactive shell
+	if cmd, err := getCommandWithFC(); err == nil && cmd != "" {
+		return cmd, nil
+	}
+
+	// Method 3: Try using history command
+	if cmd, err := getCommandWithHistory(); err == nil && cmd != "" {
+		return cmd, nil
+	}
+
+	// Method 4: Try reading from shell environment variables
+	if cmd := os.Getenv("HISTCMD_LAST"); cmd != "" {
+		return cmd, nil
+	}
+
+	// If all methods fail, return empty string (not an error)
+	// This allows the tool to continue working with environment variable overrides
+	return "", nil
+}
+
+// getCommandFromHistoryFile tries to read the last command from bash history file
+func getCommandFromHistoryFile() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	historyFile := filepath.Join(homeDir, ".bash_history")
+	data, err := os.ReadFile(historyFile)
+	if err != nil {
+		return "", err
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) == 0 {
+		return "", fmt.Errorf("empty history file")
+	}
+
+	// Get the last non-empty line
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line != "" && !strings.HasPrefix(line, "#") {
+			return line, nil
+		}
+	}
+
+	return "", fmt.Errorf("no valid commands found in history")
+}
+
+// getCommandWithFC tries to use fc command
+func getCommandWithFC() (string, error) {
+	// Try with different approaches to access interactive shell history
+	commands := []string{
+		"fc -ln -1",
+		"set -o history; fc -ln -1",
+		"bash -i -c 'fc -ln -1'",
+	}
+
+	for _, cmdStr := range commands {
+		cmd := exec.Command("bash", "-c", cmdStr)
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = nil // Suppress errors
+
+		if err := cmd.Run(); err == nil {
+			result := strings.TrimSpace(out.String())
+			if result != "" {
+				return result, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("fc command failed")
+}
+
+// getCommandWithHistory tries to use history command
+func getCommandWithHistory() (string, error) {
+	commands := []string{
+		"history 1",
+		"bash -i -c 'history 1'",
+		"set -o history; history 1",
+	}
+
+	for _, cmdStr := range commands {
+		cmd := exec.Command("bash", "-c", cmdStr)
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = nil // Suppress errors
+
+		if err := cmd.Run(); err == nil {
+			historyLine := strings.TrimSpace(out.String())
+			if historyLine != "" {
+				// Parse the output from history command (format: "123 command")
+				parts := strings.SplitN(historyLine, " ", 2)
+				if len(parts) >= 2 {
+					return strings.TrimSpace(parts[1]), nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("history command failed")
 }
 
 // GetLastCommandOutput retrieves the output of the last executed command
@@ -135,4 +220,79 @@ func GetLastExitCode() (int, error) {
 	}
 
 	return exitCode, nil
+}
+
+// ShellIntegrationData represents the JSON structure from shell integration
+type ShellIntegrationData struct {
+	Command   string  `json:"command"`
+	ExitCode  int     `json:"exit_code"`
+	StartTime string  `json:"start_time"`
+	EndTime   string  `json:"end_time"`
+	Duration  float64 `json:"duration"`
+	PWD       string  `json:"pwd"`
+	Timestamp string  `json:"timestamp"`
+}
+
+// getCommandFromShellIntegration reads command info from shell integration JSON file
+func getCommandFromShellIntegration() (CommandInfo, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return CommandInfo{}, fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	commandFile := filepath.Join(homeDir, ".wtf", "last_command.json")
+	data, err := os.ReadFile(commandFile)
+	if err != nil {
+		return CommandInfo{}, fmt.Errorf("failed to read command file: %w", err)
+	}
+
+	var shellData ShellIntegrationData
+	if err := json.Unmarshal(data, &shellData); err != nil {
+		return CommandInfo{}, fmt.Errorf("failed to parse command JSON: %w", err)
+	}
+
+	cmd := CommandInfo{
+		Command:  shellData.Command,
+		ExitCode: shellData.ExitCode,
+	}
+
+	// Try to read output file if it exists
+	outputFile := filepath.Join(homeDir, ".wtf", "last_output.txt")
+	if outputData, err := os.ReadFile(outputFile); err == nil {
+		cmd.Output = string(outputData)
+	}
+
+	return cmd, nil
+}
+
+// IsShellIntegrationActive checks if shell integration is active by looking for the command file
+func IsShellIntegrationActive() bool {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+
+	commandFile := filepath.Join(homeDir, ".wtf", "last_command.json")
+	_, err = os.Stat(commandFile)
+	return err == nil
+}
+
+// GetShellIntegrationSetupInstructions returns instructions for setting up shell integration
+func GetShellIntegrationSetupInstructions() string {
+	return `To enable shell integration for more accurate command capture:
+
+1. Run the installation script:
+   ./install_integration.sh
+
+2. Or manually add to your ~/.bashrc:
+   source ~/.wtf/integration.sh
+
+3. Restart your shell or run:
+   source ~/.bashrc
+
+Shell integration provides:
+- Real-time command capture
+- Accurate exit codes
+- Command timing information
+- Working directory context`
 }
