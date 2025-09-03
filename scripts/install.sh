@@ -65,24 +65,23 @@ install_integration_script() {
     print_success "Installed: $WTF_DIR/integration.sh"
 }
 
-# Build the WTF binary
-build_wtf_binary() {
-    print_info "Building WTF CLI binary"
+# Install the pre-built WTF binary
+install_wtf_binary() {
+    print_info "Installing WTF CLI binary"
     
-    if ! command -v go >/dev/null 2>&1; then
-        print_error "Go is not installed. Please install Go first."
-        print_info "Visit: https://golang.org/doc/install"
+    # Check if pre-built binary exists
+    if [[ ! -f "wtf" ]]; then
+        print_error "Pre-built wtf binary not found in current directory."
+        print_info "Please build the binary first with: go build -o wtf ."
         exit 1
     fi
     
-    # Build the binary
-    go build -o wtf .
-    
     # Install to user's local bin (create if doesn't exist)
     mkdir -p "$HOME/.local/bin"
-    mv wtf "$HOME/.local/bin/"
+    cp wtf "$HOME/.local/bin/"
+    chmod +x "$HOME/.local/bin/wtf"
     
-    print_success "Built and installed WTF CLI binary to ~/.local/bin/wtf"
+    print_success "Installed WTF CLI binary to ~/.local/bin/wtf"
     
     # Check if ~/.local/bin is in PATH
     if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
@@ -267,7 +266,7 @@ main() {
     check_directory
     setup_wtf_directory
     install_integration_script
-    build_wtf_binary
+    install_wtf_binary
     setup_shell_integration
     create_default_config
     test_installation

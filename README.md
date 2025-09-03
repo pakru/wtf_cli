@@ -228,6 +228,7 @@ make clean
 - `make clean` - Clean build artifacts
 - `make run` - Build and run the application
 - `make install` - Install binary to GOPATH/bin
+- `make docker-build` - Build Docker test image (requires binary to be built first)
 - `make fmt` - Format code
 - `make vet` - Run go vet
 - `make lint` - Run golangci-lint (if available)

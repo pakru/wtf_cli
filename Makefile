@@ -1,4 +1,4 @@
-.PHONY: build test test-shell test-integration test-install clean run install install-full uninstall fmt vet lint help
+.PHONY: build test test-shell test-integration test-install clean run install install-full uninstall fmt vet lint docker-build help
 
 # Default target
 all: build
@@ -95,6 +95,11 @@ security:
 		echo "govulncheck not found. Install with: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
 	fi
 
+# Build Docker test image
+docker-build: build
+	@echo "Building Docker test image..."
+	docker build -f docker/Dockerfile -t wtf-cli-test:latest .
+
 # Development workflow: format, vet, test, build
 dev: fmt vet test build
 
@@ -131,6 +136,7 @@ help:
 	@echo "  lint          - Run golangci-lint"
 	@echo "  tidy          - Tidy dependencies"
 	@echo "  security      - Check for security vulnerabilities"
+	@echo "  docker-build  - Build Docker test image (requires binary to be built first)"
 	@echo "  dev           - Development workflow (fmt, vet, test, build)"
 	@echo "  dev-full      - Full development workflow with shell integration tests"
 	@echo "  ci            - CI workflow (tidy, fmt-check, vet, test, build)"
