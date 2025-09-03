@@ -220,6 +220,28 @@ make test-coverage
 make clean
 ```
 
+### Docker Testing
+
+For isolated testing in a containerized environment:
+
+```bash
+# Build Docker test image
+make docker-build
+
+# Run interactive container using Docker directly
+docker run --rm -it wtf-cli-test:latest
+
+# Or use Docker Compose for convenience
+docker-compose -f docker/docker-compose.yml build
+docker-compose -f docker/docker-compose.yml run --rm test
+```
+
+The Docker environment includes:
+- Pre-installed WTF CLI with shell integration
+- Ubuntu 24.04 base with all required tools
+- `WTF_DRY_RUN=true` environment variable for safe testing
+- Non-root `tester` user with sudo access
+
 ### Available Make Targets
 
 - `make build` - Build the wtf binary
