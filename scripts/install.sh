@@ -70,15 +70,15 @@ install_wtf_binary() {
     print_info "Installing WTF CLI binary"
     
     # Check if pre-built binary exists
-    if [[ ! -f "wtf" ]]; then
-        print_error "Pre-built wtf binary not found in current directory."
-        print_info "Please build the binary first with: go build -o wtf ."
+    if [[ ! -f "build/wtf" ]]; then
+        print_error "Pre-built wtf binary not found in build/ directory."
+        print_info "Please build the binary first with: make build"
         exit 1
     fi
     
     # Install to user's local bin (create if doesn't exist)
     mkdir -p "$HOME/.local/bin"
-    cp wtf "$HOME/.local/bin/"
+    cp build/wtf "$HOME/.local/bin/"
     chmod +x "$HOME/.local/bin/wtf"
     
     print_success "Installed WTF CLI binary to ~/.local/bin/wtf"

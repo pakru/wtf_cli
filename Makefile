@@ -6,7 +6,8 @@ all: build
 # Build the binary
 build:
 	@echo "Building wtf CLI..."
-	go build -o wtf .
+	@mkdir -p build
+	go build -o build/wtf .
 
 # Run tests
 test:
@@ -40,12 +41,12 @@ test-coverage:
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	rm -f wtf coverage.out coverage.html
+	rm -rf build/ coverage.out coverage.html
 
 # Run the application
 run: build
 	@echo "Running wtf CLI..."
-	./wtf
+	./build/wtf
 
 # Install the binary to GOPATH/bin
 install:

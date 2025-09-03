@@ -28,6 +28,7 @@ vendor/
 
 # Project-specific binaries
 wtf
+build/
 
 # IDE files
 .vscode/
