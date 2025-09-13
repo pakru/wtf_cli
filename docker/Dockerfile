@@ -3,7 +3,7 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash ca-certificates curl git make gcc g++ pkg-config jq bc sudo mc net-tools iproute2 htop btop python3 \
+    bash ca-certificates curl git make gcc g++ pkg-config jq bc sudo mc net-tools iproute2 htop btop inetutils-ping inetutils-ping python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

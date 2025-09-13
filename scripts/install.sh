@@ -120,6 +120,7 @@ setup_shell_integration() {
 # Create default configuration
 create_default_config() {
     local config_file="$WTF_DIR/config.json"
+    local default_config_file="$(dirname "$0")/../config/default_config.json"
     
     if [[ -f "$config_file" ]]; then
         print_warning "Configuration file already exists: $config_file"
@@ -128,18 +129,15 @@ create_default_config() {
     
     print_info "Creating default configuration"
     
-    cat > "$config_file" << 'EOF'
-{
-  "llm_provider": "openrouter",
-  "openrouter": {
-    "api_key": "your_openrouter_api_key_here",
-    "model": "openai/gpt-4o"
-  },
-  "debug": false,
-  "dry_run": false,
-  "log_level": "info"
-}
-EOF
+    # Check if default config file exists
+    if [[ -f "$default_config_file" ]]; then
+        cp "$default_config_file" "$config_file"
+        print_success "Configuration created from: $default_config_file"
+    else
+        print_error "Default config file not found: $default_config_file"
+        print_error "Installation cannot continue without default configuration"
+        return 1
+    fi
     
     print_success "Created default configuration: $config_file"
     print_warning "Please edit $config_file and add your OpenRouter.ai API key"
