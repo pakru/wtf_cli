@@ -7,11 +7,8 @@ For detailed functional and non-functional requirements, please see the [SOFTWAR
 ## Features
 
 - 🔍 **Smart Analysis** - Analyzes your last command, output, and exit status
-- 🤖 **LLM-Powered** - Uses OpenRouter.ai with GPT-4o for intelligent suggestions
-- 🐧 **Linux Native** - Built specifically for Linux bash environments
+- 🤖 **LLM-Powered** - Uses OpenRouter.ai with Google Gemma 3-27B for intelligent suggestions
 - ⚡ **Single Binary** - No dependencies, just download and run
-- 🔒 **Secure** - API keys stored securely in `~/.wtf/config.json`
-- 📊 **Context Aware** - Includes system information for better suggestions
 
 ## Getting Started
 
@@ -95,7 +92,9 @@ On first run, `wtf` will create a configuration file at `~/.wtf/config.json`:
   "llm_provider": "openrouter",
   "openrouter": {
     "api_key": "your_openrouter_api_key_here",
-    "model": "openai/gpt-4o"
+    "model": "google/gemma-3-27b",
+    "temperature": 0.7,
+    "max_tokens": 1000
   },
   "debug": false,
   "dry_run": false,
@@ -121,9 +120,10 @@ On first run, `wtf` will create a configuration file at `~/.wtf/config.json`:
    ```
 
 3. **Available Models:**
-   - `openai/gpt-4o` (default, recommended)
+   - `google/gemma-3-27b` (default, recommended for CLI tasks)
+   - `openai/gpt-4o` (excellent general performance)
    - `openai/gpt-4o-mini` (faster, cheaper)
-   - `anthropic/claude-3.5-sonnet`
+   - `anthropic/claude-3.5-sonnet` (great for analysis)
    - See [OpenRouter models](https://openrouter.ai/models) for more options
 
 ### Environment Variables
@@ -158,9 +158,10 @@ export WTF_LAST_OUTPUT="error output here"    # Override command output
 - Useful when API key is not available
 
 **Shell Integration:**
-- Use `WTF_LAST_*` variables to simulate commands for testing
-- Useful for development and debugging
-- Future versions will include automatic shell integration
+- Real-time command capture with automatic shell hooks
+- JSON-based command data storage in `~/.wtf/last_command.json`
+- Use `WTF_LAST_*` variables to override for testing
+- Automatic installation via `./scripts/install.sh`
 
 ## Usage
 
@@ -216,6 +217,10 @@ make test
 # Run tests with coverage
 make test-coverage
 
+# Generate coverage reports
+make coverage-report      # Text format with function breakdown
+make coverage-html        # Interactive HTML report
+
 # Clean build artifacts
 make clean
 ```
@@ -246,10 +251,14 @@ The Docker environment includes:
 
 - `make build` - Build the wtf binary
 - `make test` - Run tests
-- `make test-coverage` - Run tests with coverage report
+- `make test-coverage` - Run tests with coverage profile
+- `make coverage-report` - Generate text coverage report
+- `make coverage-html` - Generate HTML coverage report
 - `make clean` - Clean build artifacts
 - `make run` - Build and run the application
 - `make install` - Install binary to GOPATH/bin
+- `make install-full` - Full installation with shell integration
+- `make uninstall` - Uninstall WTF CLI completely
 - `make docker-build` - Build Docker test image (requires binary to be built first)
 - `make fmt` - Format code
 - `make vet` - Run go vet
@@ -262,19 +271,30 @@ The Docker environment includes:
 
 ```
 wtf_cli/
-├── main.go              # Entry point
+├── main.go              # Entry point and helper functions
+├── api/                 # OpenRouter API integration
+│   ├── client.go        # HTTP client implementation
+│   ├── prompt.go        # Prompt building logic
+│   ├── types.go         # Request/response types
+│   └── *_test.go        # Comprehensive unit tests
 ├── config/              # Configuration management
-│   ├── config.go
-│   └── config_test.go
-├── logger/              # Structured logging
-│   └── logger.go
-├── shell/               # Shell history access
-│   ├── history.go
-│   └── history_test.go
-├── system/              # System information
-│   ├── info.go
-│   └── info_test.go
-├── Makefile            # Build automation
+│   ├── config.go        # Config loading and validation
+│   └── config_test.go   # Configuration tests
+├── logger/              # Structured logging with slog
+│   └── logger.go        # Debug and production logging
+├── shell/               # Shell integration and history
+│   ├── history.go       # Command capture and retrieval
+│   ├── integration.sh   # Real-time shell hooks
+│   └── *_test.go        # Shell integration tests
+├── system/              # System information gathering
+│   ├── info.go          # OS detection and metadata
+│   └── info_test.go     # System info tests
+├── scripts/             # Installation and setup scripts
+│   ├── install.sh       # Automated installation
+│   └── integration.sh   # Shell integration setup
+├── doc/                 # Documentation
+│   └── openrouter_api_design.md  # API integration design
+├── Makefile            # Build automation with coverage
 ├── go.mod              # Go modules
 └── README.md           # This file
 ```

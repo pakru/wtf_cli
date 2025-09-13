@@ -443,7 +443,7 @@ func getSuggestion(cfg *config.Config, cmdInfo api.CommandInfo, sysInfo api.Syst
 - [x] Update configuration structure
 - [x] Integrate with main application flow
 - [x] Add comprehensive error handling
-- [ ] Write unit tests for API package
+- [x] Write unit tests for API package
 - [ ] Test with real OpenRouter API
 - [ ] Update documentation and README
 
