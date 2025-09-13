@@ -1,4 +1,4 @@
-.PHONY: build test test-shell test-integration test-install clean run install install-full uninstall fmt vet lint docker-build help
+.PHONY: build test test-shell test-integration test-install test-coverage coverage-report coverage-html clean run install install-full uninstall fmt vet lint docker-build help
 
 # Default target
 all: build
@@ -36,7 +36,23 @@ test-integration: test test-shell-e2e
 # Run tests with coverage
 test-coverage:
 	@echo "Running tests with coverage..."
-	go test -coverprofile=coverage.out ./...
+	go test -v -coverprofile=coverage.out ./...
+	@echo "Coverage profile generated: coverage.out"
+
+# Generate coverage report (text format)
+coverage-report: test-coverage
+	@echo "Generating coverage report..."
+	@go tool cover -func=coverage.out
+	@echo ""
+	@echo "=== COVERAGE SUMMARY ==="
+	@go tool cover -func=coverage.out | grep total | awk '{print "Total Coverage: " $$3}'
+
+# Generate HTML coverage report
+coverage-html: test-coverage
+	@echo "Generating HTML coverage report..."
+	@go tool cover -html=coverage.out -o coverage.html
+	@echo "HTML coverage report generated: coverage.html"
+	@echo "Open coverage.html in your browser to view detailed coverage"
 
 # Clean build artifacts
 clean:
@@ -126,7 +142,9 @@ help:
 	@echo "  test-shell    - Run shell integration tests"
 	@echo "  test-integration - Run all tests (Go + Shell)"
 	@echo "  test-install  - Test the installation script"
-	@echo "  test-coverage - Run tests with coverage report"
+	@echo "  test-coverage - Run tests with coverage profile"
+	@echo "  coverage-report - Generate text coverage report"
+	@echo "  coverage-html - Generate HTML coverage report"
 	@echo "  clean         - Clean build artifacts"
 	@echo "  run           - Build and run the application"
 	@echo "  install       - Install binary to GOPATH/bin"
