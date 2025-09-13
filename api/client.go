@@ -13,7 +13,7 @@ import (
 
 const (
 	DefaultBaseURL     = "https://openrouter.ai/api/v1"
-	DefaultModel       = "google/gemma-3-27b"
+	DefaultModel       = "google/gemma-3-27b-it:free"
 	DefaultTemperature = 0.7
 	DefaultMaxTokens   = 1000
 	DefaultTimeout     = 30 * time.Second
@@ -67,6 +67,16 @@ func (c *Client) ChatCompletion(req Request) (*Response, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	// Log request body for debugging (with pretty formatting)
+	if logger.DebugEnabled() {
+		var prettyJSON bytes.Buffer
+		if err := json.Indent(&prettyJSON, jsonData, "", "  "); err == nil {
+			logger.Debug("API request body", "json", prettyJSON.String())
+		} else {
+			logger.Debug("API request body (raw)", "json", string(jsonData))
+		}
+	}
+
 	// Mask API key for logging
 	maskedKey := ""
 	if len(c.APIKey) > 8 {
@@ -114,6 +124,16 @@ func (c *Client) ChatCompletion(req Request) (*Response, error) {
 	logger.Debug("API response details", 
 		"response_size", len(body),
 		"status_code", resp.StatusCode)
+
+	// Log response body for debugging (with pretty formatting)
+	if logger.DebugEnabled() {
+		var prettyJSON bytes.Buffer
+		if err := json.Indent(&prettyJSON, body, "", "  "); err == nil {
+			logger.Debug("API response body", "json", prettyJSON.String())
+		} else {
+			logger.Debug("API response body (raw)", "json", string(body))
+		}
+	}
 
 	// Handle error responses
 	if resp.StatusCode != http.StatusOK {
