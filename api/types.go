@@ -65,6 +65,4 @@ type SystemInfo struct {
 	Shell        string
 	User         string
 	Home         string
-	GitRepo      string
-	SSHAgent     string
 }

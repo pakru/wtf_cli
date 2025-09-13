@@ -1,76 +1,246 @@
 package shell
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"wtf_cli/logger"
 )
 
-func TestGetLastCommandFromHistory(t *testing.T) {
-	// This test is inherently flaky in automated environments
-	// because it depends on shell history which might not be available
-	t.Skip("Skipping test that depends on shell history")
+func TestShellIntegrationFunctions(t *testing.T) {
+	// Initialize logger for tests
+	logger.InitLogger(false, "error")
+	
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "wtf-shell-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
 
-	// The following code would work in an interactive shell environment
-	// but is unreliable in automated test environments
-	/*
-		// Execute a known command to set it as the last command in history
-		testCmd := "echo 'wtf_cli_test_command'"
-		execCmd := exec.Command("bash", "-c", testCmd)
-		if err := execCmd.Run(); err != nil {
-			t.Fatalf("Failed to execute test command: %v", err)
+	// Set WTF_DATA_DIR to our temp directory
+	originalDataDir := os.Getenv("WTF_DATA_DIR")
+	os.Setenv("WTF_DATA_DIR", tempDir)
+	defer func() {
+		if originalDataDir != "" {
+			os.Setenv("WTF_DATA_DIR", originalDataDir)
+		} else {
+			os.Unsetenv("WTF_DATA_DIR")
 		}
+	}()
 
-		// Get the last command
-		cmd, err := getLastCommandFromHistory()
-		if err != nil {
-			t.Fatalf("Failed to get last command: %v", err)
-		}
+	// Test IsShellIntegrationActive when no file exists
+	// Mock home directory to use our temp directory
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tempDir)
+	defer os.Setenv("HOME", originalHome)
 
-		// Check if we got a non-empty result
-		if cmd == "" {
-			t.Error("Expected non-empty command, got empty string")
-		}
+	if IsShellIntegrationActive() {
+		t.Error("Expected shell integration to be inactive when no file exists")
+	}
 
-		// Log the result
-		t.Logf("Last command: %s", cmd)
-	*/
+	// Create .wtf directory and mock shell integration file
+	wtfDir := filepath.Join(tempDir, ".wtf")
+	if err := os.MkdirAll(wtfDir, 0755); err != nil {
+		t.Fatalf("Failed to create .wtf directory: %v", err)
+	}
+
+	integrationFile := filepath.Join(wtfDir, "last_command.json")
+	testData := map[string]interface{}{
+		"command":   "git status",
+		"exit_code": 0,
+		"timestamp": "2024-01-01T12:00:00Z",
+	}
+
+	jsonData, err := json.MarshalIndent(testData, "", "  ")
+	if err != nil {
+		t.Fatalf("Failed to marshal test data: %v", err)
+	}
+
+	if err := os.WriteFile(integrationFile, jsonData, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Create output file
+	outputFile := filepath.Join(wtfDir, "last_output.txt")
+	if err := os.WriteFile(outputFile, []byte("On branch main\nnothing to commit, working tree clean"), 0644); err != nil {
+		t.Fatalf("Failed to write output file: %v", err)
+	}
+
+	// Test IsShellIntegrationActive when file exists
+	if !IsShellIntegrationActive() {
+		t.Error("Expected shell integration to be active when file exists")
+	}
+
+	// Test getCommandFromShellIntegration
+	cmdInfo, err := getCommandFromShellIntegration()
+	if err != nil {
+		t.Fatalf("Failed to get command from shell integration: %v", err)
+	}
+
+	if cmdInfo.Command != "git status" {
+		t.Errorf("Expected command 'git status', got '%s'", cmdInfo.Command)
+	}
+	if cmdInfo.ExitCode != 0 {
+		t.Errorf("Expected exit code 0, got %d", cmdInfo.ExitCode)
+	}
+	if cmdInfo.Output != "On branch main\nnothing to commit, working tree clean" {
+		t.Errorf("Expected specific output, got '%s'", cmdInfo.Output)
+	}
+
+	// Test GetShellIntegrationSetupInstructions
+	instructions := GetShellIntegrationSetupInstructions()
+	if instructions == "" {
+		t.Error("Expected non-empty setup instructions")
+	}
 }
 
-func TestGetLastExitCode(t *testing.T) {
-	// This test is inherently flaky in automated environments
-	// because it depends on shell state which might not be preserved
-	t.Skip("Skipping test that depends on shell state")
+func TestEnvironmentVariableOverrides(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "wtf-env-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
 
-	// The following code would work in an interactive shell environment
-	// but is unreliable in automated test environments
-	/*
-		// Execute a command that succeeds
-		successCmd := exec.Command("bash", "-c", "exit 0")
-		_ = successCmd.Run()
+	// Mock home directory to ensure no shell integration file exists
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tempDir)
+	defer os.Setenv("HOME", originalHome)
 
-		// Get the exit code
-		exitCode, err := GetLastExitCode()
-		if err != nil {
-			t.Fatalf("Failed to get exit code: %v", err)
-		}
+	// Test with environment variables set
+	os.Setenv("WTF_LAST_COMMAND", "env-command")
+	os.Setenv("WTF_LAST_EXIT_CODE", "42")
+	os.Setenv("WTF_LAST_OUTPUT", "env-output")
+	defer func() {
+		os.Unsetenv("WTF_LAST_COMMAND")
+		os.Unsetenv("WTF_LAST_EXIT_CODE")
+		os.Unsetenv("WTF_LAST_OUTPUT")
+	}()
 
-		// Check if the exit code is 0
-		if exitCode != 0 {
-			t.Errorf("Expected exit code 0, got %d", exitCode)
-		}
+	cmdInfo, err := GetLastCommand()
+	if err != nil {
+		t.Fatalf("Failed to get last command: %v", err)
+	}
 
-		// Execute a command that fails
-		failCmd := exec.Command("bash", "-c", "exit 42")
-		_ = failCmd.Run()
+	if cmdInfo.Command != "env-command" {
+		t.Errorf("Expected command from env var, got '%s'", cmdInfo.Command)
+	}
+	if cmdInfo.ExitCode != 42 {
+		t.Errorf("Expected exit code from env var, got %d", cmdInfo.ExitCode)
+	}
+	if cmdInfo.Output != "env-output" {
+		t.Errorf("Expected output from env var, got '%s'", cmdInfo.Output)
+	}
+}
 
-		// Get the exit code
-		exitCode, err = GetLastExitCode()
-		if err != nil {
-			t.Fatalf("Failed to get exit code: %v", err)
-		}
+func TestGetLastCommandPriority(t *testing.T) {
+	// Initialize logger for tests
+	logger.InitLogger(false, "error")
+	
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "wtf-shell-priority-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
 
-		// Check if the exit code is 42
-		if exitCode != 42 {
-			t.Errorf("Expected exit code 42, got %d", exitCode)
-		}
-	*/
+	// Mock home directory to use our temp directory
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tempDir)
+	defer os.Setenv("HOME", originalHome)
+
+	// Create .wtf directory
+	wtfDir := filepath.Join(tempDir, ".wtf")
+	if err := os.MkdirAll(wtfDir, 0755); err != nil {
+		t.Fatalf("Failed to create .wtf directory: %v", err)
+	}
+
+	// Set environment variables
+	os.Setenv("WTF_LAST_COMMAND", "env-command")
+	os.Setenv("WTF_LAST_EXIT_CODE", "1")
+	os.Setenv("WTF_LAST_OUTPUT", "env-output")
+	defer func() {
+		os.Unsetenv("WTF_LAST_COMMAND")
+		os.Unsetenv("WTF_LAST_EXIT_CODE")
+		os.Unsetenv("WTF_LAST_OUTPUT")
+	}()
+
+	// Create shell integration file (should have priority over env vars)
+	integrationFile := filepath.Join(wtfDir, "last_command.json")
+	testData := map[string]interface{}{
+		"command":   "shell-integration-command",
+		"exit_code": 0,
+		"timestamp": "2024-01-01T12:00:00Z",
+	}
+
+	jsonData, err := json.MarshalIndent(testData, "", "  ")
+	if err != nil {
+		t.Fatalf("Failed to marshal test data: %v", err)
+	}
+
+	if err := os.WriteFile(integrationFile, jsonData, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Create output file
+	outputFile := filepath.Join(wtfDir, "last_output.txt")
+	if err := os.WriteFile(outputFile, []byte("shell integration output"), 0644); err != nil {
+		t.Fatalf("Failed to write output file: %v", err)
+	}
+
+	// GetLastCommand should prioritize shell integration over env vars
+	cmdInfo, err := GetLastCommand()
+	if err != nil {
+		t.Fatalf("Failed to get last command: %v", err)
+	}
+
+	if cmdInfo.Command != "shell-integration-command" {
+		t.Errorf("Expected shell integration command to have priority, got '%s'", cmdInfo.Command)
+	}
+	if cmdInfo.ExitCode != 0 {
+		t.Errorf("Expected shell integration exit code, got %d", cmdInfo.ExitCode)
+	}
+	if cmdInfo.Output != "shell integration output" {
+		t.Errorf("Expected shell integration output, got '%s'", cmdInfo.Output)
+	}
+}
+
+func TestInvalidShellIntegrationData(t *testing.T) {
+	// Initialize logger for tests
+	logger.InitLogger(false, "error")
+	
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "wtf-shell-invalid-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Mock home directory to use our temp directory
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tempDir)
+	defer os.Setenv("HOME", originalHome)
+
+	// Create .wtf directory
+	wtfDir := filepath.Join(tempDir, ".wtf")
+	if err := os.MkdirAll(wtfDir, 0755); err != nil {
+		t.Fatalf("Failed to create .wtf directory: %v", err)
+	}
+
+	// Create invalid JSON file
+	integrationFile := filepath.Join(wtfDir, "last_command.json")
+	invalidJSON := `{"command": "test", "exit_code": "invalid"}`
+	
+	if err := os.WriteFile(integrationFile, []byte(invalidJSON), 0644); err != nil {
+		t.Fatalf("Failed to write invalid test file: %v", err)
+	}
+
+	// Should return error for invalid JSON
+	_, err = getCommandFromShellIntegration()
+	if err == nil {
+		t.Error("Expected error for invalid JSON, got nil")
+	}
 }

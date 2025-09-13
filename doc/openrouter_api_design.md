@@ -437,12 +437,12 @@ func getSuggestion(cfg *config.Config, cmdInfo api.CommandInfo, sysInfo api.Syst
 
 ## Implementation Checklist
 
-- [*] Create `api/` package with type definitions
-- [*] Implement OpenRouter API client
-- [*] Add prompt building logic
-- [*] Update configuration structure
-- [ ] Integrate with main application flow
-- [ ] Add comprehensive error handling
+- [x] Create `api/` package with type definitions
+- [x] Implement OpenRouter API client
+- [x] Add prompt building logic
+- [x] Update configuration structure
+- [x] Integrate with main application flow
+- [x] Add comprehensive error handling
 - [ ] Write unit tests for API package
 - [ ] Test with real OpenRouter API
 - [ ] Update documentation and README

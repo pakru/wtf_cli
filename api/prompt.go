@@ -59,12 +59,6 @@ func BuildPrompt(cmdInfo CommandInfo, sysInfo SystemInfo) string {
 	if sysInfo.User != "" {
 		builder.WriteString(fmt.Sprintf("- User: %s\n", sysInfo.User))
 	}
-	if sysInfo.GitRepo != "" {
-		builder.WriteString(fmt.Sprintf("- Git Repository: %s\n", sysInfo.GitRepo))
-	}
-	if sysInfo.SSHAgent != "" {
-		builder.WriteString(fmt.Sprintf("- SSH Agent Status: %s\n", sysInfo.SSHAgent))
-	}
 
 	builder.WriteString("\nPlease analyze what went wrong and provide a solution.")
 
