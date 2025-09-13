@@ -439,8 +439,8 @@ func getSuggestion(cfg *config.Config, cmdInfo api.CommandInfo, sysInfo api.Syst
 
 - [*] Create `api/` package with type definitions
 - [*] Implement OpenRouter API client
-- [ ] Add prompt building logic
-- [ ] Update configuration structure
+- [*] Add prompt building logic
+- [*] Update configuration structure
 - [ ] Integrate with main application flow
 - [ ] Add comprehensive error handling
 - [ ] Write unit tests for API package
