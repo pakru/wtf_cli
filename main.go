@@ -16,7 +16,7 @@ func main() {
 	// Initialize logger with default settings first
 	logger.InitLogger(false, "info")
 	
-	logger.Info("wtf CLI utility - Go implementation started")
+	logger.Debug("wtf CLI utility - Go implementation started")
 
 	// Load configuration from ~/.wtf/config.json
 	configPath := config.GetConfigPath()

@@ -205,13 +205,17 @@ func TestShellIntegrationWithRealBash(t *testing.T) {
 		t.Fatalf("Failed to write integration script: %v", err)
 	}
 	
-	// Test script with real bash
+	// Test script with real interactive bash
 	testScript := fmt.Sprintf(`
 #!/bin/bash
 source "%s"
 
-# Execute a test command
-echo "test command"
+# Simulate an interactive session by manually calling the functions
+# This mimics what would happen in a real interactive bash session
+WTF_COMMAND_START=$(date +%%s.%%N)
+WTF_LAST_COMMAND="test_command_that_fails"
+wtf_prompt_command
+
 exit 0
 `, integrationScript)
 	
