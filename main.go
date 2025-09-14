@@ -74,19 +74,8 @@ func main() {
 		logger.Debug("System information retrieved", "os_type", osInfo.Type, "distribution", osInfo.Distribution, "version", osInfo.Version)
 	}
 
-	// Display the collected information
-	logger.Info("Last Command Information", "command", cmdInfo.Command, "exit_code", cmdInfo.ExitCode)
-	logger.Info("System Information", "os_type", osInfo.Type, "distribution", osInfo.Distribution, "version", osInfo.Version, "kernel", osInfo.Kernel)
-
 	if cfg.DryRun {
-		logger.Info("DRY RUN MODE - No API calls will be made")
-		if cmdInfo.ExitCode == 0 {
-			logger.Info("Mock response: Command completed successfully", "command", cmdInfo.Command)
-		} else {
-			logger.Info("Mock response: Command failed", "command", cmdInfo.Command, "exit_code", cmdInfo.ExitCode)
-			logger.Info("Mock suggestions: Check syntax, permissions, and dependencies")
-		}
-		logger.Info("Dry run completed successfully")
+		displayDryRunMode(cmdInfo)
 	} else {
 		logger.Debug("Preparing to make API call")
 		
@@ -98,9 +87,10 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Display the AI suggestion
-		logger.Info("AI Suggestion received", "suggestion", suggestion)
-		logger.Info("AI suggestion displayed successfully")
+		// Display the AI suggestion to the user
+		displayAISuggestion(suggestion)
+		
+		logger.Debug("AI suggestion displayed successfully")
 	}
 }
 
@@ -202,5 +192,38 @@ func getHomeDir() string {
 		return home
 	}
 	return ""
+}
+
+// displayAISuggestion shows the AI suggestion in a beautiful format
+func displayAISuggestion(suggestion string) {
+	fmt.Println("══════════════════════════════")
+	fmt.Println(suggestion)
+	fmt.Println("══════════════════════════════")
+}
+
+// displayDryRunMode shows dry run information in a beautiful format
+func displayDryRunMode(cmdInfo shell.CommandInfo) {
+	fmt.Println("🧪 Dry Run Mode")
+	fmt.Println("═══════════════")
+	fmt.Println("No API calls will be made")
+	fmt.Println()
+	
+	if cmdInfo.ExitCode == 0 {
+		fmt.Println("✅ Mock Response:")
+		fmt.Printf("   Command '%s' completed successfully\n", cmdInfo.Command)
+	} else {
+		fmt.Println("❌ Mock Response:")
+		fmt.Printf("   Command '%s' failed with exit code %d\n", cmdInfo.Command, cmdInfo.ExitCode)
+		fmt.Println()
+		fmt.Println("💡 Mock Suggestions:")
+		fmt.Println("   • Check command syntax")
+		fmt.Println("   • Verify file permissions")
+		fmt.Println("   • Check dependencies")
+		fmt.Println("   • Review error messages")
+	}
+	fmt.Println()
+	fmt.Println("─────────────────────────────────────────────")
+	fmt.Println("🔧 To use real AI suggestions, set your API key and remove WTF_DRY_RUN")
+	fmt.Println()
 }
 
