@@ -16,7 +16,6 @@ import (
 type Config struct {
 	LLMProvider string           `json:"llm_provider"`
 	OpenRouter  OpenRouterConfig `json:"openrouter"`
-	Debug       bool             `json:"debug"`
 	DryRun      bool             `json:"dry_run"`
 	LogLevel    string           `json:"log_level"`
 }
@@ -41,7 +40,6 @@ func DefaultConfig() Config {
 			MaxTokens:        1000,
 			APITimeoutSeconds: 30,
 		},
-		Debug:    false,
 		DryRun:   false,
 		LogLevel: "info",
 	}
@@ -96,7 +94,6 @@ func LoadConfig(configPath string) (Config, error) {
 	logger.Debug("Configuration loaded successfully", 
 		"llm_provider", cfg.LLMProvider,
 		"model", cfg.OpenRouter.Model,
-		"debug", cfg.Debug,
 		"dry_run", cfg.DryRun,
 		"log_level", cfg.LogLevel)
 
@@ -106,14 +103,6 @@ func LoadConfig(configPath string) (Config, error) {
 // applyEnvironmentOverrides applies environment variable overrides to the config
 func applyEnvironmentOverrides(cfg Config) Config {
 	logger.Debug("Checking for environment variable overrides")
-	// Debug mode
-	if debugEnv := os.Getenv("WTF_DEBUG"); debugEnv != "" {
-		if debug, err := strconv.ParseBool(debugEnv); err == nil {
-			logger.Debug("Overriding debug mode from environment", "WTF_DEBUG", debug)
-			cfg.Debug = debug
-		}
-	}
-
 	// Dry run mode
 	if dryRunEnv := os.Getenv("WTF_DRY_RUN"); dryRunEnv != "" {
 		if dryRun, err := strconv.ParseBool(dryRunEnv); err == nil {

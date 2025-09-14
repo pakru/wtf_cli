@@ -11,7 +11,7 @@ import (
 
 func TestGetOSInfo(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	info, err := GetOSInfo()
 	if err != nil {
@@ -49,7 +49,7 @@ func TestGetOSInfo(t *testing.T) {
 
 func TestOSInfoValidation(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	tests := []struct {
 		name     string
@@ -79,7 +79,7 @@ func TestOSInfoValidation(t *testing.T) {
 
 func TestOSInfoFields(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	info, err := GetOSInfo()
 	if err != nil {
@@ -131,7 +131,7 @@ func TestOSInfoFields(t *testing.T) {
 
 func TestGetOSInfoConsistency(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	// Call GetOSInfo multiple times and ensure consistent results
 	info1, err1 := GetOSInfo()
@@ -161,7 +161,7 @@ func TestGetOSInfoConsistency(t *testing.T) {
 
 func TestOSInfoEnvironmentVariables(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	// Test that the function works even with modified environment
 	originalPath := os.Getenv("PATH")

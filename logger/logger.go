@@ -10,7 +10,7 @@ import (
 var Logger *slog.Logger
 
 // InitLogger initializes the global logger based on configuration
-func InitLogger(debug bool, logLevel string) {
+func InitLogger(logLevel string) {
 	var level slog.Level
 
 	// Set log level based on configuration
@@ -27,19 +27,14 @@ func InitLogger(debug bool, logLevel string) {
 		level = slog.LevelInfo
 	}
 
-	// Override to debug level if debug mode is enabled
-	if debug {
-		level = slog.LevelDebug
-	}
-
 	// Create handler options
 	opts := &slog.HandlerOptions{
 		Level: level,
 	}
 
-	// Use text handler for debug mode (more readable), JSON for production
+	// Use text handler for debug level (more readable), JSON for others
 	var handler slog.Handler
-	if debug {
+	if level == slog.LevelDebug {
 		handler = slog.NewTextHandler(os.Stdout, opts)
 	} else {
 		handler = slog.NewJSONHandler(os.Stdout, opts)

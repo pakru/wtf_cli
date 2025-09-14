@@ -14,7 +14,7 @@ import (
 
 func main() {
 	// Initialize logger with default settings first
-	logger.InitLogger(false, "info")
+	logger.InitLogger("info")
 	
 	logger.Debug("wtf CLI utility - Go implementation started")
 
@@ -27,10 +27,9 @@ func main() {
 	}
 
 	// Re-initialize logger with configuration settings
-	logger.InitLogger(cfg.Debug, cfg.LogLevel)
+	logger.InitLogger(cfg.LogLevel)
 
-	logger.Debug("Debug mode enabled")
-	logger.Info("Configuration loaded", "config_path", configPath, "debug", cfg.Debug, "dry_run", cfg.DryRun)
+	logger.Info("Configuration loaded", "config_path", configPath, "dry_run", cfg.DryRun, "log_level", cfg.LogLevel)
 
 	// Check if API key is configured (skip in dry-run mode)
 	if !cfg.DryRun {

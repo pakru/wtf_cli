@@ -10,7 +10,7 @@ import (
 
 func TestGetCurrentWorkingDir(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	wd := getCurrentWorkingDir()
 
@@ -29,7 +29,7 @@ func TestGetCurrentWorkingDir(t *testing.T) {
 
 func TestGetShellInfo(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	shell := getShellInfo()
 
@@ -53,7 +53,7 @@ func TestGetShellInfo(t *testing.T) {
 
 func TestGetUserInfo(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	user := getUserInfo()
 
@@ -70,7 +70,7 @@ func TestGetUserInfo(t *testing.T) {
 
 func TestGetHomeDir(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	home := getHomeDir()
 
@@ -90,7 +90,7 @@ func TestGetHomeDir(t *testing.T) {
 
 func TestHelperFunctionsConsistency(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	// Call helper functions multiple times and ensure consistent results
 	wd1 := getCurrentWorkingDir()
@@ -122,7 +122,7 @@ func TestHelperFunctionsConsistency(t *testing.T) {
 
 func TestHelperFunctionsWithModifiedEnvironment(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	// Save original environment variables
 	originalUser := os.Getenv("USER")
@@ -167,7 +167,7 @@ func TestHelperFunctionsWithModifiedEnvironment(t *testing.T) {
 
 func TestHelperFunctionsWithMissingEnvironment(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	// Save original environment variables
 	originalUser := os.Getenv("USER")

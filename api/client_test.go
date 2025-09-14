@@ -13,7 +13,7 @@ import (
 
 func TestNewClient(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	apiKey := "test-api-key"
 	client := NewClient(apiKey)
@@ -40,7 +40,7 @@ func TestNewClient(t *testing.T) {
 
 func TestClientChatCompletion_Success(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	// Mock successful response
 	mockResponse := Response{
@@ -119,7 +119,7 @@ func TestClientChatCompletion_Success(t *testing.T) {
 
 func TestClientChatCompletion_DefaultValues(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response := Response{
@@ -156,7 +156,7 @@ func TestClientChatCompletion_DefaultValues(t *testing.T) {
 
 func TestClientChatCompletion_NetworkError(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	client := &Client{
 		APIKey:     "test-key",

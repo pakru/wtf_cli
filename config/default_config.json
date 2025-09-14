@@ -7,7 +7,6 @@
     "max_tokens": 1000,
     "api_timeout_seconds": 30
   },
-  "debug": false,
   "dry_run": false,
-  "log_level": "info"
+  "log_level": "error"
 }

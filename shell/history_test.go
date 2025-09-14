@@ -11,7 +11,7 @@ import (
 
 func TestShellIntegrationFunctions(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "wtf-shell-test")
@@ -138,7 +138,7 @@ func TestEnvironmentVariableOverrides(t *testing.T) {
 
 func TestGetLastCommandPriority(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "wtf-shell-priority-test")
@@ -210,7 +210,7 @@ func TestGetLastCommandPriority(t *testing.T) {
 
 func TestInvalidShellIntegrationData(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "wtf-shell-invalid-test")

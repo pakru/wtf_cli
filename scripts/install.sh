@@ -60,9 +60,18 @@ setup_wtf_directory() {
 # Copy integration script
 install_integration_script() {
     print_info "Installing shell integration script"
+    
+    # Backup existing integration script if it exists
+    if [[ -f "$WTF_DIR/integration.sh" ]]; then
+        local backup_file="$WTF_DIR/integration.sh.backup.$(date +%Y%m%d-%H%M%S)"
+        cp "$WTF_DIR/integration.sh" "$backup_file"
+        print_info "Backed up existing integration script to: $backup_file"
+    fi
+    
+    # Always overwrite with latest version
     cp "scripts/integration.sh" "$WTF_DIR/integration.sh"
     chmod +x "$WTF_DIR/integration.sh"
-    print_success "Installed: $WTF_DIR/integration.sh"
+    print_success "Installed latest integration script: $WTF_DIR/integration.sh"
 }
 
 # Install the pre-built WTF binary
@@ -117,30 +126,37 @@ setup_shell_integration() {
     print_success "Added shell integration to ~/.bashrc"
 }
 
-# Create default configuration
+# Create/update configuration
 create_default_config() {
     local config_file="$WTF_DIR/config.json"
     local default_config_file="$(dirname "$0")/../config/default_config.json"
     
-    if [[ -f "$config_file" ]]; then
-        print_warning "Configuration file already exists: $config_file"
-        return 0
-    fi
-    
-    print_info "Creating default configuration"
-    
     # Check if default config file exists
-    if [[ -f "$default_config_file" ]]; then
-        cp "$default_config_file" "$config_file"
-        print_success "Configuration created from: $default_config_file"
-    else
+    if [[ ! -f "$default_config_file" ]]; then
         print_error "Default config file not found: $default_config_file"
         print_error "Installation cannot continue without default configuration"
         return 1
     fi
     
-    print_success "Created default configuration: $config_file"
-    print_warning "Please edit $config_file and add your OpenRouter.ai API key"
+    # Backup existing config if it exists
+    if [[ -f "$config_file" ]]; then
+        local backup_file="$config_file.backup.$(date +%Y%m%d-%H%M%S)"
+        cp "$config_file" "$backup_file"
+        print_info "Backed up existing configuration to: $backup_file"
+        print_warning "Your existing API key and settings have been backed up"
+    fi
+    
+    print_info "Installing latest configuration template"
+    
+    # Always overwrite with latest version
+    cp "$default_config_file" "$config_file"
+    print_success "Installed latest configuration template: $config_file"
+    
+    if [[ -f "$config_file.backup."* ]]; then
+        print_warning "Please review your backed up configuration and update the new config with your API key"
+    else
+        print_warning "Please edit $config_file and add your OpenRouter.ai API key"
+    fi
 }
 
 # Test installation
@@ -180,17 +196,20 @@ print_instructions() {
     echo ""
     echo -e "${YELLOW}Next Steps:${NC}"
     echo ""
-    echo "1. ${BLUE}Get an OpenRouter.ai API key:${NC}"
+    echo -e "1. ${BLUE}Get an OpenRouter.ai API key:${NC}"
     echo "   Visit: https://openrouter.ai"
     echo ""
-    echo "2. ${BLUE}Configure your API key:${NC}"
+    echo -e "2. ${BLUE}Configure your API key:${NC}"
     echo "   Edit: $WTF_DIR/config.json"
-    echo "   Replace 'your_openrouter_api_key_here' with your actual API key"
+    echo "   Replace '<your_openrouter_api_key_here>' with your actual API key"
+    if [[ -f "$WTF_DIR/config.json.backup."* ]]; then
+        echo "   (Your previous configuration was backed up - you can copy your API key from there)"
+    fi
     echo ""
-    echo "3. ${BLUE}Restart your shell or run:${NC}"
+    echo -e "3. ${BLUE}Restart your shell or run:${NC}"
     echo "   source ~/.bashrc"
     echo ""
-    echo "4. ${BLUE}Test the installation:${NC}"
+    echo -e "4. ${BLUE}Test the installation:${NC}"
     echo "   ls -la"
     echo "   wtf"
     echo ""

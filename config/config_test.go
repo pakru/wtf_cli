@@ -10,7 +10,7 @@ import (
 
 func TestLoadConfig(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "wtf-config-test")
@@ -92,21 +92,19 @@ func TestValidate(t *testing.T) {
 
 func TestEnvironmentVariableOverrides(t *testing.T) {
 	// Initialize logger for tests
-	logger.InitLogger(false, "error")
+	logger.InitLogger("error")
 	
 	// Set environment variables
 	os.Setenv("WTF_API_KEY", "env-api-key")
 	os.Setenv("WTF_MODEL", "env-model")
 	os.Setenv("WTF_TEMPERATURE", "0.8")
 	os.Setenv("WTF_MAX_TOKENS", "2000")
-	os.Setenv("WTF_DEBUG", "true")
 	os.Setenv("WTF_DRY_RUN", "true")
 	defer func() {
 		os.Unsetenv("WTF_API_KEY")
 		os.Unsetenv("WTF_MODEL")
 		os.Unsetenv("WTF_TEMPERATURE")
 		os.Unsetenv("WTF_MAX_TOKENS")
-		os.Unsetenv("WTF_DEBUG")
 		os.Unsetenv("WTF_DRY_RUN")
 	}()
 
@@ -126,9 +124,7 @@ func TestEnvironmentVariableOverrides(t *testing.T) {
 	if cfg.OpenRouter.MaxTokens != 2000 {
 		t.Errorf("Expected max tokens from env var, got %d", cfg.OpenRouter.MaxTokens)
 	}
-	if !cfg.Debug {
-		t.Error("Expected debug to be true from env var")
-	}
+	// Debug field removed - now controlled by log_level
 	if !cfg.DryRun {
 		t.Error("Expected dry run to be true from env var")
 	}
