@@ -221,3 +221,13 @@ func GetConfigPath() string {
 	}
 	return filepath.Join(homeDir, ".wtf", "config.json")
 }
+
+// GetSystemPromptPath returns the default path for the system prompt file
+func GetSystemPromptPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to current directory if home directory can't be determined
+		return ".wtf/system_prompt.md"
+	}
+	return filepath.Join(homeDir, ".wtf", "system_prompt.md")
+}

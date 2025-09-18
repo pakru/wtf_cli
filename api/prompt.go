@@ -2,26 +2,29 @@ package api
 
 import (
 	"fmt"
+	"os"
 	"strings"
+
+	"wtf_cli/config"
+	"wtf_cli/logger"
 )
 
-const SystemPrompt = `You are a command-line troubleshooting expert. Your job is to analyze failed shell commands and provide clear, actionable solutions.
-
-RESPONSE GUIDELINES:
-- Start with suggestion for next command to run
-- Next include brief explanation of what likely went wrong
-- Provide specific, copy-pasteable commands to fix the issue
-- Include relevant context about why the error occurred
-- Keep explanations concise but thorough
-- Use code blocks for commands
-- If multiple solutions exist, prioritize the most common/likely fix first
-- Keep in mind that you are running in cli, so output should be copy-pasteable, and not much text should be included
-
-FORMAT YOUR RESPONSE:
-1. Suggest next command to run
-2. Brief problem summary
-3. Root cause explanation
-4. Optional: Prevention tips for the future`
+// LoadSystemPrompt reads the system prompt from the markdown file
+func LoadSystemPrompt() (string, error) {
+	systemPromptPath := config.GetSystemPromptPath()
+	logger.Debug("Loading system prompt", "path", systemPromptPath)
+	
+	data, err := os.ReadFile(systemPromptPath)
+	if err != nil {
+		logger.Error("Failed to read system prompt file", "error", err, "path", systemPromptPath)
+		return "", fmt.Errorf("failed to read system prompt file: %w", err)
+	}
+	
+	content := string(data)
+	
+	logger.Debug("System prompt loaded successfully", "length", len(content))
+	return content, nil
+}
 
 // BuildPrompt creates the user prompt from command and system information
 func BuildPrompt(cmdInfo CommandInfo, sysInfo SystemInfo) string {
@@ -66,15 +69,20 @@ func BuildPrompt(cmdInfo CommandInfo, sysInfo SystemInfo) string {
 }
 
 // CreateChatRequest builds a complete API request
-func CreateChatRequest(cmdInfo CommandInfo, sysInfo SystemInfo) Request {
+func CreateChatRequest(cmdInfo CommandInfo, sysInfo SystemInfo) (Request, error) {
 	userPrompt := BuildPrompt(cmdInfo, sysInfo)
+	
+	systemPrompt, err := LoadSystemPrompt()
+	if err != nil {
+		return Request{}, fmt.Errorf("failed to load system prompt: %w", err)
+	}
 
 	return Request{
 		Model: DefaultModel,
 		Messages: []Message{
 			{
 				Role:    "system",
-				Content: SystemPrompt,
+				Content: systemPrompt,
 			},
 			{
 				Role:    "user",
@@ -84,5 +92,5 @@ func CreateChatRequest(cmdInfo CommandInfo, sysInfo SystemInfo) Request {
 		Temperature: DefaultTemperature,
 		MaxTokens:   DefaultMaxTokens,
 		Stream:      false,
-	}
+	}, nil
 }

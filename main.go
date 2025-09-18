@@ -126,7 +126,11 @@ func getAISuggestion(cfg config.Config, cmdInfo shell.CommandInfo, osInfo system
 	logger.Debug("Building API request")
 	
 	// Create the API request
-	request := api.CreateChatRequest(apiCmdInfo, apiSysInfo)
+	request, err := api.CreateChatRequest(apiCmdInfo, apiSysInfo)
+	if err != nil {
+		logger.Error("Failed to create API request", "error", err)
+		return "", fmt.Errorf("failed to create API request: %w", err)
+	}
 	
 	// Override model and parameters from config
 	request.Model = cfg.OpenRouter.Model

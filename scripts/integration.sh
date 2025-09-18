@@ -38,9 +38,7 @@ wtf_capture_command() {
     "timestamp": "$(date -Iseconds)"
 }
 EOF
-    
-    # Create output file with limitation message
-    echo "[Command output not captured - shell integration limitations]" > "$WTF_DATA_DIR/last_output.txt"
+
 }
 
 # Function to capture command before execution

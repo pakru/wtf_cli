@@ -126,15 +126,24 @@ setup_shell_integration() {
     print_success "Added shell integration to ~/.bashrc"
 }
 
-# Create/update configuration
+# Create/update configuration and system prompt
 create_default_config() {
     local config_file="$WTF_DIR/config.json"
     local default_config_file="$(dirname "$0")/../config/default_config.json"
+    local system_prompt_file="$WTF_DIR/system_prompt.md"
+    local default_system_prompt_file="$(dirname "$0")/../config/system_prompt.md"
     
     # Check if default config file exists
     if [[ ! -f "$default_config_file" ]]; then
         print_error "Default config file not found: $default_config_file"
         print_error "Installation cannot continue without default configuration"
+        return 1
+    fi
+    
+    # Check if system prompt file exists
+    if [[ ! -f "$default_system_prompt_file" ]]; then
+        print_error "System prompt file not found: $default_system_prompt_file"
+        print_error "Installation cannot continue without system prompt"
         return 1
     fi
     
@@ -146,11 +155,20 @@ create_default_config() {
         print_warning "Your existing API key and settings have been backed up"
     fi
     
-    print_info "Installing latest configuration template"
+    # Backup existing system prompt if it exists
+    if [[ -f "$system_prompt_file" ]]; then
+        local backup_file="$system_prompt_file.backup.$(date +%Y%m%d-%H%M%S)"
+        cp "$system_prompt_file" "$backup_file"
+        print_info "Backed up existing system prompt to: $backup_file"
+    fi
     
-    # Always overwrite with latest version
+    print_info "Installing latest configuration template and system prompt"
+    
+    # Always overwrite with latest versions
     cp "$default_config_file" "$config_file"
+    cp "$default_system_prompt_file" "$system_prompt_file"
     print_success "Installed latest configuration template: $config_file"
+    print_success "Installed latest system prompt: $system_prompt_file"
     
     if [[ -f "$config_file.backup."* ]]; then
         print_warning "Please review your backed up configuration and update the new config with your API key"
@@ -183,6 +201,14 @@ test_installation() {
         print_success "Configuration file is created"
     else
         print_error "Configuration file not found"
+        return 1
+    fi
+    
+    # Test system prompt
+    if [[ -f "$WTF_DIR/system_prompt.md" ]]; then
+        print_success "System prompt file is created"
+    else
+        print_error "System prompt file not found"
         return 1
     fi
 }
@@ -231,7 +257,7 @@ uninstall() {
     
     # Remove WTF directory
     if [[ -d "$WTF_DIR" ]]; then
-        read -p "Remove WTF directory and all data? (y/N): " -n 1 -r
+        read -p "Remove WTF directory and all data (config, system prompt, etc.)? (y/N): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             rm -rf "$WTF_DIR"
