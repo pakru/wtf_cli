@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"wtf_cli/api"
@@ -87,7 +88,7 @@ func main() {
 		}
 
 		// Display the AI suggestion to the user
-		displayAISuggestion(suggestion)
+		displayAISuggestion(cmdInfo, suggestion)
 		
 		logger.Debug("AI suggestion displayed successfully")
 	}
@@ -198,10 +199,12 @@ func getHomeDir() string {
 }
 
 // displayAISuggestion shows the AI suggestion in a beautiful format
-func displayAISuggestion(suggestion string) {
-	fmt.Println("══════════════════════════════")
+func displayAISuggestion(cmdInfo shell.CommandInfo, suggestion string) {
+	headerText := fmt.Sprintf(" < Explanation of the command `%s`, exit code: %d >", cmdInfo.Command, cmdInfo.ExitCode)
+	fmt.Println(headerText)
+	fmt.Println(strings.Repeat("═", len(headerText)))
 	fmt.Println(suggestion)
-	fmt.Println("══════════════════════════════")
+	fmt.Println(strings.Repeat("═", len(headerText)))
 }
 
 // displayDryRunMode shows dry run information in a beautiful format

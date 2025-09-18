@@ -30,7 +30,11 @@ func LoadSystemPrompt() (string, error) {
 func BuildPrompt(cmdInfo CommandInfo, sysInfo SystemInfo) string {
 	var builder strings.Builder
 
-	builder.WriteString("FAILED COMMAND ANALYSIS:\n\n")
+	if cmdInfo.ExitCode != "0" {
+		builder.WriteString("FAILED COMMAND ANALYSIS:\n\n")
+	} else {
+		builder.WriteString("SUCCESSFUL COMMAND ANALYSIS:\n\n")
+	}
 
 	// Command details
 	builder.WriteString("COMMAND DETAILS:\n")
@@ -63,7 +67,11 @@ func BuildPrompt(cmdInfo CommandInfo, sysInfo SystemInfo) string {
 		builder.WriteString(fmt.Sprintf("- User: %s\n", sysInfo.User))
 	}
 
-	builder.WriteString("\nPlease analyze what went wrong and provide a solution.")
+	if cmdInfo.ExitCode != "0" {
+		builder.WriteString("\nPlease analyze what went wrong and provide a solution.")
+	} else {
+		builder.WriteString("\nPlease explain what the command accomplished.")
+	}
 
 	return builder.String()
 }
