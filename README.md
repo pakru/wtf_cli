@@ -1,14 +1,6 @@
 # `wtf` - CLI Assistant
 
-`wtf` is a command-line utility for Linux bash users designed to help you understand and act upon the output of your last executed command. By leveraging Large Language Models (LLMs), `wtf` analyzes your command history, output, and exit status to provide intelligent suggestions, troubleshooting tips, and relevant follow-up actions.
-
-For detailed functional and non-functional requirements, please see the [SOFTWARE_REQUIREMENTS.md](SOFTWARE_REQUIREMENTS.md) file.
-
-## Features
-
-- 🔍 **Smart Analysis** - Analyzes your last command, output, and exit status
-- 🤖 **LLM-Powered** - Uses OpenRouter.ai with Google Gemma 3-27B for intelligent suggestions
-- ⚡ **Single Binary** - No dependencies, just download and run
+`wtf` is a command-line utility for sell designed to help you understand and act upon the output of your last executed command. By leveraging Large Language Models (LLMs), `wtf` analyzes your last executed commandand exit status to provide suggestions, troubleshooting tips, and relevant follow-up actions.
 
 ## Getting Started
 
@@ -16,6 +8,7 @@ For detailed functional and non-functional requirements, please see the [SOFTWAR
 
 - **Linux** (any modern distribution)
 - **Bash** (version 4.x or higher recommended)
+- **GoLang** (version 1.22 or higher recommended)
 - **OpenRouter.ai API key** - Get one at [openrouter.ai](https://openrouter.ai)
 
 ### Installation
@@ -28,9 +21,6 @@ cd wtf_cli
 
 # Automated installation (recommended)
 ./scripts/install.sh
-
-# Or using make
-make install-full
 ```
 
 This will:
@@ -51,20 +41,6 @@ make build
 # Install to your PATH
 sudo cp wtf /usr/local/bin/
 ```
-
-#### Option 3: Using Go Install
-```bash
-go install github.com/your-username/wtf_cli@latest
-```
-
-#### Option 4: Download Binary
-```bash
-# Download the latest release (when available)
-curl -L https://github.com/your-username/wtf_cli/releases/latest/download/wtf -o wtf
-chmod +x wtf
-sudo mv wtf /usr/local/bin/
-```
-
 ### Uninstallation
 
 To completely remove WTF CLI:
@@ -72,9 +48,6 @@ To completely remove WTF CLI:
 ```bash
 # Using the installation script
 ./scripts/install.sh uninstall
-
-# Or using make
-make uninstall
 ```
 
 This will:
@@ -91,12 +64,11 @@ On first run, `wtf` will create a configuration file at `~/.wtf/config.json`:
 {
   "llm_provider": "openrouter",
   "openrouter": {
-    "api_key": "your_openrouter_api_key_here",
+    "api_key": "<your_openrouter_api_key_here>",
     "model": "google/gemma-3-27b",
     "temperature": 0.7,
     "max_tokens": 1000
   },
-  "debug": false,
   "dry_run": false,
   "log_level": "info"
 }
@@ -118,14 +90,6 @@ On first run, `wtf` will create a configuration file at `~/.wtf/config.json`:
    
    # Replace "your_openrouter_api_key_here" with your actual API key
    ```
-
-3. **Available Models:**
-   - `google/gemma-3-27b` (default, recommended for CLI tasks)
-   - `openai/gpt-4o` (excellent general performance)
-   - `openai/gpt-4o-mini` (faster, cheaper)
-   - `anthropic/claude-3.5-sonnet` (great for analysis)
-   - See [OpenRouter models](https://openrouter.ai/models) for more options
-
 ### Environment Variables
 
 You can override configuration settings using environment variables:
@@ -267,38 +231,6 @@ The Docker environment includes:
 - `make ci` - CI workflow (tidy, fmt-check, vet, test, build)
 - `make help` - Show all available targets
 
-### Project Structure
-
-```
-wtf_cli/
-├── main.go              # Entry point and helper functions
-├── api/                 # OpenRouter API integration
-│   ├── client.go        # HTTP client implementation
-│   ├── prompt.go        # Prompt building logic
-│   ├── types.go         # Request/response types
-│   └── *_test.go        # Comprehensive unit tests
-├── config/              # Configuration management
-│   ├── config.go        # Config loading and validation
-│   └── config_test.go   # Configuration tests
-├── logger/              # Structured logging with slog
-│   └── logger.go        # Debug and production logging
-├── shell/               # Shell integration and history
-│   ├── history.go       # Command capture and retrieval
-│   ├── integration.sh   # Real-time shell hooks
-│   └── *_test.go        # Shell integration tests
-├── system/              # System information gathering
-│   ├── info.go          # OS detection and metadata
-│   └── info_test.go     # System info tests
-├── scripts/             # Installation and setup scripts
-│   ├── install.sh       # Automated installation
-│   └── integration.sh   # Shell integration setup
-├── doc/                 # Documentation
-│   └── openrouter_api_design.md  # API integration design
-├── Makefile            # Build automation with coverage
-├── go.mod              # Go modules
-└── README.md           # This file
-```
-
 ## Troubleshooting
 
 ### Common Issues
@@ -363,9 +295,3 @@ WTF_DRY_RUN=true wtf
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- [OpenRouter.ai](https://openrouter.ai) for LLM API access
-- Go community for excellent tooling
-- All contributors who help improve this tool
