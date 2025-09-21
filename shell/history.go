@@ -13,10 +13,22 @@ import (
 
 // CommandInfo stores information about the last executed command
 type CommandInfo struct {
-	Command  string // The command that was executed
-	Output   string // Combined stdout and stderr
-	ExitCode int    // Exit code of the command
+	Command   string      // The command that was executed
+	Output    string      // Combined stdout and stderr
+	ExitCode  int         // Exit code of the command
+	PipeInput string      // NEW: Input received via pipe
+	Source    InputSource // NEW: How the data was obtained
 }
+
+// InputSource represents the source of command information
+type InputSource int
+
+const (
+	SourceShellIntegration InputSource = iota
+	SourceHistory
+	SourceEnvironment
+	SourcePipe
+)
 
 // GetLastCommand retrieves information about the last executed command
 func GetLastCommand() (CommandInfo, error) {

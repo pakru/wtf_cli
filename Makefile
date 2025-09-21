@@ -10,7 +10,7 @@ build:
 	go build -o build/wtf .
 
 # Run tests
-test:
+test: build
 	@echo "Running tests..."
 	go test ./...
 
