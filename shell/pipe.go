@@ -51,13 +51,12 @@ func (h *PipeHandler) HandlePipeInput() (string, error) {
 func (h *PipeHandler) ProcessPipeMode(input string) error {
 	logger.Debug("Processing pipe mode", "input_length", len(input))
 
-	// Create command info from pipe input
+	// Create command info for pipe input (no original command tracking)
 	cmdInfo := CommandInfo{
-		Command:   "[Pipe Input]",
-		Output:    input,
-		ExitCode:  0, // Unknown for pipe input
-		PipeInput: input,
-		Source:    SourcePipe,
+		Command:  "[N/A]",
+		Output:   input,
+		ExitCode: 0,
+		Source:   SourcePipe,
 	}
 
 	// Get system information
@@ -70,7 +69,13 @@ func (h *PipeHandler) ProcessPipeMode(input string) error {
 	displayer := display.NewSuggestionDisplayer()
 
 	if h.config.DryRun {
-		displayer.DisplayDryRunPipe(len(cmdInfo.PipeInput), cmdInfo.PipeInput)
+		// Convert shell.CommandInfo to display.CommandInfo
+		displayCmdInfo := display.CommandInfo{
+			Command:  cmdInfo.Command,
+			Output:   cmdInfo.Output,
+			ExitCode: cmdInfo.ExitCode,
+		}
+		displayer.DisplayDryRunPipe(displayCmdInfo, osInfo)
 		return nil
 	}
 
@@ -81,7 +86,7 @@ func (h *PipeHandler) ProcessPipeMode(input string) error {
 		return fmt.Errorf("failed to get AI suggestion for pipe input: %w", err)
 	}
 
-	displayer.DisplayPipeSuggestion(len(cmdInfo.PipeInput), suggestion)
+	displayer.DisplayPipeSuggestion(len(input), suggestion)
 	return nil
 }
 
@@ -104,7 +109,6 @@ func (h *PipeHandler) getAISuggestion(cmdInfo CommandInfo, osInfo system.OSInfo)
 		ExitCode:   fmt.Sprintf("%d", cmdInfo.ExitCode),
 		Output:     cmdInfo.Output,
 		WorkingDir: h.getCurrentWorkingDir(),
-		Duration:   "", // Not available in current shell.CommandInfo
 	}
 
 	apiSysInfo := api.SystemInfo{

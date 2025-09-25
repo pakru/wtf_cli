@@ -56,7 +56,7 @@ func TestPipeIntegrationEndToEnd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create the command to pipe input to wtf
 			cmd := exec.Command("bash", "-c", fmt.Sprintf("echo '%s' | %s", strings.ReplaceAll(tt.input, "'", "'\"'\"'"), binaryPath))
-			cmd.Env = append(os.Environ(), "WTF_DRY_RUN=true")
+			cmd.Env = append(os.Environ(), "WTF_DRY_RUN=true", "WTF_LOG_LEVEL=info")
 
 			// Execute the command
 			output, err := cmd.CombinedOutput()
@@ -122,7 +122,7 @@ func TestPipeVsNormalMode(t *testing.T) {
 	t.Run("pipe_mode", func(t *testing.T) {
 		// Test pipe mode
 		cmd := exec.Command("bash", "-c", fmt.Sprintf("echo 'test pipe input' | %s", binaryPath))
-		cmd.Env = append(os.Environ(), "WTF_DRY_RUN=true")
+		cmd.Env = append(os.Environ(), "WTF_DRY_RUN=true", "WTF_LOG_LEVEL=info")
 
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -141,7 +141,7 @@ func TestPipeVsNormalMode(t *testing.T) {
 	t.Run("normal_mode", func(t *testing.T) {
 		// Test normal mode (no pipe)
 		cmd := exec.Command(binaryPath)
-		cmd.Env = append(os.Environ(), "WTF_DRY_RUN=true")
+		cmd.Env = append(os.Environ(), "WTF_DRY_RUN=true", "WTF_LOG_LEVEL=info")
 
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -178,7 +178,7 @@ func TestPipeInputSizes(t *testing.T) {
 
 			// Test with pipe
 			cmd := exec.Command("bash", "-c", fmt.Sprintf("echo '%s' | %s", strings.ReplaceAll(input, "'", "'\"'\"'"), binaryPath))
-			cmd.Env = append(os.Environ(), "WTF_DRY_RUN=true")
+			cmd.Env = append(os.Environ(), "WTF_DRY_RUN=true", "WTF_LOG_LEVEL=info")
 
 			output, err := cmd.CombinedOutput()
 			if err != nil {
@@ -243,7 +243,7 @@ func TestPipeWithSpecialCharacters(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Use printf to handle special characters properly
 			cmd := exec.Command("bash", "-c", fmt.Sprintf("printf '%%s' '%s' | %s", strings.ReplaceAll(tt.input, "'", "'\"'\"'"), binaryPath))
-			cmd.Env = append(os.Environ(), "WTF_DRY_RUN=true")
+			cmd.Env = append(os.Environ(), "WTF_DRY_RUN=true", "WTF_LOG_LEVEL=info")
 
 			output, err := cmd.CombinedOutput()
 			if err != nil {

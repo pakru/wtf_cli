@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"wtf_cli/logger"
+	"wtf_cli/system"
 )
 
 func TestNewSuggestionDisplayer(t *testing.T) {
@@ -101,5 +102,14 @@ func TestDisplayDryRunPipe(t *testing.T) {
 	displayer := NewSuggestionDisplayer()
 
 	// Test pipe dry run
-	displayer.DisplayDryRunPipe(50, "test input data")
+	cmdInfo := CommandInfo{
+		Command:  "echo test",
+		Output:   "test input data",
+		ExitCode: 0,
+	}
+	osInfo := system.OSInfo{
+		Type:    "linux",
+		Version: "22.04",
+	}
+	displayer.DisplayDryRunPipe(cmdInfo, osInfo)
 }

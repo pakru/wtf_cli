@@ -86,15 +86,10 @@ func TestShellIntegrationFunctions(t *testing.T) {
 	if cmdInfo.ExitCode != 0 {
 		t.Errorf("Expected exit code 0, got %d", cmdInfo.ExitCode)
 	}
-	if cmdInfo.Output != "On branch main\nnothing to commit, working tree clean" {
-		t.Errorf("Expected specific output, got '%s'", cmdInfo.Output)
-	}
+	// Note: Output is no longer read from separate file since shell integration
+	// now only captures command and exit code information
 
-	// Test GetShellIntegrationSetupInstructions
-	instructions := GetShellIntegrationSetupInstructions()
-	if instructions == "" {
-		t.Error("Expected non-empty setup instructions")
-	}
+	// Note: GetShellIntegrationSetupInstructions was removed as it was unused
 }
 
 func TestEnvironmentVariableOverrides(t *testing.T) {
@@ -185,12 +180,6 @@ func TestGetLastCommandPriority(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	// Create output file
-	outputFile := filepath.Join(wtfDir, "last_output.txt")
-	if err := os.WriteFile(outputFile, []byte("shell integration output"), 0644); err != nil {
-		t.Fatalf("Failed to write output file: %v", err)
-	}
-
 	// GetLastCommand should prioritize shell integration over env vars
 	cmdInfo, err := GetLastCommand()
 	if err != nil {
@@ -203,9 +192,8 @@ func TestGetLastCommandPriority(t *testing.T) {
 	if cmdInfo.ExitCode != 0 {
 		t.Errorf("Expected shell integration exit code, got %d", cmdInfo.ExitCode)
 	}
-	if cmdInfo.Output != "shell integration output" {
-		t.Errorf("Expected shell integration output, got '%s'", cmdInfo.Output)
-	}
+	// Note: Output is no longer read from separate file since shell integration
+	// now only captures command and exit code information
 }
 
 func TestInvalidShellIntegrationData(t *testing.T) {

@@ -357,10 +357,8 @@ func TestGetCommandFromShellIntegration(t *testing.T) {
 			// Note: CommandInfo doesn't have PWD and Duration fields
 			// These would be part of extended shell integration data
 			
-			// Verify output was read
-			if !strings.Contains(cmd.Output, "test command output") {
-				t.Errorf("Expected output to contain test data, got: %q", cmd.Output)
-			}
+			// Note: Output is no longer read from separate file since shell integration
+			// now only captures command and exit code information
 		})
 	}
 }

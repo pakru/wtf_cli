@@ -6,57 +6,58 @@
 WTF_DATA_DIR="$HOME/.wtf"
 mkdir -p "$WTF_DATA_DIR"
 
-# Function to capture command info
-wtf_capture_command() {
-    local command="$1"
-    local start_time="$2"
-    local exit_code="${3:-$?}"
-    local end_time=$(date +%s.%N)
-    
-    # Skip if command is empty or is a wtf internal function/command
-    [[ -z "$command" || "$command" =~ ^wtf_ || "$command" =~ ^wtf$ || "$command" =~ ^\.\/wtf || "$command" =~ ^.*\/wtf$ ]] && return
-    
-    # Calculate duration (fallback if bc is not available)
-    local duration
-    if command -v bc >/dev/null 2>&1; then
-        duration=$(echo "$end_time - $start_time" | bc -l)
-        # Ensure duration has leading zero for JSON validity
-        [[ "$duration" =~ ^\. ]] && duration="0$duration"
-    else
-        duration="0.0"
-    fi
-    
-    # Create command info file
-    cat > "$WTF_DATA_DIR/last_command.json" << EOF
-{
-    "command": "$command",
-    "exit_code": $exit_code,
-    "start_time": "$start_time",
-    "end_time": "$end_time",
-    "duration": $duration,
-    "pwd": "$PWD",
-    "timestamp": "$(date -Iseconds)"
-}
-EOF
-
-}
-
 # Function to capture command before execution
 wtf_pre_command() {
-    # Only capture if this is a user command (not internal shell functions)
-    if [[ "$BASH_COMMAND" != wtf_* && "$BASH_COMMAND" != *wtf_* ]]; then
+    # Skip wtf internal functions and direct wtf calls
+    if [[ "$BASH_COMMAND" != wtf_* && "$BASH_COMMAND" != "wtf" && "$BASH_COMMAND" != "./wtf" && "$BASH_COMMAND" != */wtf ]]; then
         WTF_COMMAND_START=$(date +%s.%N)
         WTF_LAST_COMMAND="$BASH_COMMAND"
     fi
 }
 
-# Use PROMPT_COMMAND for reliable capture
+# Process captured commands
 wtf_prompt_command() {
     local exit_code=$?
-    # Only process if we have a captured command and it's not a wtf internal command
-    if [[ -n "$WTF_LAST_COMMAND" && "$WTF_LAST_COMMAND" != wtf_* && "$WTF_LAST_COMMAND" != *wtf_* ]]; then
-        wtf_capture_command "$WTF_LAST_COMMAND" "$WTF_COMMAND_START" "$exit_code"
-        # Clear the variables to prevent duplicate captures
+    
+    # Only process if we have a captured command
+    if [[ -n "$WTF_LAST_COMMAND" && "$WTF_LAST_COMMAND" != wtf_* ]]; then
+        # Skip direct wtf calls
+        if [[ "$WTF_LAST_COMMAND" == "wtf" || "$WTF_LAST_COMMAND" == "./wtf" || "$WTF_LAST_COMMAND" =~ ^.*/wtf$ ]]; then
+            # Clear variables and return
+            WTF_LAST_COMMAND=""
+            WTF_COMMAND_START=""
+            return
+        fi
+        
+        # Calculate duration
+        local end_time=$(date +%s.%N)
+        local duration
+        if command -v bc >/dev/null 2>&1; then
+            duration=$(echo "$end_time - $WTF_COMMAND_START" | bc -l)
+            [[ "$duration" =~ ^\. ]] && duration="0$duration"
+        else
+            duration="0.0"
+        fi
+        
+        # Escape strings for JSON
+        local escaped_command=$(echo "$WTF_LAST_COMMAND" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        local escaped_pipe_command=$(echo "$pipe_command" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        local escaped_pwd=$(echo "$PWD" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        
+        # Create JSON file
+        cat > "$WTF_DATA_DIR/last_command.json" << EOF
+{
+    "command": "$escaped_command",
+    "exit_code": $exit_code,
+    "start_time": "$WTF_COMMAND_START",
+    "end_time": "$end_time",
+    "duration": $duration,
+    "pwd": "$escaped_pwd",
+    "timestamp": "$(date -Iseconds)"
+}
+EOF
+        
+        # Clear variables
         WTF_LAST_COMMAND=""
         WTF_COMMAND_START=""
     fi

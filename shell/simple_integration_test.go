@@ -63,23 +63,6 @@ func TestShellIntegrationJSONReadWrite(t *testing.T) {
 	if !IsShellIntegrationActive() {
 		t.Error("Shell integration should be detected as active")
 	}
-	
-	// Test with output file
-	outputFile := filepath.Join(wtfDir, "last_output.txt")
-	testOutput := "test command output\nline 2"
-	if err := os.WriteFile(outputFile, []byte(testOutput), 0644); err != nil {
-		t.Fatalf("Failed to write output file: %v", err)
-	}
-	
-	// Read again to get output
-	cmd, err = getCommandFromShellIntegration()
-	if err != nil {
-		t.Fatalf("Failed to read shell integration data with output: %v", err)
-	}
-	
-	if cmd.Output != testOutput {
-		t.Errorf("Expected output %q, got %q", testOutput, cmd.Output)
-	}
 }
 
 // TestShellIntegrationInactive tests behavior when shell integration is not active
@@ -157,25 +140,8 @@ func TestGetLastCommandWithShellIntegration(t *testing.T) {
 	}
 }
 
-// TestShellIntegrationSetupInstructions tests the setup instructions function
-func TestShellIntegrationSetupInstructions(t *testing.T) {
-	instructions := GetShellIntegrationSetupInstructions()
-	
-	// Check that instructions contain key information
-	expectedPhrases := []string{
-		"shell integration",
-		"install_integration.sh",
-		"~/.bashrc",
-		"source",
-		"Real-time command capture",
-	}
-	
-	for _, phrase := range expectedPhrases {
-		if !contains(instructions, phrase) {
-			t.Errorf("Setup instructions should contain %q", phrase)
-		}
-	}
-}
+// Note: TestShellIntegrationSetupInstructions was removed because 
+// GetShellIntegrationSetupInstructions function was deleted as unused
 
 // Helper function to check if string contains substring (case-insensitive)
 func contains(s, substr string) bool {

@@ -60,8 +60,8 @@ func GetLastCommand() (CommandInfo, error) {
 		// Try to get the exit code from the current shell
 		cmd.ExitCode, err = GetLastExitCode()
 		if err != nil {
-			// If we can't get the exit code, try to infer it from the command
-			cmd.ExitCode = inferExitCodeFromCommand(cmd.Command)
+			// If we can't get the exit code, assume this command returned unknown (-1)
+			cmd.ExitCode = -1
 		}
 	}
 
@@ -73,24 +73,6 @@ func GetLastCommand() (CommandInfo, error) {
 	}
 
 	return cmd, nil
-}
-
-// inferExitCodeFromCommand tries to infer if a command likely failed based on its content
-func inferExitCodeFromCommand(command string) int {
-	// This is a simple heuristic - in a real implementation we'd need better shell integration
-	if strings.Contains(command, "ls /nonexistent") ||
-		strings.Contains(command, "cat /nonexistent") ||
-		strings.Contains(command, "cd /nonexistent") {
-		return 2 // Common exit code for "No such file or directory"
-	}
-
-	// Check for other common failure patterns
-	if strings.Contains(command, "permission denied") ||
-		strings.Contains(command, "sudo") {
-		return 1
-	}
-
-	return 0 // Default to success
 }
 
 // getLastCommandFromHistory retrieves the last command from bash history
@@ -204,14 +186,6 @@ func getCommandWithHistory() (string, error) {
 	return "", fmt.Errorf("history command failed")
 }
 
-// GetLastCommandOutput retrieves the output of the last executed command
-// In a real implementation, this would access the shell's stored output
-func GetLastCommandOutput() (string, error) {
-	// This is a placeholder. In a real implementation, we would retrieve
-	// the actual output from the shell environment.
-	return "[Output not available in this implementation]", nil
-}
-
 // GetLastExitCode retrieves the exit code of the last executed command
 func GetLastExitCode() (int, error) {
 	// Try to get the exit code from $? variable in bash
@@ -268,12 +242,6 @@ func getCommandFromShellIntegration() (CommandInfo, error) {
 		ExitCode: shellData.ExitCode,
 	}
 
-	// Try to read output file if it exists
-	outputFile := filepath.Join(homeDir, ".wtf", "last_output.txt")
-	if outputData, err := os.ReadFile(outputFile); err == nil {
-		cmd.Output = string(outputData)
-	}
-
 	return cmd, nil
 }
 
@@ -289,22 +257,24 @@ func IsShellIntegrationActive() bool {
 	return err == nil
 }
 
-// GetShellIntegrationSetupInstructions returns instructions for setting up shell integration
-func GetShellIntegrationSetupInstructions() string {
-	return `To enable shell integration for more accurate command capture:
+// GetPipeCommandInfo retrieves information about the original command when WTF is used in a pipe
+func GetPipeCommandInfo() (CommandInfo, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return CommandInfo{}, fmt.Errorf("failed to get home directory: %w", err)
+	}
 
-1. Run the installation script:
-   ./install_integration.sh
+	commandFile := filepath.Join(homeDir, ".wtf", "last_command.json")
+	data, err := os.ReadFile(commandFile)
+	if err != nil {
+		return CommandInfo{}, fmt.Errorf("failed to read command file: %w", err)
+	}
 
-2. Or manually add to your ~/.bashrc:
-   source ~/.wtf/integration.sh
+	var shellData ShellIntegrationData
+	if err := json.Unmarshal(data, &shellData); err != nil {
+		return CommandInfo{}, fmt.Errorf("failed to parse command JSON: %w", err)
+	}
 
-3. Restart your shell or run:
-   source ~/.bashrc
-
-Shell integration provides:
-- Real-time command capture
-- Accurate exit codes
-- Command timing information
-- Working directory context`
+	// Always return error since we no longer track pipe commands
+	return CommandInfo{}, fmt.Errorf("pipe command tracking disabled")
 }

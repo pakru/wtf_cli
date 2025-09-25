@@ -5,7 +5,15 @@ import (
 	"strings"
 
 	"wtf_cli/logger"
+	"wtf_cli/system"
 )
+
+// CommandInfo represents command information for display purposes
+type CommandInfo struct {
+	Command  string
+	Output   string
+	ExitCode int
+}
 
 // SuggestionDisplayer handles formatting and displaying AI suggestions
 type SuggestionDisplayer struct{}
@@ -17,31 +25,31 @@ func NewSuggestionDisplayer() *SuggestionDisplayer {
 
 // DisplayCommandSuggestion shows AI suggestion for a command with exit code
 func (d *SuggestionDisplayer) DisplayCommandSuggestion(command string, exitCode int, suggestion string) {
-	logger.Info("Displaying command suggestion", 
-		"command", command, 
+	logger.Info("Displaying command suggestion",
+		"command", command,
 		"exit_code", exitCode,
 		"suggestion_length", len(suggestion))
-	
+
 	headerText := fmt.Sprintf(" < Explanation of the command `%s`, exit code: %d >", command, exitCode)
 	d.displayWithBorder(headerText, suggestion)
 }
 
 // DisplayPipeSuggestion shows AI suggestion for piped input
 func (d *SuggestionDisplayer) DisplayPipeSuggestion(inputSize int, suggestion string) {
-	logger.Info("Displaying pipe suggestion", 
-		"input_size", inputSize, 
+	logger.Info("Displaying pipe suggestion",
+		"input_size", inputSize,
 		"suggestion_length", len(suggestion))
-	
+
 	headerText := fmt.Sprintf(" < Analysis of piped input (%d bytes) >", inputSize)
 	d.displayWithBorder(headerText, suggestion)
 }
 
 // DisplayDryRunCommand shows dry run information for command mode
 func (d *SuggestionDisplayer) DisplayDryRunCommand(command string, exitCode int) {
-	logger.Info("Displaying command dry run", 
-		"command", command, 
+	logger.Info("Displaying command dry run",
+		"command", command,
 		"exit_code", exitCode)
-	
+
 	fmt.Println("🧪 Dry Run Mode")
 	fmt.Println("═══════════════")
 	fmt.Println("No API calls will be made")
@@ -71,13 +79,15 @@ func (d *SuggestionDisplayer) DisplayDryRunCommand(command string, exitCode int)
 }
 
 // DisplayDryRunPipe shows dry run information for pipe mode
-func (d *SuggestionDisplayer) DisplayDryRunPipe(inputSize int, inputPreview string) {
-	logger.Info("Displaying pipe mode dry run", "input_size", inputSize)
-	
+func (d *SuggestionDisplayer) DisplayDryRunPipe(cmdInfo CommandInfo, osInfo system.OSInfo) {
+	logger.Info("Displaying pipe mode dry run", "input_size", len(cmdInfo.Output))
+
 	fmt.Println("🧪 Pipe Mode - Dry Run")
 	fmt.Println("═══════════════════════")
-	fmt.Printf("Input size: %d bytes\n", inputSize)
-	fmt.Printf("Input preview: %s\n", d.truncateString(inputPreview, 100))
+	fmt.Printf("Input size: %d bytes\n", len(cmdInfo.Output))
+	fmt.Printf("Input preview: %s\n", d.truncateString(cmdInfo.Output, 100))	
+	
+	fmt.Printf("OS: %s %s\n", osInfo.Type, osInfo.Version)
 	fmt.Println()
 	fmt.Println("💡 Mock Response:")
 	fmt.Println("   • Analyzing piped input")

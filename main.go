@@ -11,9 +11,7 @@ import (
 
 func main() {
 	// Initialize logger with default settings first
-	logger.InitLogger("info")
-
-	logger.Debug("wtf CLI utility - Go implementation started")
+	logger.InitLogger("error")
 
 	// Load configuration from ~/.wtf/config.json
 	configPath := config.GetConfigPath()
@@ -22,21 +20,21 @@ func main() {
 		logger.Error("Failed to load configuration", "error", err, "config_path", configPath)
 		os.Exit(1)
 	}
-	logger.Info("Configuration loaded", "config_path", configPath, "dry_run", cfg.DryRun, "log_level", cfg.LogLevel)
 
 	// Re-initialize logger with configuration settings
 	logger.InitLogger(cfg.LogLevel)
+	logger.Info("Configuration loaded", "config_path", configPath, "dry_run", cfg.DryRun, "log_level", cfg.LogLevel)
 
 	// Determine input mode and process accordingly
 	pipeHandler := shell.NewPipeHandler(cfg)
 	if pipeInput, err := pipeHandler.HandlePipeInput(); err == nil && pipeInput != "" {
-		logger.Info("Pipe mode detected", "input_length", len(pipeInput))
+		logger.Info("MODE: Pipe mode detected", "input_length", len(pipeInput))
 		if err := processPipeModeWithInput(pipeHandler, pipeInput); err != nil {
 			logger.Error("Failed to process pipe input", "error", err)
 			os.Exit(1)
 		}
 	} else {
-		logger.Debug("Command mode detected - processing last command")
+		logger.Info("MODE: Command mode detected - processing last command")
 		if err := processCommandMode(cfg); err != nil {
 			logger.Error("Failed to process command mode", "error", err)
 			os.Exit(1)
@@ -51,7 +49,6 @@ func processPipeModeWithInput(pipeHandler *shell.PipeHandler, pipeInput string) 
 
 // processCommandMode handles command-based processing
 func processCommandMode(cfg config.Config) error {
-	logger.Info("Processing command mode")
 	commandHandler := command.NewCommandHandler(cfg)
 	return commandHandler.ProcessCommandMode()
 }

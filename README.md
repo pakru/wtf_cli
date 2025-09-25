@@ -155,6 +155,16 @@ $ WTF_LAST_COMMAND="ls /nonexistent" WTF_LAST_EXIT_CODE="2" WTF_DRY_RUN=true wtf
 # Example 5: Testing successful commands
 $ WTF_LAST_COMMAND="git status" WTF_LAST_EXIT_CODE="0" WTF_DRY_RUN=true wtf
 # Simulates a successful command
+
+# Example 6: Pipe usage (with shell integration)
+$ ls /nonexistent | wtf
+# wtf analyzes both the command 'ls /nonexistent' and its error output
+
+# Example 7: Pipe usage with any command
+$ git status | wtf
+$ docker ps | wtf
+$ curl https://api.example.com | wtf
+# wtf can analyze output from any command when piped
 ```
 
 ### What wtf Analyzes

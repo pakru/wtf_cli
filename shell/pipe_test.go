@@ -1,6 +1,9 @@
 package shell
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"wtf_cli/config"
@@ -92,6 +95,108 @@ func TestNewPipeHandler(t *testing.T) {
 	}
 }
 
+// TestPipeCommandDetection tests the new pipe command detection functionality
+func TestPipeCommandDetection(t *testing.T) {
+	// Initialize logger for tests
+	logger.InitLogger("info")
+
+	cfg := config.Config{DryRun: true}
+	handler := NewPipeHandler(cfg)
+
+	tests := []struct {
+		name           string
+		input          string
+		setupShellData func(t *testing.T) func() // setup function that returns cleanup function
+		expectedCmd    string
+		expectPipeInfo bool
+		description    string
+	}{
+		{
+			name:  "pipe command tracking disabled - ls command",
+			input: "ls: cannot access '/nonexistent': No such file or directory",
+			setupShellData: func(t *testing.T) func() {
+				return createMockShellIntegration(t, ShellIntegrationData{
+					Command:  "ls /nonexistent | wtf",
+					ExitCode: 2,
+				})
+			},
+			expectedCmd:    "[N/A]",
+			expectPipeInfo: false,
+			description:    "Should show [N/A] since pipe tracking is disabled",
+		},
+		{
+			name:  "pipe command tracking disabled - git command",
+			input: "fatal: not a git repository",
+			setupShellData: func(t *testing.T) func() {
+				shellData := ShellIntegrationData{
+					Command:  "echo test | wtf",
+					ExitCode: 0,
+				}
+				return createMockShellIntegration(t, shellData)
+			},
+			expectedCmd:    "[N/A]",
+			expectPipeInfo: false,
+			description:    "Should show [N/A] since pipe tracking is disabled",
+		},
+		{
+			name:  "no pipe command info",
+			input: "some error message",
+			setupShellData: func(t *testing.T) func() {
+				return createMockShellIntegration(t, ShellIntegrationData{
+					Command:  "some other command",
+					ExitCode: 1,
+				})
+			},
+			expectedCmd:    "[N/A]",
+			expectPipeInfo: false,
+			description:    "Should show [N/A] when no pipe info available",
+		},
+		{
+			name:  "no shell integration file",
+			input: "error without shell integration",
+			setupShellData: func(t *testing.T) func() {
+				// Return cleanup function that does nothing
+				return func() {}
+			},
+			expectedCmd:    "[N/A]",
+			expectPipeInfo: false,
+			description:    "Should show [N/A] when no shell integration file exists",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup test environment
+			cleanup := tt.setupShellData(t)
+			defer cleanup()
+
+			t.Logf("Test case: %s", tt.description)
+			t.Logf("Input: %q", tt.input)
+			t.Logf("Expected command: %s", tt.expectedCmd)
+
+			// Test pipe mode processing
+			err := handler.ProcessPipeMode(tt.input)
+			if err != nil {
+				t.Errorf("ProcessPipeMode failed: %v", err)
+			}
+
+			// Test GetPipeCommandInfo directly
+			pipeCmd, err := GetPipeCommandInfo()
+			if tt.expectPipeInfo {
+				if err != nil {
+					t.Errorf("Expected pipe command info but got error: %v", err)
+				} else if pipeCmd.Command != tt.expectedCmd {
+					t.Errorf("Expected command %q, got %q", tt.expectedCmd, pipeCmd.Command)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("Expected no pipe command info but got: %+v", pipeCmd)
+				}
+			}
+		})
+	}
+}
+
 // TestPipeIntegrationEndToEnd tests the complete pipe flow
 func TestPipeIntegrationEndToEnd(t *testing.T) {
 	tests := []struct {
@@ -139,5 +244,59 @@ func TestPipeIntegrationEndToEnd(t *testing.T) {
 				t.Errorf("ProcessPipeMode failed: %v", err)
 			}
 		})
+	}
+}
+
+// createMockShellIntegration creates a mock shell integration file for testing
+// Returns a cleanup function that should be called to remove the test file
+func createMockShellIntegration(t *testing.T, data ShellIntegrationData) func() {
+	// Create a temporary directory for the test
+	tempDir := t.TempDir()
+	wtfDir := filepath.Join(tempDir, ".wtf")
+	
+	// Create the .wtf directory
+	err := os.MkdirAll(wtfDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create test .wtf directory: %v", err)
+	}
+	
+	// Fill in default values if not provided
+	if data.StartTime == "" {
+		data.StartTime = "1640995200.123"
+	}
+	if data.EndTime == "" {
+		data.EndTime = "1640995200.456"
+	}
+	if data.Duration == 0 {
+		data.Duration = 0.333
+	}
+	if data.PWD == "" {
+		data.PWD = "/home/user/test"
+	}
+	if data.Timestamp == "" {
+		data.Timestamp = "2024-01-01T12:00:00+00:00"
+	}
+	
+	// Create the command file
+	commandFile := filepath.Join(wtfDir, "last_command.json")
+	jsonData, err := json.MarshalIndent(data, "", "    ")
+	if err != nil {
+		t.Fatalf("Failed to marshal test data: %v", err)
+	}
+	
+	err = os.WriteFile(commandFile, jsonData, 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test command file: %v", err)
+	}
+	
+	// Store original HOME and set it to our temp directory
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tempDir)
+	
+	// Return cleanup function
+	return func() {
+		// Restore original HOME
+		os.Setenv("HOME", originalHome)
+		// Temp directory will be cleaned up automatically by t.TempDir()
 	}
 }
