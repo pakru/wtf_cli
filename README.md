@@ -129,6 +129,17 @@ export WTF_LAST_OUTPUT="error output here"    # Override command output
 
 ## Usage
 
+### Check Version
+
+```bash
+# Check installed version
+wtf --version
+wtf -v
+wtf version
+```
+
+### Basic Usage
+
 Simply run `wtf` after any command to get intelligent suggestions:
 
 ```bash

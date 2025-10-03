@@ -14,7 +14,7 @@ import (
 func TestNewClient(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	apiKey := "test-api-key"
 	client := NewClient(apiKey)
 
@@ -41,7 +41,7 @@ func TestNewClient(t *testing.T) {
 func TestClientChatCompletion_Success(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	// Mock successful response
 	mockResponse := Response{
 		ID:      "chatcmpl-test",
@@ -111,8 +111,8 @@ func TestClientChatCompletion_Success(t *testing.T) {
 		t.Errorf("Expected 1 choice, got %d", len(response.Choices))
 	}
 	if response.Choices[0].Message.Content != mockResponse.Choices[0].Message.Content {
-		t.Errorf("Expected content %s, got %s", 
-			mockResponse.Choices[0].Message.Content, 
+		t.Errorf("Expected content %s, got %s",
+			mockResponse.Choices[0].Message.Content,
 			response.Choices[0].Message.Content)
 	}
 }
@@ -120,7 +120,7 @@ func TestClientChatCompletion_Success(t *testing.T) {
 func TestClientChatCompletion_DefaultValues(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response := Response{
 			ID: "test",
@@ -157,7 +157,7 @@ func TestClientChatCompletion_DefaultValues(t *testing.T) {
 func TestClientChatCompletion_NetworkError(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	client := &Client{
 		APIKey:     "test-key",
 		BaseURL:    "http://nonexistent-server.local",

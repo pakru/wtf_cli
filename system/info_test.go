@@ -12,7 +12,7 @@ import (
 func TestGetOSInfo(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	info, err := GetOSInfo()
 	if err != nil {
 		t.Fatalf("Failed to get OS info: %v", err)
@@ -50,7 +50,7 @@ func TestGetOSInfo(t *testing.T) {
 func TestOSInfoValidation(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	tests := []struct {
 		name     string
 		osType   string
@@ -80,7 +80,7 @@ func TestOSInfoValidation(t *testing.T) {
 func TestOSInfoFields(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	info, err := GetOSInfo()
 	if err != nil {
 		t.Fatalf("Failed to get OS info: %v", err)
@@ -96,20 +96,20 @@ func TestOSInfoFields(t *testing.T) {
 			t.Error("Linux should have kernel information")
 		}
 		// Version might be empty for some distributions, so we don't require it
-		
+
 	case "darwin":
 		if info.Kernel == "" {
 			t.Error("macOS should have kernel information")
 		}
 		// Distribution and Version might be empty for macOS
-		
+
 	case "windows":
 		// Windows might not have all fields populated
 		// Just verify the type is correct
 		if info.Type != "windows" {
 			t.Error("Windows OS type should be 'windows'")
 		}
-		
+
 	default:
 		t.Errorf("Unexpected OS type: %s", info.Type)
 	}
@@ -132,7 +132,7 @@ func TestOSInfoFields(t *testing.T) {
 func TestGetOSInfoConsistency(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	// Call GetOSInfo multiple times and ensure consistent results
 	info1, err1 := GetOSInfo()
 	if err1 != nil {
@@ -162,7 +162,7 @@ func TestGetOSInfoConsistency(t *testing.T) {
 func TestOSInfoEnvironmentVariables(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	// Test that the function works even with modified environment
 	originalPath := os.Getenv("PATH")
 	defer os.Setenv("PATH", originalPath)

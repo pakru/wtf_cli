@@ -79,7 +79,6 @@ func TestPipeHandler_ProcessPipeMode(t *testing.T) {
 	}
 }
 
-
 func TestNewPipeHandler(t *testing.T) {
 	cfg := config.Config{
 		DryRun: true,
@@ -253,13 +252,13 @@ func createMockShellIntegration(t *testing.T, data ShellIntegrationData) func() 
 	// Create a temporary directory for the test
 	tempDir := t.TempDir()
 	wtfDir := filepath.Join(tempDir, ".wtf")
-	
+
 	// Create the .wtf directory
 	err := os.MkdirAll(wtfDir, 0755)
 	if err != nil {
 		t.Fatalf("Failed to create test .wtf directory: %v", err)
 	}
-	
+
 	// Fill in default values if not provided
 	if data.StartTime == "" {
 		data.StartTime = "1640995200.123"
@@ -276,23 +275,23 @@ func createMockShellIntegration(t *testing.T, data ShellIntegrationData) func() 
 	if data.Timestamp == "" {
 		data.Timestamp = "2024-01-01T12:00:00+00:00"
 	}
-	
+
 	// Create the command file
 	commandFile := filepath.Join(wtfDir, "last_command.json")
 	jsonData, err := json.MarshalIndent(data, "", "    ")
 	if err != nil {
 		t.Fatalf("Failed to marshal test data: %v", err)
 	}
-	
+
 	err = os.WriteFile(commandFile, jsonData, 0644)
 	if err != nil {
 		t.Fatalf("Failed to write test command file: %v", err)
 	}
-	
+
 	// Store original HOME and set it to our temp directory
 	originalHome := os.Getenv("HOME")
 	os.Setenv("HOME", tempDir)
-	
+
 	// Return cleanup function
 	return func() {
 		// Restore original HOME

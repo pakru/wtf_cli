@@ -1,13 +1,19 @@
-.PHONY: build test test-shell test-integration test-install test-coverage coverage-report coverage-html clean run install install-full uninstall fmt vet lint docker-build help
+.PHONY: build test test-shell test-integration test-install test-coverage coverage-report coverage-html clean run install install-full uninstall fmt vet lint docker-build test-version help
+
+# Version information
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "v0.0.0-dev")
+COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
 # Default target
 all: build
 
 # Build the binary
 build:
-	@echo "Building wtf CLI..."
+	@echo "Building wtf CLI $(VERSION)..."
 	@mkdir -p build
-	go build -o build/wtf .
+	go build -ldflags="$(LDFLAGS)" -o build/wtf .
 
 # Run tests
 test: build
@@ -32,6 +38,11 @@ test-install:
 # Run combined integration tests
 test-integration: test test-shell-e2e
 	@echo "All integration tests completed"
+
+# Test version functionality
+test-version: build
+	@echo "Testing version functionality..."
+	@bash test_version.sh
 
 # Run tests with coverage
 test-coverage:
@@ -66,8 +77,8 @@ run: build
 
 # Install the binary to GOPATH/bin
 install:
-	@echo "Installing wtf CLI..."
-	go install .
+	@echo "Installing wtf CLI $(VERSION)..."
+	go install -ldflags="$(LDFLAGS)" .
 
 # Full installation with shell integration
 install-full:
@@ -142,6 +153,7 @@ help:
 	@echo "  test-shell    - Run shell integration tests"
 	@echo "  test-integration - Run all tests (Go + Shell)"
 	@echo "  test-install  - Test the installation script"
+	@echo "  test-version  - Test version functionality"
 	@echo "  test-coverage - Run tests with coverage profile"
 	@echo "  coverage-report - Generate text coverage report"
 	@echo "  coverage-html - Generate HTML coverage report"

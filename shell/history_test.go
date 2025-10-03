@@ -12,7 +12,7 @@ import (
 func TestShellIntegrationFunctions(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "wtf-shell-test")
 	if err != nil {
@@ -134,7 +134,7 @@ func TestEnvironmentVariableOverrides(t *testing.T) {
 func TestGetLastCommandPriority(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "wtf-shell-priority-test")
 	if err != nil {
@@ -199,7 +199,7 @@ func TestGetLastCommandPriority(t *testing.T) {
 func TestInvalidShellIntegrationData(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "wtf-shell-invalid-test")
 	if err != nil {
@@ -221,7 +221,7 @@ func TestInvalidShellIntegrationData(t *testing.T) {
 	// Create invalid JSON file
 	integrationFile := filepath.Join(wtfDir, "last_command.json")
 	invalidJSON := `{"command": "test", "exit_code": "invalid"}`
-	
+
 	if err := os.WriteFile(integrationFile, []byte(invalidJSON), 0644); err != nil {
 		t.Fatalf("Failed to write invalid test file: %v", err)
 	}

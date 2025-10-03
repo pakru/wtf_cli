@@ -85,8 +85,8 @@ func (d *SuggestionDisplayer) DisplayDryRunPipe(cmdInfo CommandInfo, osInfo syst
 	fmt.Println("🧪 Pipe Mode - Dry Run")
 	fmt.Println("═══════════════════════")
 	fmt.Printf("Input size: %d bytes\n", len(cmdInfo.Output))
-	fmt.Printf("Input preview: %s\n", d.truncateString(cmdInfo.Output, 100))	
-	
+	fmt.Printf("Input preview: %s\n", d.truncateString(cmdInfo.Output, 100))
+
 	fmt.Printf("OS: %s %s\n", osInfo.Type, osInfo.Version)
 	fmt.Println()
 	fmt.Println("💡 Mock Response:")

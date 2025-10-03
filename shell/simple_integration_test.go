@@ -12,17 +12,17 @@ func TestShellIntegrationJSONReadWrite(t *testing.T) {
 	// Create temporary directory for test
 	tempDir := t.TempDir()
 	wtfDir := filepath.Join(tempDir, ".wtf")
-	
+
 	// Set up test environment
 	originalHome := os.Getenv("HOME")
 	defer os.Setenv("HOME", originalHome)
 	os.Setenv("HOME", tempDir)
-	
+
 	// Create .wtf directory
 	if err := os.MkdirAll(wtfDir, 0755); err != nil {
 		t.Fatalf("Failed to create wtf directory: %v", err)
 	}
-	
+
 	// Test data
 	testData := ShellIntegrationData{
 		Command:   "git status",
@@ -33,24 +33,24 @@ func TestShellIntegrationJSONReadWrite(t *testing.T) {
 		PWD:       "/home/user/project",
 		Timestamp: "2023-12-21T10:30:57-08:00",
 	}
-	
+
 	// Write test data to JSON file
 	commandFile := filepath.Join(wtfDir, "last_command.json")
 	data, err := json.Marshal(testData)
 	if err != nil {
 		t.Fatalf("Failed to marshal test data: %v", err)
 	}
-	
+
 	if err := os.WriteFile(commandFile, data, 0644); err != nil {
 		t.Fatalf("Failed to write command file: %v", err)
 	}
-	
+
 	// Test reading the data back
 	cmd, err := getCommandFromShellIntegration()
 	if err != nil {
 		t.Fatalf("Failed to read shell integration data: %v", err)
 	}
-	
+
 	// Verify the data
 	if cmd.Command != testData.Command {
 		t.Errorf("Expected command %q, got %q", testData.Command, cmd.Command)
@@ -58,7 +58,7 @@ func TestShellIntegrationJSONReadWrite(t *testing.T) {
 	if cmd.ExitCode != testData.ExitCode {
 		t.Errorf("Expected exit code %d, got %d", testData.ExitCode, cmd.ExitCode)
 	}
-	
+
 	// Test shell integration detection
 	if !IsShellIntegrationActive() {
 		t.Error("Shell integration should be detected as active")
@@ -69,17 +69,17 @@ func TestShellIntegrationJSONReadWrite(t *testing.T) {
 func TestShellIntegrationInactive(t *testing.T) {
 	// Create temporary directory for test
 	tempDir := t.TempDir()
-	
+
 	// Set up test environment
 	originalHome := os.Getenv("HOME")
 	defer os.Setenv("HOME", originalHome)
 	os.Setenv("HOME", tempDir)
-	
+
 	// Test when no .wtf directory exists
 	if IsShellIntegrationActive() {
 		t.Error("Shell integration should not be detected as active")
 	}
-	
+
 	// Test reading when no file exists
 	_, err := getCommandFromShellIntegration()
 	if err == nil {
@@ -92,17 +92,17 @@ func TestGetLastCommandWithShellIntegration(t *testing.T) {
 	// Create temporary directory for test
 	tempDir := t.TempDir()
 	wtfDir := filepath.Join(tempDir, ".wtf")
-	
+
 	// Set up test environment
 	originalHome := os.Getenv("HOME")
 	defer os.Setenv("HOME", originalHome)
 	os.Setenv("HOME", tempDir)
-	
+
 	// Create .wtf directory
 	if err := os.MkdirAll(wtfDir, 0755); err != nil {
 		t.Fatalf("Failed to create wtf directory: %v", err)
 	}
-	
+
 	// Test data
 	testData := ShellIntegrationData{
 		Command:   "make build",
@@ -113,24 +113,24 @@ func TestGetLastCommandWithShellIntegration(t *testing.T) {
 		PWD:       "/home/user/project",
 		Timestamp: "2023-12-21T10:30:57-08:00",
 	}
-	
+
 	// Write test data to JSON file
 	commandFile := filepath.Join(wtfDir, "last_command.json")
 	data, err := json.Marshal(testData)
 	if err != nil {
 		t.Fatalf("Failed to marshal test data: %v", err)
 	}
-	
+
 	if err := os.WriteFile(commandFile, data, 0644); err != nil {
 		t.Fatalf("Failed to write command file: %v", err)
 	}
-	
+
 	// Test that GetLastCommand uses shell integration data
 	cmd, err := GetLastCommand()
 	if err != nil {
 		t.Fatalf("GetLastCommand failed: %v", err)
 	}
-	
+
 	// Verify the data comes from shell integration
 	if cmd.Command != testData.Command {
 		t.Errorf("Expected command %q, got %q", testData.Command, cmd.Command)
@@ -140,17 +140,17 @@ func TestGetLastCommandWithShellIntegration(t *testing.T) {
 	}
 }
 
-// Note: TestShellIntegrationSetupInstructions was removed because 
+// Note: TestShellIntegrationSetupInstructions was removed because
 // GetShellIntegrationSetupInstructions function was deleted as unused
 
 // Helper function to check if string contains substring (case-insensitive)
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && 
-		   (s == substr || 
-		    len(s) > len(substr) && 
-		    (s[:len(substr)] == substr || 
-		     s[len(s)-len(substr):] == substr || 
-		     containsInMiddle(s, substr)))
+	return len(s) >= len(substr) &&
+		(s == substr ||
+			len(s) > len(substr) &&
+				(s[:len(substr)] == substr ||
+					s[len(s)-len(substr):] == substr ||
+					containsInMiddle(s, substr)))
 }
 
 func containsInMiddle(s, substr string) bool {

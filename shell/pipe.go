@@ -90,7 +90,6 @@ func (h *PipeHandler) ProcessPipeMode(input string) error {
 	return nil
 }
 
-
 // getAISuggestion gets an AI-powered suggestion for pipe input
 func (h *PipeHandler) getAISuggestion(cmdInfo CommandInfo, osInfo system.OSInfo) (string, error) {
 	logger.Debug("Creating API client")

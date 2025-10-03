@@ -54,9 +54,9 @@ func (c *Client) ChatCompletion(req Request) (*Response, error) {
 		req.MaxTokens = DefaultMaxTokens
 	}
 
-	logger.Debug("Preparing API request", 
-		"model", req.Model, 
-		"temperature", req.Temperature, 
+	logger.Debug("Preparing API request",
+		"model", req.Model,
+		"temperature", req.Temperature,
 		"max_tokens", req.MaxTokens,
 		"messages_count", len(req.Messages))
 
@@ -83,7 +83,7 @@ func (c *Client) ChatCompletion(req Request) (*Response, error) {
 		maskedKey = c.APIKey[:4] + "..." + c.APIKey[len(c.APIKey)-4:]
 	}
 
-	logger.Debug("Sending API request", 
+	logger.Debug("Sending API request",
 		"url", c.BaseURL+"/chat/completions",
 		"api_key", maskedKey,
 		"request_size", len(jsonData))
@@ -110,7 +110,7 @@ func (c *Client) ChatCompletion(req Request) (*Response, error) {
 	}
 	defer resp.Body.Close()
 
-	logger.Debug("Received API response", 
+	logger.Debug("Received API response",
 		"status_code", resp.StatusCode,
 		"content_type", resp.Header.Get("Content-Type"))
 
@@ -121,7 +121,7 @@ func (c *Client) ChatCompletion(req Request) (*Response, error) {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	logger.Debug("API response details", 
+	logger.Debug("API response details",
 		"response_size", len(body),
 		"status_code", resp.StatusCode)
 
@@ -142,7 +142,7 @@ func (c *Client) ChatCompletion(req Request) (*Response, error) {
 		if len(errorPreview) > 200 {
 			errorPreview = errorPreview[:200] + "..."
 		}
-		logger.Error("API returned error status", 
+		logger.Error("API returned error status",
 			"status_code", resp.StatusCode,
 			"response_preview", errorPreview)
 
@@ -171,7 +171,7 @@ func (c *Client) ChatCompletion(req Request) (*Response, error) {
 		}
 	}
 
-	logger.Debug("API request completed successfully", 
+	logger.Debug("API request completed successfully",
 		"response_id", apiResp.ID,
 		"model", apiResp.Model,
 		"choices_count", len(apiResp.Choices),

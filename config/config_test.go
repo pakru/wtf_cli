@@ -11,7 +11,7 @@ import (
 func TestLoadConfig(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "wtf-config-test")
 	if err != nil {
@@ -72,10 +72,10 @@ func TestValidate(t *testing.T) {
 	validCfg := Config{
 		LLMProvider: "openrouter",
 		OpenRouter: OpenRouterConfig{
-			APIKey:      "test-api-key",
-			Model:       "google/gemma-3-27b",
-			Temperature: 0.7,
-			MaxTokens:   1000,
+			APIKey:            "test-api-key",
+			Model:             "google/gemma-3-27b",
+			Temperature:       0.7,
+			MaxTokens:         1000,
 			APITimeoutSeconds: 30,
 		},
 	}
@@ -93,7 +93,7 @@ func TestValidate(t *testing.T) {
 func TestEnvironmentVariableOverrides(t *testing.T) {
 	// Initialize logger for tests
 	logger.InitLogger("error")
-	
+
 	// Set environment variables
 	os.Setenv("WTF_API_KEY", "env-api-key")
 	os.Setenv("WTF_MODEL", "env-model")
@@ -141,10 +141,10 @@ func TestConfigValidation(t *testing.T) {
 			config: Config{
 				LLMProvider: "openrouter",
 				OpenRouter: OpenRouterConfig{
-					APIKey:      "valid-key",
-					Model:       "google/gemma-3-27b",
-					Temperature: 0.7,
-					MaxTokens:   1000,
+					APIKey:            "valid-key",
+					Model:             "google/gemma-3-27b",
+					Temperature:       0.7,
+					MaxTokens:         1000,
 					APITimeoutSeconds: 30,
 				},
 			},
@@ -155,9 +155,9 @@ func TestConfigValidation(t *testing.T) {
 			config: Config{
 				LLMProvider: "openrouter",
 				OpenRouter: OpenRouterConfig{
-					Model:       "google/gemma-3-27b",
-					Temperature: 0.7,
-					MaxTokens:   1000,
+					Model:             "google/gemma-3-27b",
+					Temperature:       0.7,
+					MaxTokens:         1000,
 					APITimeoutSeconds: 30,
 				},
 			},
@@ -168,10 +168,10 @@ func TestConfigValidation(t *testing.T) {
 			config: Config{
 				LLMProvider: "openrouter",
 				OpenRouter: OpenRouterConfig{
-					APIKey:      "valid-key",
-					Model:       "google/gemma-3-27b",
-					Temperature: -0.1,
-					MaxTokens:   1000,
+					APIKey:            "valid-key",
+					Model:             "google/gemma-3-27b",
+					Temperature:       -0.1,
+					MaxTokens:         1000,
 					APITimeoutSeconds: 30,
 				},
 			},
@@ -182,10 +182,10 @@ func TestConfigValidation(t *testing.T) {
 			config: Config{
 				LLMProvider: "openrouter",
 				OpenRouter: OpenRouterConfig{
-					APIKey:      "valid-key",
-					Model:       "google/gemma-3-27b",
-					Temperature: 2.1,
-					MaxTokens:   1000,
+					APIKey:            "valid-key",
+					Model:             "google/gemma-3-27b",
+					Temperature:       2.1,
+					MaxTokens:         1000,
 					APITimeoutSeconds: 30,
 				},
 			},
@@ -196,10 +196,10 @@ func TestConfigValidation(t *testing.T) {
 			config: Config{
 				LLMProvider: "openrouter",
 				OpenRouter: OpenRouterConfig{
-					APIKey:      "valid-key",
-					Model:       "google/gemma-3-27b",
-					Temperature: 0.7,
-					MaxTokens:   -1,
+					APIKey:            "valid-key",
+					Model:             "google/gemma-3-27b",
+					Temperature:       0.7,
+					MaxTokens:         -1,
 					APITimeoutSeconds: 30,
 				},
 			},

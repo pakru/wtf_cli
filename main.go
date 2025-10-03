@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"wtf_cli/command"
@@ -10,6 +11,12 @@ import (
 )
 
 func main() {
+	// Check for version flag
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v" || os.Args[1] == "version") {
+		fmt.Println(VersionInfo())
+		os.Exit(0)
+	}
+
 	// Initialize logger with default settings first
 	logger.InitLogger("error")
 

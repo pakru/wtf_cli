@@ -22,11 +22,11 @@ type Config struct {
 
 // OpenRouterConfig holds the OpenRouter API configuration
 type OpenRouterConfig struct {
-	APIKey           string  `json:"api_key"`
-	Model            string  `json:"model"`
-	Temperature      float64 `json:"temperature"`
-	MaxTokens        int     `json:"max_tokens"`
-	APITimeoutSeconds int    `json:"api_timeout_seconds"`
+	APIKey            string  `json:"api_key"`
+	Model             string  `json:"model"`
+	Temperature       float64 `json:"temperature"`
+	MaxTokens         int     `json:"max_tokens"`
+	APITimeoutSeconds int     `json:"api_timeout_seconds"`
 }
 
 // DefaultConfig returns a configuration with default values
@@ -34,10 +34,10 @@ func DefaultConfig() Config {
 	return Config{
 		LLMProvider: "openrouter",
 		OpenRouter: OpenRouterConfig{
-			APIKey:           "",
-			Model:            "google/gemma-3-27b", // Default model
-			Temperature:      0.7,
-			MaxTokens:        1000,
+			APIKey:            "",
+			Model:             "google/gemma-3-27b", // Default model
+			Temperature:       0.7,
+			MaxTokens:         1000,
 			APITimeoutSeconds: 30,
 		},
 		DryRun:   false,
@@ -50,7 +50,7 @@ func DefaultConfig() Config {
 // Environment variables override config file values
 func LoadConfig(configPath string) (Config, error) {
 	logger.Debug("Loading configuration", "config_path", configPath)
-	
+
 	// Ensure the directory exists
 	configDir := filepath.Dir(configPath)
 	logger.Debug("Creating config directory if needed", "config_dir", configDir)
@@ -91,7 +91,7 @@ func LoadConfig(configPath string) (Config, error) {
 	logger.Debug("Applying environment variable overrides")
 	cfg = applyEnvironmentOverrides(cfg)
 
-	logger.Debug("Configuration loaded successfully", 
+	logger.Debug("Configuration loaded successfully",
 		"llm_provider", cfg.LLMProvider,
 		"model", cfg.OpenRouter.Model,
 		"dry_run", cfg.DryRun,
@@ -166,7 +166,7 @@ func applyEnvironmentOverrides(cfg Config) Config {
 // SaveConfig saves the configuration to the specified path
 func SaveConfig(configPath string, cfg Config) error {
 	logger.Debug("Saving configuration", "config_path", configPath)
-	
+
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		logger.Error("Failed to marshal config", "error", err)

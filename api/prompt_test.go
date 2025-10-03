@@ -11,7 +11,7 @@ func TestLoadSystemPrompt(t *testing.T) {
 	// Create a temporary system prompt file for testing
 	tempDir := t.TempDir()
 	systemPromptPath := filepath.Join(tempDir, "system_prompt.md")
-	
+
 	// Create test content
 	testContent := `# WTF CLI System Prompt
 
@@ -22,11 +22,11 @@ You are a command-line troubleshooting expert.
 
 ## FORMAT YOUR RESPONSE:
 1. Suggest next command to run`
-	
+
 	if err := os.WriteFile(systemPromptPath, []byte(testContent), 0644); err != nil {
 		t.Fatalf("Failed to create test system prompt file: %v", err)
 	}
-	
+
 	// Since we can't easily mock config.GetSystemPromptPath in this test,
 	// we'll test that the function signature is correct by calling it
 	// and checking that it returns an error when the file doesn't exist
@@ -314,7 +314,7 @@ func TestBuildPrompt_Structure(t *testing.T) {
 
 func TestBuildPrompt_LongOutput(t *testing.T) {
 	longOutput := strings.Repeat("Error line\n", 100)
-	
+
 	cmdInfo := CommandInfo{
 		Command:  "long-running-command",
 		ExitCode: "1",

@@ -76,8 +76,8 @@ func (h *CommandHandler) ProcessCommandMode() error {
 // processCommandWithInfo processes command information and provides suggestions
 // This is the core processing logic separated for testability
 func (h *CommandHandler) processCommandWithInfo(cmdInfo shell.CommandInfo, osInfo system.OSInfo) error {
-	logger.Debug("Processing command mode", 
-		"command", cmdInfo.Command, 
+	logger.Debug("Processing command mode",
+		"command", cmdInfo.Command,
 		"exit_code", cmdInfo.ExitCode,
 		"source", cmdInfo.Source)
 

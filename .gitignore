@@ -8,31 +8,31 @@
 # Test binary, built with `go test -c`
 *.test
 
-# Output of the go coverage tool, specifically when used with LiteIDE
+# Output of the go coverage tool
 *.out
 coverage.html
 
-# Dependency directories (remove if you use vendoring)
-vendor/
-
-# Go workspace file
-*.work
-
-# Environment variables file
-.env
-
-# Local configuration files (if any, beyond the main ~/.wtf/config.json)
-# config.local.yaml
-# config.local.json
-# config.local.toml
-
-# Project-specific binaries
-wtf
+# Build directory
 build/
 
-# IDE files
-.vscode/
+# Go workspace file
+go.work
+
+# IDE specific files
 .idea/
+.vscode/
+.windsurf/
 *.swp
+*.swo
 *~
+
+# OS specific files
 .DS_Store
+Thumbs.db
+
+# Configuration files (user-specific)
+config.json
+
+# Test artifacts
+test_output/
+*.log

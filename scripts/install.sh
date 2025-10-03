@@ -90,7 +90,10 @@ install_wtf_binary() {
     cp build/wtf "$HOME/.local/bin/"
     chmod +x "$HOME/.local/bin/wtf"
     
+    # Show version info
+    local version_info=$("$HOME/.local/bin/wtf" --version 2>/dev/null | head -n 1 || echo "wtf (version unknown)")
     print_success "Installed WTF CLI binary to ~/.local/bin/wtf"
+    print_info "Version: $version_info"
     
     # Check if ~/.local/bin is in PATH
     if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then

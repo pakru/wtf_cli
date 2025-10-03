@@ -13,15 +13,15 @@ import (
 func LoadSystemPrompt() (string, error) {
 	systemPromptPath := config.GetSystemPromptPath()
 	logger.Debug("Loading system prompt", "path", systemPromptPath)
-	
+
 	data, err := os.ReadFile(systemPromptPath)
 	if err != nil {
 		logger.Error("Failed to read system prompt file", "error", err, "path", systemPromptPath)
 		return "", fmt.Errorf("failed to read system prompt file: %w", err)
 	}
-	
+
 	content := string(data)
-	
+
 	logger.Debug("System prompt loaded successfully", "length", len(content))
 	return content, nil
 }
@@ -79,7 +79,7 @@ func BuildPrompt(cmdInfo CommandInfo, sysInfo SystemInfo) string {
 // CreateChatRequest builds a complete API request
 func CreateChatRequest(cmdInfo CommandInfo, sysInfo SystemInfo) (Request, error) {
 	userPrompt := BuildPrompt(cmdInfo, sysInfo)
-	
+
 	systemPrompt, err := LoadSystemPrompt()
 	if err != nil {
 		return Request{}, fmt.Errorf("failed to load system prompt: %w", err)
