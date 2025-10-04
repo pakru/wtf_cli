@@ -138,6 +138,65 @@ wtf -v
 wtf version
 ```
 
+### Version Management
+
+WTF CLI uses **Git tags** for version control. The version does NOT auto-increment on each build.
+
+#### How to Increment Version
+
+**1. Decide on version number** (follow [Semantic Versioning](https://semver.org/)):
+- **PATCH** (v1.0.0 → v1.0.1): Bug fixes
+- **MINOR** (v1.0.0 → v1.1.0): New features (backward compatible)
+- **MAJOR** (v1.0.0 → v2.0.0): Breaking changes
+
+**2. Create a release:**
+```bash
+# Commit all changes
+git add .
+git commit -m "Prepare release v1.1.0"
+
+# Create annotated tag
+git tag -a v1.1.0 -m "Release v1.1.0 - Added new features"
+
+# Build with new version
+make build
+
+# Verify version
+./build/wtf --version
+# Output: wtf version v1.1.0
+
+# Push tag (optional)
+git push origin v1.1.0
+```
+
+#### Common Scenarios
+
+**Bug Fix Release:**
+```bash
+git tag -a v1.0.1 -m "Bug fix release"
+make build
+```
+
+**New Feature Release:**
+```bash
+git tag -a v1.1.0 -m "New feature: Interactive mode"
+make build
+```
+
+**Breaking Change Release:**
+```bash
+git tag -a v2.0.0 -m "Major release with breaking changes"
+make build
+```
+
+**View all tags:**
+```bash
+git tag                    # List all tags
+git show v1.0.0           # Show tag details
+```
+
+See `doc/versioning.md` for complete versioning guide.
+
 ### Basic Usage
 
 Simply run `wtf` after any command to get intelligent suggestions:
