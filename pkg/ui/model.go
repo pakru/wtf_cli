@@ -57,8 +57,6 @@ func (m Model) Init() tea.Cmd {
 
 // Update handles messages and updates model state (Bubble Tea lifecycle method)
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
@@ -71,21 +69,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Handle viewport scrolling
-		switch msg.String() {
-		case "up":
-			m.viewport.ScrollUp()
-		case "down":
-			m.viewport.ScrollDown()
-		case "pgup":
-			m.viewport.PageUp()
-		case "pgdown":
-			m.viewport.PageDown()
+		// Use input handler to route keys to PTY
+		handled, cmd := m.inputHandler.HandleKey(msg)
+		if handled {
+			return m, cmd
 		}
 
-		// Pass to viewport for other handling
-		cmd = m.viewport.Update(msg)
-		return m, cmd
+		// If not handled by input handler, ignore
+		// (most keys should go to PTY)
+		return m, nil
 
 	case ptyOutputMsg:
 		// PTY sent output - append to viewport
