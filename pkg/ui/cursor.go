@@ -68,29 +68,31 @@ func (ct *CursorTracker) RenderCursorOverlay(content string, cursorChar string) 
 	lines := strings.Split(content, "\n")
 	
 	if ct.row < 0 || ct.row >= len(lines) {
-		// Cursor out of bounds, return as-is
-		return content
+		// Cursor out of bounds, show at end
+		return content + cursorChar
 	}
 	
 	line := lines[ct.row]
 	
-	if ct.col < 0 || ct.col > len(line) {
-		// Cursor out of bounds, return as-is
-		return content
+	if ct.col < 0 {
+		return content + cursorChar
 	}
 	
 	// Insert cursor character at position
-	if ct.col == len(line) {
-		// At end of line
+	if ct.col >= len(line) {
+		// At end of line - append cursor
 		lines[ct.row] = line + cursorChar
 	} else {
-		// In middle of line - replace character with highlighted version
+		// In middle of line - use inverse video to highlight character
 		runes := []rune(line)
 		if ct.col < len(runes) {
-			// Highlight the character under cursor
-			lines[ct.row] = string(runes[:ct.col]) + cursorChar + string(runes[ct.col+1:])
+			// Highlight character under cursor with inverse video
+			char := string(runes[ct.col])
+			highlighted := "\x1b[7m" + char + "\x1b[0m" // Inverse video
+			lines[ct.row] = string(runes[:ct.col]) + highlighted + string(runes[ct.col+1:])
 		}
 	}
 	
 	return strings.Join(lines, "\n")
 }
+
