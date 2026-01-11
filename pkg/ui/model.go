@@ -15,7 +15,7 @@ type Model struct {
 	ptyFile *os.File
 	
 	// Data
-	ptyOutput   []byte // Raw output from PTY
+	viewport    PTYViewport // Viewport for PTY output
 	buffer      *buffer.CircularBuffer
 	session     *capture.SessionContext
 	currentDir  string
@@ -34,10 +34,10 @@ type Model struct {
 func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.SessionContext) Model {
 	return Model{
 		ptyFile:    ptyFile,
+		viewport:   NewPTYViewport(),
 		buffer:     buf,
 		session:    sess,
 		currentDir: getCurrentDir(),
-		ptyOutput:  make([]byte, 0),
 	}
 }
 
@@ -50,21 +50,40 @@ func (m Model) Init() tea.Cmd {
 
 // Update handles messages and updates model state (Bubble Tea lifecycle method)
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	
 	switch msg := msg.(type) {
 	
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
+		
+		// Update viewport size (leave room for status bar)
+		m.viewport.SetSize(msg.Width, msg.Height-1)
 		return m, nil
 		
 	case tea.KeyMsg:
-		// Handle input (will be implemented in Task 4.4)
-		return m, nil
+		// Handle viewport scrolling
+		switch msg.String() {
+		case "up":
+			m.viewport.ScrollUp()
+		case "down":
+			m.viewport.ScrollDown()
+		case "pgup":
+			m.viewport.PageUp()
+		case "pgdown":
+			m.viewport.PageDown()
+		}
+		
+		// Pass to viewport for other handling
+		cmd = m.viewport.Update(msg)
+		return m, cmd
 		
 	case ptyOutputMsg:
-		// PTY sent output - append to buffer
-		m.ptyOutput = append(m.ptyOutput, msg.data...)
+		// PTY sent output - append to viewport
+		m.viewport.AppendOutput(msg.data)
+		
 		// Schedule next read
 		return m, listenToPTY(m.ptyFile)
 		
@@ -82,9 +101,9 @@ func (m Model) View() string {
 		return "Initializing..."
 	}
 	
-	// For now, just return raw PTY output
-	// Will be enhanced with proper layout in Task 4.5
-	return string(m.ptyOutput)
+	// For now, just return viewport
+	// Will add status bar in Task 4.3
+	return m.viewport.View()
 }
 
 // Helper functions
