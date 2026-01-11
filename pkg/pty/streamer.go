@@ -1,7 +1,6 @@
 package pty
 
 import (
-	"bufio"
 	"io"
 	"os"
 
@@ -27,6 +26,27 @@ func SpawnShellWithBuffer(bufferSize int) (*BufferedWrapper, error) {
 	}, nil
 }
 
+// lineWriter writes complete lines to the buffer
+type lineWriter struct {
+	buffer      *buffer.CircularBuffer
+	currentLine []byte
+}
+
+func (lw *lineWriter) Write(p []byte) (n int, err error) {
+	for _, b := range p {
+		if b == '\n' {
+			// Complete line - write to buffer
+			if len(lw.currentLine) > 0 {
+				lw.buffer.Write(append([]byte(nil), lw.currentLine...))
+				lw.currentLine = lw.currentLine[:0]
+			}
+		} else {
+			lw.currentLine = append(lw.currentLine, b)
+		}
+	}
+	return len(p), nil
+}
+
 // ProxyIOWithBuffer handles bidirectional I/O and captures output to buffer
 func (bw *BufferedWrapper) ProxyIOWithBuffer() error {
 	// Copy stdin to PTY (unchanged)
@@ -34,24 +54,16 @@ func (bw *BufferedWrapper) ProxyIOWithBuffer() error {
 		io.Copy(bw.ptmx, os.Stdin)
 	}()
 
-	// Copy PTY to stdout AND buffer
-	// Use a scanner to split output into lines for buffer
-	scanner := bufio.NewScanner(bw.ptmx)
+	// Create a line writer that buffers output
+	lw := &lineWriter{buffer: bw.buffer}
 	
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		
-		// Write to buffer (in goroutine to avoid blocking)
-		lineCopy := make([]byte, len(line))
-		copy(lineCopy, line)
-		go bw.buffer.Write(lineCopy)
-		
-		// Write to stdout (with newline that scanner consumed)
-		os.Stdout.Write(line)
-		os.Stdout.Write([]byte("\n"))
-	}
+	// Tee PTY output to both stdout AND line writer (for buffer)
+	tee := io.TeeReader(bw.ptmx, lw)
+	
+	// Copy to stdout - this provides real-time output
+	io.Copy(os.Stdout, tee)
 
-	return scanner.Err()
+	return nil
 }
 
 // GetBuffer returns the circular buffer for reading captured output
