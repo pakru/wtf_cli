@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"os/signal"
-	"syscall"
 
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/config"
 	"wtf_cli/pkg/pty"
+	"wtf_cli/pkg/ui"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func main() {
@@ -19,16 +19,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
 		os.Exit(1)
 	}
-
-	// Set up terminal raw mode
-	terminal, err := pty.MakeRaw()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error setting raw mode: %v\n", err)
-		os.Exit(1)
-	}
-	
-	// Ensure terminal is restored on any exit path
-	defer terminal.Restore()
 
 	// Spawn the shell in a PTY with buffer
 	wrapper, err := pty.SpawnShellWithBuffer(cfg.BufferSize)
@@ -41,39 +31,19 @@ func main() {
 	// Initialize session context
 	session := capture.NewSessionContext()
 
-	// Display welcome message
-	fmt.Print("\r\n\033[1;36m╔══════════════════════════════════════════════════════╗\033[0m\r\n")
-	fmt.Print("\033[1;36m║\033[0m  \033[1;37mWTF CLI\033[0m - AI-Powered Terminal Assistant       \033[1;36m║\033[0m\r\n")
-	fmt.Print("\033[1;36m║\033[0m  Type \033[1;33m/wtf\033[0m for AI help • Press \033[1;33mCtrl+D\033[0m to exit   \033[1;36m║\033[0m\r\n")
-	fmt.Print("\033[1;36m╚══════════════════════════════════════════════════════╝\033[0m\r\n\r\n")
+	// Create Bubble Tea model
+	model := ui.NewModel(wrapper.GetPTY(), wrapper.GetBuffer(), session)
 
-	// Handle terminal resize signals
-	wrapper.HandleResize()
+	// Create Bubble Tea program
+	p := tea.NewProgram(
+		model,
+		tea.WithAltScreen(),       // Use alternate screen buffer
+		tea.WithMouseCellMotion(), // Enable mouse support
+	)
 
-	// Set up signal handlers for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	
-	go func() {
-		<-sigChan
-		os.Exit(0)
-	}()
-
-	// Proxy I/O between PTY and stdin/stdout with buffering
-	if err := wrapper.ProxyIOWithBuffer(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error proxying I/O: %v\n", err)
+	// Run the program
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
 		os.Exit(1)
 	}
-
-	// Wait for shell to exit
-	if err := wrapper.Wait(); err != nil {
-		// Exit with the same code as the shell
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
-		}
-		os.Exit(1)
-	}
-	
-	// Use session context (prevents unused warning)
-	_ = session
 }

@@ -68,3 +68,8 @@ func (w *Wrapper) Close() error {
 	}
 	return nil
 }
+
+// GetPTY returns the PTY file for direct access
+func (w *Wrapper) GetPTY() *os.File {
+	return w.ptmx
+}

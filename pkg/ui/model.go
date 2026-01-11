@@ -66,6 +66,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update viewport size (leave room for status bar = 1 line)
 		m.viewport.SetSize(msg.Width, msg.Height-1)
+		
+		// Synchronize PTY size with terminal size
+		if m.ptyFile != nil {
+			ResizePTY(m.ptyFile, msg.Width, msg.Height-1)
+		}
+		
 		return m, nil
 
 	case tea.KeyMsg:
