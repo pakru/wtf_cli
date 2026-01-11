@@ -7,6 +7,7 @@ import (
 	"wtf_cli/pkg/capture"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Model represents the Bubble Tea application state
@@ -15,7 +16,8 @@ type Model struct {
 	ptyFile *os.File
 	
 	// Data
-	viewport    PTYViewport // Viewport for PTY output
+	viewport    PTYViewport      // Viewport for PTY output
+	statusBar   *StatusBarView  // Status bar at bottom
 	buffer      *buffer.CircularBuffer
 	session     *capture.SessionContext
 	currentDir  string
@@ -35,6 +37,7 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 	return Model{
 		ptyFile:    ptyFile,
 		viewport:   NewPTYViewport(),
+		statusBar:  NewStatusBarView(),
 		buffer:     buf,
 		session:    sess,
 		currentDir: getCurrentDir(),
@@ -59,7 +62,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 		
-		// Update viewport size (leave room for status bar)
+		// Update viewport size (leave room for status bar = 1 line)
 		m.viewport.SetSize(msg.Width, msg.Height-1)
 		return m, nil
 		
@@ -101,9 +104,16 @@ func (m Model) View() string {
 		return "Initializing..."
 	}
 	
-	// For now, just return viewport
-	// Will add status bar in Task 4.3
-	return m.viewport.View()
+	// Update status bar width and directory
+	m.statusBar.SetWidth(m.width)
+	m.statusBar.SetDirectory(m.currentDir)
+	
+	// Combine viewport (top) and status bar (bottom)
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		m.viewport.View(),
+		m.statusBar.Render(),
+	)
 }
 
 // Helper functions
