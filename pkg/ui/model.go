@@ -14,19 +14,22 @@ import (
 type Model struct {
 	// PTY connection
 	ptyFile *os.File
-	
+
+	// UI Components
+	viewport     PTYViewport    // Viewport for PTY output
+	statusBar    *StatusBarView // Status bar at bottom
+	inputHandler *InputHandler  // Input routing to PTY
+
 	// Data
-	viewport    PTYViewport      // Viewport for PTY output
-	statusBar   *StatusBarView  // Status bar at bottom
-	buffer      *buffer.CircularBuffer
-	session     *capture.SessionContext
-	currentDir  string
-	
+	buffer     *buffer.CircularBuffer
+	session    *capture.SessionContext
+	currentDir string
+
 	// UI state
-	width       int
-	height      int
-	ready       bool
-	
+	width  int
+	height int
+	ready  bool
+
 	// Features (will be added in later tasks)
 	showCommandPalette bool
 	commandInput       string
@@ -35,12 +38,13 @@ type Model struct {
 // NewModel creates a new Bubble Tea model
 func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.SessionContext) Model {
 	return Model{
-		ptyFile:    ptyFile,
-		viewport:   NewPTYViewport(),
-		statusBar:  NewStatusBarView(),
-		buffer:     buf,
-		session:    sess,
-		currentDir: getCurrentDir(),
+		ptyFile:      ptyFile,
+		viewport:     NewPTYViewport(),
+		statusBar:    NewStatusBarView(),
+		inputHandler: NewInputHandler(ptyFile),
+		buffer:       buf,
+		session:      sess,
+		currentDir:   getCurrentDir(),
 	}
 }
 
@@ -54,18 +58,18 @@ func (m Model) Init() tea.Cmd {
 // Update handles messages and updates model state (Bubble Tea lifecycle method)
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	
+
 	switch msg := msg.(type) {
-	
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
-		
+
 		// Update viewport size (leave room for status bar = 1 line)
 		m.viewport.SetSize(msg.Width, msg.Height-1)
 		return m, nil
-		
+
 	case tea.KeyMsg:
 		// Handle viewport scrolling
 		switch msg.String() {
@@ -78,23 +82,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "pgdown":
 			m.viewport.PageDown()
 		}
-		
+
 		// Pass to viewport for other handling
 		cmd = m.viewport.Update(msg)
 		return m, cmd
-		
+
 	case ptyOutputMsg:
 		// PTY sent output - append to viewport
 		m.viewport.AppendOutput(msg.data)
-		
+
 		// Schedule next read
 		return m, listenToPTY(m.ptyFile)
-		
+
 	case ptyErrorMsg:
 		// PTY error - probably shell exited
 		return m, tea.Quit
 	}
-	
+
 	return m, nil
 }
 
@@ -103,11 +107,11 @@ func (m Model) View() string {
 	if !m.ready {
 		return "Initializing..."
 	}
-	
+
 	// Update status bar width and directory
 	m.statusBar.SetWidth(m.width)
 	m.statusBar.SetDirectory(m.currentDir)
-	
+
 	// Combine viewport (top) and status bar (bottom)
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
