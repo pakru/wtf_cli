@@ -10,16 +10,18 @@ import (
 
 // PTYViewport wraps Bubble Tea's viewport for displaying PTY output
 type PTYViewport struct {
-	viewport viewport.Model
-	content  string
-	ready    bool
+	viewport      viewport.Model
+	content       string
+	cursorTracker *CursorTracker
+	ready         bool
 }
 
 // NewPTYViewport creates a new PTY viewport
 func NewPTYViewport() PTYViewport {
 	return PTYViewport{
-		viewport: viewport.New(0, 0),
-		content:  "",
+		viewport:      viewport.New(0, 0),
+		content:       "",
+		cursorTracker: NewCursorTracker(),
 	}
 }
 
@@ -33,7 +35,13 @@ func (v *PTYViewport) SetSize(width, height int) {
 // AppendOutput adds new output to the viewport
 func (v *PTYViewport) AppendOutput(data []byte) {
 	v.content += string(data)
-	v.viewport.SetContent(v.content)
+	
+	// Track cursor position from ANSI codes
+	v.cursorTracker.UpdateFromOutput(data)
+	
+	// Set content with cursor overlay
+	contentWithCursor := v.cursorTracker.RenderCursorOverlay(v.content, "█")
+	v.viewport.SetContent(contentWithCursor)
 	
 	// Auto-scroll to bottom when new content arrives
 	v.viewport.GotoBottom()
