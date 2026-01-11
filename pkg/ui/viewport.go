@@ -47,6 +47,14 @@ func (v *PTYViewport) AppendOutput(data []byte) {
 
 	// Auto-scroll to bottom when new content arrives
 	v.viewport.GotoBottom()
+
+	// Parse directory from prompt output
+	v.dirParser.ParseFromOutput(data)
+}
+
+// GetCurrentDirectory returns the parsed directory from shell prompts
+func (v *PTYViewport) GetCurrentDirectory() string {
+	return v.dirParser.GetDirectory()
 }
 
 // GetContent returns the current viewport content
