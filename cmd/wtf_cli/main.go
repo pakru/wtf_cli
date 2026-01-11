@@ -17,6 +17,9 @@ func main() {
 	}
 	defer wrapper.Close()
 
+	// Handle terminal resize signals
+	wrapper.HandleResize()
+
 	// Proxy I/O between PTY and stdin/stdout
 	if err := wrapper.ProxyIO(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error proxying I/O: %v\n", err)

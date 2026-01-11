@@ -2,4 +2,8 @@ module wtf_cli
 
 go 1.25.5
 
-require github.com/creack/pty v1.1.24 // indirect
+require (
+	github.com/creack/pty v1.1.24 // indirect
+	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/term v0.39.0 // indirect
+)
