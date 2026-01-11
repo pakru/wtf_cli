@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	"wtf_cli/pkg/buffer"
@@ -59,18 +60,26 @@ func TestModel_Update_WindowSize(t *testing.T) {
 	if !updated.ready {
 		t.Error("Expected ready to be true after window size")
 	}
+	
+	// Viewport should be sized (height - 1 for status bar)
+	if updated.viewport.viewport.Height != 23 {
+		t.Errorf("Expected viewport height 23, got %d", updated.viewport.viewport.Height)
+	}
 }
 
 func TestModel_Update_PTYOutput(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext())
+	m.ready = true
+	m.viewport.SetSize(80, 24)
 	
 	testData := []byte("test output")
 	newModel, _ := m.Update(ptyOutputMsg{data: testData})
 	
 	updated := newModel.(Model)
 	
-	if string(updated.ptyOutput) != "test output" {
-		t.Errorf("Expected 'test output', got %q", string(updated.ptyOutput))
+	content := updated.viewport.GetContent()
+	if content != "test output" {
+		t.Errorf("Expected 'test output', got %q", content)
 	}
 }
 
@@ -86,10 +95,12 @@ func TestModel_View_NotReady(t *testing.T) {
 func TestModel_View_Ready(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext())
 	m.ready = true
-	m.ptyOutput = []byte("hello world")
+	m.viewport.SetSize(80, 24)
+	m.viewport.AppendOutput([]byte("hello world"))
 	
 	view := m.View()
-	if view != "hello world" {
-		t.Errorf("Expected 'hello world', got %q", view)
+	// viewport.View() wraps content, just check it contains our text
+	if !strings.Contains(view, "hello world") {
+		t.Errorf("Expected view to contain 'hello world', got %q", view)
 	}
 }
