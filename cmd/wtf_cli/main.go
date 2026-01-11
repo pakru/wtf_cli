@@ -29,6 +29,12 @@ func main() {
 	}
 	defer wrapper.Close()
 
+	// Display welcome message
+	fmt.Print("\r\n\033[1;36m╔══════════════════════════════════════════════════════╗\033[0m\r\n")
+	fmt.Print("\033[1;36m║\033[0m  \033[1;37mWTF CLI\033[0m - AI-Powered Terminal Assistant       \033[1;36m║\033[0m\r\n")
+	fmt.Print("\033[1;36m║\033[0m  Type \033[1;33m/wtf\033[0m for AI help • Press \033[1;33mCtrl+D\033[0m to exit   \033[1;36m║\033[0m\r\n")
+	fmt.Print("\033[1;36m╚══════════════════════════════════════════════════════╝\033[0m\r\n\r\n")
+
 	// Handle terminal resize signals
 	wrapper.HandleResize()
 
