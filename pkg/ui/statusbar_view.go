@@ -48,20 +48,28 @@ func (s *StatusBarView) Render() string {
 		content = fmt.Sprintf("[wtf_cli] %s | Press / for commands", s.currentDir)
 	}
 
-	// Truncate if too long
+	// Truncate if too long (use plain string length for truncation)
 	maxWidth := s.width - 4
+	if maxWidth < 10 {
+		maxWidth = 10
+	}
+	
 	if len(content) > maxWidth {
 		content = content[:maxWidth-3] + "..."
 	}
 
-	// Pad to full width
-	padding := s.width - lipgloss.Width(content)
-	if padding > 0 {
-		content = content + strings.Repeat(" ", padding)
+	// Style first, then pad to fill width
+	styled := statusStyle.Render(content)
+	
+	// Calculate how much padding we need
+	// Use len(content) not lipgloss.Width(styled) which includes ANSI codes
+	contentWidth := len(content)
+	if contentWidth < s.width {
+		padding := s.width - contentWidth
+		styled += strings.Repeat(" ", padding)
 	}
 
-	// Apply beautiful styling with Lipgloss
-	return statusStyle.Render(content)
+	return styled
 }
 
 // getCurrentWorkingDir gets the current directory with ~ substitution
