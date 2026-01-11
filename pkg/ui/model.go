@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"time"
 
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
@@ -52,8 +53,18 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		listenToPTY(m.ptyFile), // Start listening to PTY output
+		tickDirectory(),         // Start directory update ticker
 	)
 }
+
+// tickDirectory creates a command that periodically updates directory
+func tickDirectory() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return directoryUpdateMsg{}
+	})
+}
+
+type directoryUpdateMsg struct{}
 
 // Update handles messages and updates model state (Bubble Tea lifecycle method)
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -95,6 +106,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ptyErrorMsg:
 		// PTY error - probably shell exited
 		return m, tea.Quit
+		
+	case directoryUpdateMsg:
+		// Update current directory
+		if dir, err := os.Getwd(); err == nil {
+			m.currentDir = dir
+		}
+		// Schedule next update
+		return m, tickDirectory()
 	}
 
 	return m, nil
