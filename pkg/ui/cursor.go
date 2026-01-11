@@ -40,21 +40,51 @@ func (ct *CursorTracker) UpdateFromOutput(data []byte) {
 		}
 	}
 	
-	// Track cursor movements
-	// CSI n A - Cursor Up
-	// CSI n B - Cursor Down
-	// CSI n C - Cursor Forward
-	// CSI n D - Cursor Back
+	// Parse cursor movement codes
+	// ESC[nC - Cursor Forward
+	cursorForwardRegex := regexp.MustCompile(`\x1b\[(\d+)C`)
+	if matches := cursorForwardRegex.FindStringSubmatch(content); len(matches) > 1 {
+		var n int
+		fmt.Sscanf(matches[1], "%d", &n)
+		ct.col += n
+	}
 	
-	// Carriage return
+	// ESC[nD - Cursor Back
+	cursorBackRegex := regexp.MustCompile(`\x1b\[(\d+)D`)
+	if matches := cursorBackRegex.FindStringSubmatch(content); len(matches) > 1 {
+		var n int
+		fmt.Sscanf(matches[1], "%d", &n)
+		ct.col -= n
+		if ct.col < 0 {
+			ct.col = 0
+		}
+	}
+	
+	// Track printable characters (rough estimate)
+	for _, ch := range content {
+		if ch >= 32 && ch < 127 && ch != '\r' && ch != '\n' {
+			// Printable character - advance cursor
+			ct.col++
+		}
+	}
+	
+	// Carriage return - go to start of line
 	if strings.Contains(content, "\r") {
 		ct.col = 0
 	}
 	
-	// Newline
+	// Newline - move to next line
 	if strings.Contains(content, "\n") {
 		ct.row++
-		// Don't reset col on \n without \r
+		// Keep column position unless there's also a \r
+	}
+	
+	// Backspace
+	if strings.Contains(content, "\x7f") || strings.Contains(content, "\b") {
+		ct.col--
+		if ct.col < 0 {
+			ct.col = 0
+		}
 	}
 }
 
