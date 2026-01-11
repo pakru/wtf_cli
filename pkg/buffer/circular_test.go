@@ -214,3 +214,65 @@ func BenchmarkGetLastN(b *testing.B) {
 		_ = cb.GetLastN(1000)
 	}
 }
+
+func TestExportAsText(t *testing.T) {
+	cb := New(10)
+	
+	cb.Write([]byte("line1"))
+	cb.Write([]byte("line2"))
+	cb.Write([]byte("line3"))
+	
+	text := cb.ExportAsText()
+	expected := "line1\nline2\nline3"
+	
+	if text != expected {
+		t.Errorf("Expected %q, got %q", expected, text)
+	}
+}
+
+func TestExportAsText_Empty(t *testing.T) {
+	cb := New(10)
+	
+	text := cb.ExportAsText()
+	if text != "" {
+		t.Errorf("Expected empty string, got %q", text)
+	}
+}
+
+func TestExportLastNAsText(t *testing.T) {
+	cb := New(10)
+	
+	for i := 1; i <= 5; i++ {
+		cb.Write([]byte{byte('0' + i)})
+	}
+	
+	text := cb.ExportLastNAsText(3)
+	expected := "3\n4\n5"
+	
+	if text != expected {
+		t.Errorf("Expected %q, got %q", expected, text)
+	}
+}
+
+func TestExportWithANSI(t *testing.T) {
+	cb := New(10)
+	
+	cb.Write([]byte("\033[1;31mRed\033[0m"))
+	cb.Write([]byte("\033[1;32mGreen\033[0m"))
+	
+	text := cb.ExportAsText()
+	
+	// Should preserve ANSI codes
+	if !contains_str(text, "\033[1;31m") {
+		t.Error("ANSI codes not preserved in export")
+	}
+}
+
+func contains_str(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

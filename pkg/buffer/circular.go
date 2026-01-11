@@ -101,3 +101,56 @@ func (cb *CircularBuffer) Clear() {
 	cb.size = 0
 	cb.head = 0
 }
+
+// ExportAsText returns all buffer contents as a single string
+// with lines separated by newlines
+func (cb *CircularBuffer) ExportAsText() string {
+	lines := cb.GetAll()
+	
+	if len(lines) == 0 {
+		return ""
+	}
+
+	// Calculate total size
+	totalSize := 0
+	for _, line := range lines {
+		totalSize += len(line) + 1 // +1 for newline
+	}
+
+	// Build string efficiently
+	result := make([]byte, 0, totalSize)
+	for i, line := range lines {
+		result = append(result, line...)
+		if i < len(lines)-1 {
+			result = append(result, '\n')
+		}
+	}
+
+	return string(result)
+}
+
+// ExportLastNAsText returns the last N lines as a single string
+func (cb *CircularBuffer) ExportLastNAsText(n int) string {
+	lines := cb.GetLastN(n)
+	
+	if len(lines) == 0 {
+		return ""
+	}
+
+	// Calculate total size
+	totalSize := 0
+	for _, line := range lines {
+		totalSize += len(line) + 1
+	}
+
+	// Build string
+	result := make([]byte, 0, totalSize)
+	for i, line := range lines {
+		result = append(result, line...)
+		if i < len(lines)-1 {
+			result = append(result, '\n')
+		}
+	}
+
+	return string(result)
+}
