@@ -52,6 +52,11 @@ func (ih *InputHandler) HandleKey(msg tea.KeyMsg) (handled bool, cmd tea.Cmd) {
 		ih.ptyWriter.Write([]byte{127}) // ASCII DEL
 		return true, nil
 		
+	case tea.KeySpace:
+		// Space - send to PTY
+		ih.ptyWriter.Write([]byte{32}) // ASCII SPACE
+		return true, nil
+		
 	case tea.KeyEsc:
 		// Escape - send to PTY
 		ih.ptyWriter.Write([]byte{27}) // ASCII ESC
