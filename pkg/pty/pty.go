@@ -62,7 +62,9 @@ func (w *Wrapper) Wait() error {
 // Close cleans up the PTY resources
 func (w *Wrapper) Close() error {
 	if w.ptmx != nil {
-		return w.ptmx.Close()
+		err := w.ptmx.Close()
+		w.ptmx = nil // Prevent double close
+		return err
 	}
 	return nil
 }
