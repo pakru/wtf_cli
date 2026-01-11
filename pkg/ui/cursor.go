@@ -83,13 +83,11 @@ func (ct *CursorTracker) RenderCursorOverlay(content string, cursorChar string) 
 		// At end of line - append cursor
 		lines[ct.row] = line + cursorChar
 	} else {
-		// In middle of line - use inverse video to highlight character
+		// In middle of line - insert cursor before the character
 		runes := []rune(line)
 		if ct.col < len(runes) {
-			// Highlight character under cursor with inverse video
-			char := string(runes[ct.col])
-			highlighted := "\x1b[7m" + char + "\x1b[0m" // Inverse video
-			lines[ct.row] = string(runes[:ct.col]) + highlighted + string(runes[ct.col+1:])
+			// Insert visible cursor character at position
+			lines[ct.row] = string(runes[:ct.col]) + cursorChar + string(runes[ct.col:])
 		}
 	}
 	
