@@ -108,10 +108,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 		
 	case directoryUpdateMsg:
-		// Update current directory
-		if dir, err := os.Getwd(); err == nil {
-			m.currentDir = dir
-		}
+		// Update current directory from viewport's parser
+		m.currentDir = m.viewport.GetCurrentDirectory()
 		// Schedule next update
 		return m, tickDirectory()
 	}

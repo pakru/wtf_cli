@@ -13,6 +13,7 @@ type PTYViewport struct {
 	viewport      viewport.Model
 	content       string
 	cursorTracker *CursorTracker
+	dirParser     *DirectoryParser
 	ready         bool
 }
 
@@ -22,6 +23,7 @@ func NewPTYViewport() PTYViewport {
 		viewport:      viewport.New(0, 0),
 		content:       "",
 		cursorTracker: NewCursorTracker(),
+		dirParser:     NewDirectoryParser(),
 	}
 }
 
@@ -35,14 +37,14 @@ func (v *PTYViewport) SetSize(width, height int) {
 // AppendOutput adds new output to the viewport
 func (v *PTYViewport) AppendOutput(data []byte) {
 	v.content += string(data)
-	
+
 	// Track cursor position from ANSI codes
 	v.cursorTracker.UpdateFromOutput(data)
-	
+
 	// Set content with cursor overlay
 	contentWithCursor := v.cursorTracker.RenderCursorOverlay(v.content, "█")
 	v.viewport.SetContent(contentWithCursor)
-	
+
 	// Auto-scroll to bottom when new content arrives
 	v.viewport.GotoBottom()
 }
@@ -70,7 +72,7 @@ func (v *PTYViewport) View() string {
 	if !v.ready {
 		return "Loading..."
 	}
-	
+
 	return v.viewport.View()
 }
 
@@ -107,14 +109,14 @@ func (v *PTYViewport) Stats() (totalLines, visibleLines, scrollPercent int) {
 	lines := strings.Split(v.content, "\n")
 	totalLines = len(lines)
 	visibleLines = v.viewport.Height
-	
+
 	// Calculate scroll percentage
 	if totalLines <= visibleLines {
 		scrollPercent = 100
 	} else {
 		scrollPercent = int(v.viewport.ScrollPercent() * 100)
 	}
-	
+
 	return
 }
 
