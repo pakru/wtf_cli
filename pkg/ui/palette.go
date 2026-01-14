@@ -206,19 +206,8 @@ func (p *CommandPalette) View() string {
 	content.WriteString("\n")
 	content.WriteString(descStyle.Render("↑↓ Navigate • Enter Select • Esc Cancel"))
 
-	// Center the box
-	box := boxStyle.Render(content.String())
-
-	// Calculate centering
-	if p.width > 0 {
-		boxWidth := lipgloss.Width(box)
-		leftPad := (p.width - boxWidth) / 2
-		if leftPad > 0 {
-			box = strings.Repeat(" ", leftPad) + box
-		}
-	}
-
-	return box
+	// Render the box (centering handled by model.overlayCenter)
+	return boxStyle.Render(content.String())
 }
 
 // GetSelectedCommand returns the currently selected command name
