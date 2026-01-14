@@ -31,8 +31,8 @@ func main() {
 	// Initialize session context
 	session := capture.NewSessionContext()
 
-	// Create Bubble Tea model
-	model := ui.NewModel(wrapper.GetPTY(), wrapper.GetBuffer(), session)
+	// Create Bubble Tea model with shell's cwd function
+	model := ui.NewModel(wrapper.GetPTY(), wrapper.GetBuffer(), session, wrapper.GetCwd)
 
 	// Create Bubble Tea program
 	p := tea.NewProgram(

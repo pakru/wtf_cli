@@ -14,7 +14,7 @@ func TestNewModel(t *testing.T) {
 	buf := buffer.New(100)
 	sess := capture.NewSessionContext()
 	
-	m := NewModel(nil, buf, sess)
+	m := NewModel(nil, buf, sess, nil)
 	
 	if m.buffer == nil {
 		t.Error("Expected buffer to be set")
@@ -30,7 +30,7 @@ func TestNewModel(t *testing.T) {
 }
 
 func TestModel_Init(t *testing.T) {
-	m := NewModel(nil, buffer.New(100), capture.NewSessionContext())
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	
 	cmd := m.Init()
 	if cmd == nil {
@@ -39,7 +39,7 @@ func TestModel_Init(t *testing.T) {
 }
 
 func TestModel_Update_WindowSize(t *testing.T) {
-	m := NewModel(nil, buffer.New(100), capture.NewSessionContext())
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	
 	// Send window size message (using actual Bubble Tea type)
 	newModel, _ := m.Update(tea.WindowSizeMsg{
@@ -68,7 +68,7 @@ func TestModel_Update_WindowSize(t *testing.T) {
 }
 
 func TestModel_Update_PTYOutput(t *testing.T) {
-	m := NewModel(nil, buffer.New(100), capture.NewSessionContext())
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	m.ready = true
 	m.viewport.SetSize(80, 24)
 	
@@ -84,7 +84,7 @@ func TestModel_Update_PTYOutput(t *testing.T) {
 }
 
 func TestModel_View_NotReady(t *testing.T) {
-	m := NewModel(nil, buffer.New(100), capture.NewSessionContext())
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	
 	view := m.View()
 	if view != "Initializing..." {
@@ -93,7 +93,7 @@ func TestModel_View_NotReady(t *testing.T) {
 }
 
 func TestModel_View_Ready(t *testing.T) {
-	m := NewModel(nil, buffer.New(100), capture.NewSessionContext())
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	m.ready = true
 	m.viewport.SetSize(80, 24)
 	m.viewport.AppendOutput([]byte("hello world"))

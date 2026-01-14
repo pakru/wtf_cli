@@ -15,6 +15,7 @@ import (
 type Model struct {
 	// PTY connection
 	ptyFile *os.File
+	cwdFunc func() (string, error) // Function to get shell's cwd
 
 	// UI Components
 	viewport     PTYViewport    // Viewport for PTY output
@@ -37,15 +38,24 @@ type Model struct {
 }
 
 // NewModel creates a new Bubble Tea model
-func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.SessionContext) Model {
+func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.SessionContext, cwdFunc func() (string, error)) Model {
+	initialDir := getCurrentDir()
+	// Try to get initial dir from cwd function
+	if cwdFunc != nil {
+		if cwd, err := cwdFunc(); err == nil {
+			initialDir = cwd
+		}
+	}
+	
 	return Model{
 		ptyFile:      ptyFile,
+		cwdFunc:      cwdFunc,
 		viewport:     NewPTYViewport(),
 		statusBar:    NewStatusBarView(),
 		inputHandler: NewInputHandler(ptyFile),
 		buffer:       buf,
 		session:      sess,
-		currentDir:   getCurrentDir(),
+		currentDir:   initialDir,
 	}
 }
 
@@ -108,10 +118,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 		
 	case directoryUpdateMsg:
-		// Update current directory from viewport's parser
-		// Only update if parser actually found a directory
-		if parsedDir := m.viewport.GetCurrentDirectory(); parsedDir != "" {
-			m.currentDir = parsedDir
+		// Update current directory from /proc/<pid>/cwd
+		if m.cwdFunc != nil {
+			if cwd, err := m.cwdFunc(); err == nil {
+				m.currentDir = cwd
+			}
 		}
 		// Schedule next update
 		return m, tickDirectory()
