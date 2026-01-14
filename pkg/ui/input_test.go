@@ -177,22 +177,63 @@ func TestInputHandler_SendToPTY(t *testing.T) {
 	}
 }
 
-func TestInputHandler_HandleKey_Slash(t *testing.T) {
+func TestInputHandler_HandleKey_SlashAtLineStart(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)
 	
+	// At line start (initial state), / should trigger palette
 	msg := tea.KeyMsg{
 		Type:  tea.KeyRunes,
 		Runes: []rune{'/'},
 	}
-	handled, _ := ih.HandleKey(msg)
+	handled, cmd := ih.HandleKey(msg)
 	
 	if !handled {
-		t.Error("Expected / to be handled")
+		t.Error("Expected / at line start to be handled")
 	}
 	
-	// For now, should send to PTY (Phase 5 will intercept)
+	// Should NOT send to PTY (triggers palette instead)
+	if buf.Len() != 0 {
+		t.Errorf("Expected empty buffer (palette triggered), got %q", buf.String())
+	}
+
+	// Should return a command (to show palette)
+	if cmd == nil {
+		t.Error("Expected command to show palette")
+	}
+}
+
+func TestInputHandler_HandleKey_SlashMidLine(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+	
+	// Type something first to not be at line start
+	typingMsg := tea.KeyMsg{
+		Type:  tea.KeyRunes,
+		Runes: []rune{'e', 'c', 'h', 'o', ' '},
+	}
+	ih.HandleKey(typingMsg)
+	buf.Reset() // Clear the typed chars
+	
+	// Now / should be sent to PTY (not at line start)
+	slashMsg := tea.KeyMsg{
+		Type:  tea.KeyRunes,
+		Runes: []rune{'/'},
+	}
+	handled, cmd := ih.HandleKey(slashMsg)
+	
+	if !handled {
+		t.Error("Expected / mid-line to be handled")
+	}
+	
+	// Should send to PTY
 	if buf.String() != "/" {
 		t.Errorf("Expected '/', got %q", buf.String())
 	}
+
+	// Should NOT return palette command
+	if cmd != nil {
+		t.Error("Should not trigger palette when / is mid-line")
+	}
 }
+

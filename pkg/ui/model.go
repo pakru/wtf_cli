@@ -6,6 +6,7 @@ import (
 
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
+	"wtf_cli/pkg/commands"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -18,9 +19,14 @@ type Model struct {
 	cwdFunc func() (string, error) // Function to get shell's cwd
 
 	// UI Components
-	viewport     PTYViewport    // Viewport for PTY output
-	statusBar    *StatusBarView // Status bar at bottom
-	inputHandler *InputHandler  // Input routing to PTY
+	viewport     PTYViewport     // Viewport for PTY output
+	statusBar    *StatusBarView  // Status bar at bottom
+	inputHandler *InputHandler   // Input routing to PTY
+	palette      *CommandPalette // Command palette overlay
+	resultPanel  *ResultPanel    // Result panel overlay
+
+	// Command system
+	dispatcher *commands.Dispatcher
 
 	// Data
 	buffer     *buffer.CircularBuffer
@@ -31,10 +37,6 @@ type Model struct {
 	width  int
 	height int
 	ready  bool
-
-	// Features (will be added in later tasks)
-	showCommandPalette bool
-	commandInput       string
 }
 
 // NewModel creates a new Bubble Tea model
@@ -57,6 +59,9 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		viewport:     viewport,
 		statusBar:    NewStatusBarView(),
 		inputHandler: NewInputHandler(ptyFile),
+		palette:      NewCommandPalette(),
+		resultPanel:  NewResultPanel(),
+		dispatcher:   commands.NewDispatcher(),
 		buffer:       buf,
 		session:      sess,
 		currentDir:   initialDir,
@@ -92,6 +97,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update viewport size (leave room for status bar = 1 line)
 		m.viewport.SetSize(msg.Width, msg.Height-1)
 
+		// Update palette and result panel sizes
+		m.palette.SetSize(msg.Width, msg.Height)
+		m.resultPanel.SetSize(msg.Width, msg.Height)
+
 		// Synchronize PTY size with terminal size
 		if m.ptyFile != nil {
 			ResizePTY(m.ptyFile, msg.Width, msg.Height-1)
@@ -100,6 +109,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// If result panel is visible, handle its keys first
+		if m.resultPanel.IsVisible() {
+			cmd := m.resultPanel.Update(msg)
+			return m, cmd
+		}
+
+		// If palette is visible, handle its keys first
+		if m.palette.IsVisible() {
+			cmd := m.palette.Update(msg)
+			return m, cmd
+		}
 
 		// Use input handler to route keys to PTY
 		handled, cmd := m.inputHandler.HandleKey(msg)
@@ -108,7 +128,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// If not handled by input handler, ignore
-		// (most keys should go to PTY)
+		return m, nil
+
+	case showPaletteMsg:
+		// Show the command palette
+		m.palette.Show()
+		m.inputHandler.SetPaletteMode(true)
+		return m, nil
+
+	case paletteSelectMsg:
+		// Command selected from palette
+		m.inputHandler.SetPaletteMode(false)
+
+		// Execute the command
+		ctx := commands.NewContext(m.buffer, m.session, m.currentDir)
+		result := m.dispatcher.Dispatch(msg.command, ctx)
+
+		// Show result in panel
+		m.resultPanel.Show(result.Title, result.Content)
+		return m, nil
+
+	case paletteCancelMsg:
+		// Palette cancelled
+		m.inputHandler.SetPaletteMode(false)
+		return m, nil
+
+	case resultPanelCloseMsg:
+		// Result panel closed
 		return m, nil
 
 	case ptyOutputMsg:
@@ -146,12 +192,43 @@ func (m Model) View() string {
 	m.statusBar.SetWidth(m.width)
 	m.statusBar.SetDirectory(m.currentDir)
 
-	// Combine viewport (top) and status bar (bottom)
-	return lipgloss.JoinVertical(
+	// Base view: viewport + status bar
+	baseView := lipgloss.JoinVertical(
 		lipgloss.Left,
 		m.viewport.View(),
 		m.statusBar.Render(),
 	)
+
+	// Overlay result panel if visible
+	if m.resultPanel.IsVisible() {
+		return m.overlayPanel(baseView, m.resultPanel.View())
+	}
+
+	// Overlay command palette if visible
+	if m.palette.IsVisible() {
+		return m.overlayPanel(baseView, m.palette.View())
+	}
+
+	return baseView
+}
+
+// overlayPanel overlays a panel on top of the base view
+func (m Model) overlayPanel(base, panel string) string {
+	// For now, just show the panel centered with the base dimmed behind
+	// Simple approach: just return the panel centered vertically
+	panelHeight := lipgloss.Height(panel)
+	topPad := (m.height - panelHeight) / 2
+	if topPad < 0 {
+		topPad = 0
+	}
+
+	var result string
+	for i := 0; i < topPad; i++ {
+		result += "\n"
+	}
+	result += panel
+
+	return result
 }
 
 // Helper functions
