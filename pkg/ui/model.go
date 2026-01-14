@@ -109,7 +109,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		
 	case directoryUpdateMsg:
 		// Update current directory from viewport's parser
-		m.currentDir = m.viewport.GetCurrentDirectory()
+		// Only update if parser actually found a directory
+		if parsedDir := m.viewport.GetCurrentDirectory(); parsedDir != "" {
+			m.currentDir = parsedDir
+		}
 		// Schedule next update
 		return m, tickDirectory()
 	}

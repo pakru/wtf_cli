@@ -8,12 +8,14 @@ import (
 // DirectoryParser extracts the current directory from shell prompts
 type DirectoryParser struct {
 	lastDir string
+	parsed  bool // true if we've actually parsed a directory
 }
 
 // NewDirectoryParser creates a new directory parser
 func NewDirectoryParser() *DirectoryParser {
 	return &DirectoryParser{
-		lastDir: "~",
+		lastDir: "",
+		parsed:  false,
 	}
 }
 
@@ -30,6 +32,7 @@ func (dp *DirectoryParser) ParseFromOutput(data []byte) {
 	matches := promptRegex.FindStringSubmatch(content)
 	if len(matches) > 1 {
 		dp.lastDir = matches[1]
+		dp.parsed = true
 		return
 	}
 	
@@ -38,6 +41,7 @@ func (dp *DirectoryParser) ParseFromOutput(data []byte) {
 	matches = pwdRegex.FindStringSubmatch(content)
 	if len(matches) > 1 {
 		dp.lastDir = matches[1]
+		dp.parsed = true
 		// Replace home with ~
 		if strings.HasPrefix(dp.lastDir, "/home/"+getUsername()) {
 			dp.lastDir = strings.Replace(dp.lastDir, "/home/"+getUsername(), "~", 1)
@@ -46,10 +50,10 @@ func (dp *DirectoryParser) ParseFromOutput(data []byte) {
 	}
 }
 
-// GetDirectory returns the last parsed directory
+// GetDirectory returns the last parsed directory, or empty if not parsed
 func (dp *DirectoryParser) GetDirectory() string {
-	if dp.lastDir == "" {
-		return "~"
+	if !dp.parsed {
+		return "" // Return empty if nothing parsed yet
 	}
 	return dp.lastDir
 }
