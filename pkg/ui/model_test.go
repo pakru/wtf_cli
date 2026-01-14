@@ -78,8 +78,8 @@ func TestModel_Update_PTYOutput(t *testing.T) {
 	updated := newModel.(Model)
 	
 	content := updated.viewport.GetContent()
-	if content != "test output" {
-		t.Errorf("Expected 'test output', got %q", content)
+	if !strings.Contains(content, "test output") {
+		t.Errorf("Expected content to contain 'test output', got %q", content)
 	}
 }
 

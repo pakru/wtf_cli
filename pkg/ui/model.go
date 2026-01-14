@@ -18,10 +18,9 @@ type Model struct {
 	cwdFunc func() (string, error) // Function to get shell's cwd
 
 	// UI Components
-	viewport      PTYViewport    // Viewport for PTY output
-	statusBar     *StatusBarView // Status bar at bottom
-	inputHandler  *InputHandler  // Input routing to PTY
-	welcomeBanner *WelcomeBanner // Welcome message at top
+	viewport     PTYViewport    // Viewport for PTY output
+	statusBar    *StatusBarView // Status bar at bottom
+	inputHandler *InputHandler  // Input routing to PTY
 
 	// Data
 	buffer     *buffer.CircularBuffer
@@ -48,16 +47,19 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		}
 	}
 
+	// Create viewport and add welcome message at the start
+	viewport := NewPTYViewport()
+	viewport.AppendOutput([]byte(WelcomeMessage()))
+
 	return Model{
-		ptyFile:       ptyFile,
-		cwdFunc:       cwdFunc,
-		viewport:      NewPTYViewport(),
-		statusBar:     NewStatusBarView(),
-		inputHandler:  NewInputHandler(ptyFile),
-		welcomeBanner: NewWelcomeBanner(),
-		buffer:        buf,
-		session:       sess,
-		currentDir:    initialDir,
+		ptyFile:      ptyFile,
+		cwdFunc:      cwdFunc,
+		viewport:     viewport,
+		statusBar:    NewStatusBarView(),
+		inputHandler: NewInputHandler(ptyFile),
+		buffer:       buf,
+		session:      sess,
+		currentDir:   initialDir,
 	}
 }
 
@@ -98,10 +100,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Hide welcome banner on first keypress
-		if m.welcomeBanner.IsVisible() {
-			m.welcomeBanner.Hide()
-		}
 
 		// Use input handler to route keys to PTY
 		handled, cmd := m.inputHandler.HandleKey(msg)
@@ -148,21 +146,12 @@ func (m Model) View() string {
 	m.statusBar.SetWidth(m.width)
 	m.statusBar.SetDirectory(m.currentDir)
 
-	// Build the view with optional welcome banner
-	var sections []string
-
-	// Add welcome banner at top if visible
-	if m.welcomeBanner.IsVisible() {
-		sections = append(sections, m.welcomeBanner.View())
-	}
-
-	// Add viewport (main content)
-	sections = append(sections, m.viewport.View())
-
-	// Add status bar at bottom
-	sections = append(sections, m.statusBar.Render())
-
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	// Combine viewport (top) and status bar (bottom)
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		m.viewport.View(),
+		m.statusBar.Render(),
+	)
 }
 
 // Helper functions
