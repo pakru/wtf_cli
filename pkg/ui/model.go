@@ -46,8 +46,8 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 			initialDir = cwd
 		}
 	}
-	
-	return Model{
+
+	m := Model{
 		ptyFile:      ptyFile,
 		cwdFunc:      cwdFunc,
 		viewport:     NewPTYViewport(),
@@ -57,15 +57,30 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		session:      sess,
 		currentDir:   initialDir,
 	}
+
+	// Set welcome message
+	m.statusBar.SetMessage("Welcome to wtf_cli! Press / for commands, Ctrl+D to exit")
+
+	return m
 }
 
 // Init initializes the model (Bubble Tea lifecycle method)
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		listenToPTY(m.ptyFile), // Start listening to PTY output
-		tickDirectory(),         // Start directory update ticker
+		tickDirectory(),        // Start directory update ticker
+		clearWelcomeMessage(),  // Clear welcome message after delay
 	)
 }
+
+// clearWelcomeMessage returns a command that clears the welcome message after 5 seconds
+func clearWelcomeMessage() tea.Cmd {
+	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+		return clearMessageMsg{}
+	})
+}
+
+type clearMessageMsg struct{}
 
 // tickDirectory creates a command that periodically updates directory
 func tickDirectory() tea.Cmd {
@@ -87,12 +102,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update viewport size (leave room for status bar = 1 line)
 		m.viewport.SetSize(msg.Width, msg.Height-1)
-		
+
 		// Synchronize PTY size with terminal size
 		if m.ptyFile != nil {
 			ResizePTY(m.ptyFile, msg.Width, msg.Height-1)
 		}
-		
+
 		return m, nil
 
 	case tea.KeyMsg:
@@ -116,7 +131,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ptyErrorMsg:
 		// PTY error - probably shell exited
 		return m, tea.Quit
-		
+
 	case directoryUpdateMsg:
 		// Update current directory from /proc/<pid>/cwd
 		if m.cwdFunc != nil {
@@ -126,6 +141,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Schedule next update
 		return m, tickDirectory()
+
+	case clearMessageMsg:
+		// Clear the welcome message
+		m.statusBar.SetMessage("")
+		return m, nil
 	}
 
 	return m, nil
