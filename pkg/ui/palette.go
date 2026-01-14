@@ -145,12 +145,18 @@ func (p *CommandPalette) View() string {
 		return ""
 	}
 
-	// Styles
+	// Use full terminal width
+	boxWidth := p.width - 2 // Leave room for border
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
+
+	// Styles - full width bar
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("141")).
-		Padding(0, 1).
-		Width(50)
+		Padding(0, 2).
+		Width(boxWidth)
 
 	titleStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("141")).

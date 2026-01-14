@@ -213,7 +213,7 @@ func (m Model) View() string {
 	return baseView
 }
 
-// overlayCenter places a panel centered over the base view
+// overlayCenter places a panel centered vertically over the base view
 func (m Model) overlayCenter(base, panel string) string {
 	baseLines := strings.Split(base, "\n")
 	panelLines := strings.Split(panel, "\n")
@@ -223,19 +223,6 @@ func (m Model) overlayCenter(base, panel string) string {
 	startRow := (m.height - panelHeight) / 2
 	if startRow < 0 {
 		startRow = 0
-	}
-
-	// Calculate horizontal centering using lipgloss (handles ANSI)
-	panelWidth := 0
-	for _, line := range panelLines {
-		w := lipgloss.Width(line)
-		if w > panelWidth {
-			panelWidth = w
-		}
-	}
-	leftPad := (m.width - panelWidth) / 2
-	if leftPad < 0 {
-		leftPad = 0
 	}
 
 	// Build result
@@ -248,12 +235,11 @@ func (m Model) overlayCenter(base, panel string) string {
 		}
 	}
 
-	// Overlay panel lines (just center and replace those rows)
+	// Overlay panel lines (full width, just replace those rows)
 	for i, panelLine := range panelLines {
 		row := startRow + i
 		if row >= 0 && row < m.height {
-			// Center the panel line
-			result[row] = strings.Repeat(" ", leftPad) + panelLine
+			result[row] = panelLine
 		}
 	}
 
