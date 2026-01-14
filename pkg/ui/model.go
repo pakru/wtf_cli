@@ -248,22 +248,49 @@ func (m Model) overlayCenter(base, panel string) string {
 		}
 	}
 
-	// Overlay panel lines
+	// Overlay panel lines - merge with base content
 	for i, panelLine := range panelLines {
 		row := startRow + i
 		if row >= 0 && row < m.height {
-			// Pad the panel line and place it
-			paddedPanel := strings.Repeat(" ", leftPad) + panelLine
-			// Ensure line is long enough
-			if len(result[row]) < m.width {
-				result[row] = result[row] + strings.Repeat(" ", m.width-len(result[row]))
+			baseLine := result[row]
+			panelW := lipgloss.Width(panelLine)
+			
+			// Build merged line: left base + panel + right base
+			var merged strings.Builder
+			
+			// Add left padding from base (visible on left of panel)
+			if leftPad > 0 && len(baseLine) > 0 {
+				// Take left portion of base line
+				baseRunes := []rune(baseLine)
+				if leftPad < len(baseRunes) {
+					merged.WriteString(string(baseRunes[:leftPad]))
+				} else {
+					merged.WriteString(baseLine)
+					merged.WriteString(strings.Repeat(" ", leftPad-len(baseRunes)))
+				}
+			} else {
+				merged.WriteString(strings.Repeat(" ", leftPad))
 			}
-			result[row] = paddedPanel
+			
+			// Add panel content
+			merged.WriteString(panelLine)
+			
+			// Add right portion of base (visible on right of panel)
+			rightStart := leftPad + panelW
+			if rightStart < len(baseLine) {
+				baseRunes := []rune(baseLine)
+				if rightStart < len(baseRunes) {
+					merged.WriteString(string(baseRunes[rightStart:]))
+				}
+			}
+			
+			result[row] = merged.String()
 		}
 	}
 
 	return strings.Join(result, "\n")
 }
+
 
 // Helper functions
 
