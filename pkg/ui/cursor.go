@@ -101,33 +101,22 @@ func (ct *CursorTracker) GetPosition() (row, col int) {
 	return ct.row, ct.col
 }
 
-// RenderCursorOverlay adds a visual cursor to content
+// RenderCursorOverlay adds a visual cursor at the end of the last line
 func (ct *CursorTracker) RenderCursorOverlay(content string, cursorChar string) string {
-	lines := strings.Split(content, "\n")
-
-	if ct.row < 0 || ct.row >= len(lines) {
-		// Cursor out of bounds, show at end
-		return content + cursorChar
+	// Simple approach: just append cursor at end of content
+	// This is where typing happens in a shell
+	if len(content) == 0 {
+		return cursorChar
 	}
-
-	line := lines[ct.row]
-
-	if ct.col < 0 {
-		return content + cursorChar
+	
+	// Remove trailing newlines, add cursor, restore newlines
+	trimmed := strings.TrimRight(content, "\n")
+	trailingNewlines := len(content) - len(trimmed)
+	
+	result := trimmed + cursorChar
+	for i := 0; i < trailingNewlines; i++ {
+		result += "\n"
 	}
-
-	// Insert cursor character at position
-	if ct.col >= len(line) {
-		// At end of line - append cursor
-		lines[ct.row] = line + cursorChar
-	} else {
-		// In middle of line - insert cursor before the character
-		runes := []rune(line)
-		if ct.col < len(runes) {
-			// Insert visible cursor character at position
-			lines[ct.row] = string(runes[:ct.col]) + cursorChar + string(runes[ct.col:])
-		}
-	}
-
-	return strings.Join(lines, "\n")
+	
+	return result
 }
