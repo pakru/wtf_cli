@@ -22,21 +22,34 @@ func NewDirectoryParser() *DirectoryParser {
 // ParseFromOutput extracts directory from shell prompt patterns
 func (dp *DirectoryParser) ParseFromOutput(data []byte) {
 	content := string(data)
-	
+
 	// Common bash prompt patterns:
 	// user@host:~/path$
 	// user@host:/full/path$
-	
-	// Pattern 1: user@host:path$ or user@host:path#
-	promptRegex := regexp.MustCompile(`\w+@[\w-]+:(~?[/\w.-]+)[$#]`)
+	// user@host:~/path (git-branch)$
+	// user@host:~/path (git-branch) $
+
+	// Pattern 1: user@host:path with optional (branch) before $ or #
+	// Matches: pavel@host:~/projects (main) $
+	// Matches: pavel@host:~/projects$
+	promptRegex := regexp.MustCompile(`\w+@[\w-]+:(~?[/\w.-]+)(?:\s*\([^)]*\))?\s*[$#]`)
 	matches := promptRegex.FindStringSubmatch(content)
 	if len(matches) > 1 {
 		dp.lastDir = matches[1]
 		dp.parsed = true
 		return
 	}
-	
-	// Pattern 2: Look for PWD= in output
+
+	// Pattern 2: Just the path with $ or # at end (simpler prompts)
+	simpleRegex := regexp.MustCompile(`(~?/[\w/.-]+)\s*[$#]\s*$`)
+	matches = simpleRegex.FindStringSubmatch(content)
+	if len(matches) > 1 {
+		dp.lastDir = matches[1]
+		dp.parsed = true
+		return
+	}
+
+	// Pattern 3: Look for PWD= in output (from env or echo $PWD)
 	pwdRegex := regexp.MustCompile(`PWD=([^\s;]+)`)
 	matches = pwdRegex.FindStringSubmatch(content)
 	if len(matches) > 1 {
