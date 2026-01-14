@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"wtf_cli/pkg/buffer"
@@ -201,34 +202,67 @@ func (m Model) View() string {
 
 	// Overlay result panel if visible
 	if m.resultPanel.IsVisible() {
-		return m.overlayPanel(baseView, m.resultPanel.View())
+		return m.overlayCenter(baseView, m.resultPanel.View())
 	}
 
 	// Overlay command palette if visible
 	if m.palette.IsVisible() {
-		return m.overlayPanel(baseView, m.palette.View())
+		return m.overlayCenter(baseView, m.palette.View())
 	}
 
 	return baseView
 }
 
-// overlayPanel overlays a panel on top of the base view
-func (m Model) overlayPanel(base, panel string) string {
-	// For now, just show the panel centered with the base dimmed behind
-	// Simple approach: just return the panel centered vertically
-	panelHeight := lipgloss.Height(panel)
-	topPad := (m.height - panelHeight) / 2
-	if topPad < 0 {
-		topPad = 0
+// overlayCenter places a panel centered over the base view
+func (m Model) overlayCenter(base, panel string) string {
+	baseLines := strings.Split(base, "\n")
+	panelLines := strings.Split(panel, "\n")
+
+	// Calculate vertical position (center)
+	panelHeight := len(panelLines)
+	startRow := (m.height - panelHeight) / 2
+	if startRow < 0 {
+		startRow = 0
 	}
 
-	var result string
-	for i := 0; i < topPad; i++ {
-		result += "\n"
+	// Calculate horizontal centering
+	panelWidth := 0
+	for _, line := range panelLines {
+		w := lipgloss.Width(line)
+		if w > panelWidth {
+			panelWidth = w
+		}
 	}
-	result += panel
+	leftPad := (m.width - panelWidth) / 2
+	if leftPad < 0 {
+		leftPad = 0
+	}
 
-	return result
+	// Build result by overlaying panel on base
+	result := make([]string, m.height)
+	for i := 0; i < m.height; i++ {
+		if i < len(baseLines) {
+			result[i] = baseLines[i]
+		} else {
+			result[i] = ""
+		}
+	}
+
+	// Overlay panel lines
+	for i, panelLine := range panelLines {
+		row := startRow + i
+		if row >= 0 && row < m.height {
+			// Pad the panel line and place it
+			paddedPanel := strings.Repeat(" ", leftPad) + panelLine
+			// Ensure line is long enough
+			if len(result[row]) < m.width {
+				result[row] = result[row] + strings.Repeat(" ", m.width-len(result[row]))
+			}
+			result[row] = paddedPanel
+		}
+	}
+
+	return strings.Join(result, "\n")
 }
 
 // Helper functions
