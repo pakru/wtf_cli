@@ -30,6 +30,7 @@ func NewDispatcher() *Dispatcher {
 	d.Register(&ExplainHandler{})
 	d.Register(&FixHandler{})
 	d.Register(&HistoryHandler{})
+	d.Register(&SettingsHandler{})
 	d.Register(&HelpHandler{})
 
 	return d

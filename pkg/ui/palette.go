@@ -31,6 +31,7 @@ func NewCommandPalette() *CommandPalette {
 			{Name: "/explain", Description: "Explain what the last command did"},
 			{Name: "/fix", Description: "Suggest fix for last error"},
 			{Name: "/history", Description: "Show command history"},
+			{Name: "/settings", Description: "Open settings panel"},
 			{Name: "/help", Description: "Show help"},
 		},
 		selected: 0,

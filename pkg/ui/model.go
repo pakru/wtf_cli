@@ -8,6 +8,7 @@ import (
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/commands"
+	"wtf_cli/pkg/config"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -20,11 +21,12 @@ type Model struct {
 	cwdFunc func() (string, error) // Function to get shell's cwd
 
 	// UI Components
-	viewport     PTYViewport     // Viewport for PTY output
-	statusBar    *StatusBarView  // Status bar at bottom
-	inputHandler *InputHandler   // Input routing to PTY
-	palette      *CommandPalette // Command palette overlay
-	resultPanel  *ResultPanel    // Result panel overlay
+	viewport      PTYViewport     // Viewport for PTY output
+	statusBar     *StatusBarView  // Status bar at bottom
+	inputHandler  *InputHandler   // Input routing to PTY
+	palette       *CommandPalette // Command palette overlay
+	resultPanel   *ResultPanel    // Result panel overlay
+	settingsPanel *SettingsPanel  // Settings panel overlay
 
 	// Command system
 	dispatcher *commands.Dispatcher
@@ -55,17 +57,18 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 	viewport.AppendOutput([]byte(WelcomeMessage()))
 
 	return Model{
-		ptyFile:      ptyFile,
-		cwdFunc:      cwdFunc,
-		viewport:     viewport,
-		statusBar:    NewStatusBarView(),
-		inputHandler: NewInputHandler(ptyFile),
-		palette:      NewCommandPalette(),
-		resultPanel:  NewResultPanel(),
-		dispatcher:   commands.NewDispatcher(),
-		buffer:       buf,
-		session:      sess,
-		currentDir:   initialDir,
+		ptyFile:       ptyFile,
+		cwdFunc:       cwdFunc,
+		viewport:      viewport,
+		statusBar:     NewStatusBarView(),
+		inputHandler:  NewInputHandler(ptyFile),
+		palette:       NewCommandPalette(),
+		resultPanel:   NewResultPanel(),
+		settingsPanel: NewSettingsPanel(),
+		dispatcher:    commands.NewDispatcher(),
+		buffer:        buf,
+		session:       sess,
+		currentDir:    initialDir,
 	}
 }
 
@@ -110,6 +113,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// If settings panel is visible, handle its keys first
+		if m.settingsPanel.IsVisible() {
+			cmd := m.settingsPanel.Update(msg)
+			return m, cmd
+		}
+
 		// If result panel is visible, handle its keys first
 		if m.resultPanel.IsVisible() {
 			cmd := m.resultPanel.Update(msg)
@@ -145,6 +154,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ctx := commands.NewContext(m.buffer, m.session, m.currentDir)
 		result := m.dispatcher.Dispatch(msg.command, ctx)
 
+		// Special case: /settings opens settings panel
+		if result.Title == "__OPEN_SETTINGS__" {
+			cfg, _ := config.Load(config.GetConfigPath())
+			m.settingsPanel.SetSize(m.width, m.height)
+			m.settingsPanel.Show(cfg, config.GetConfigPath())
+			return m, nil
+		}
+
 		// Show result in panel
 		m.resultPanel.Show(result.Title, result.Content)
 		return m, nil
@@ -152,6 +169,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case paletteCancelMsg:
 		// Palette cancelled
 		m.inputHandler.SetPaletteMode(false)
+		return m, nil
+
+	case settingsCloseMsg:
+		// Settings panel closed
+		return m, nil
+
+	case settingsSaveMsg:
+		// Save settings to file
+		config.Save(msg.configPath, msg.config)
 		return m, nil
 
 	case resultPanelCloseMsg:
@@ -199,6 +225,11 @@ func (m Model) View() string {
 		m.viewport.View(),
 		m.statusBar.Render(),
 	)
+
+	// Overlay settings panel if visible
+	if m.settingsPanel.IsVisible() {
+		return m.overlayCenter(baseView, m.settingsPanel.View())
+	}
 
 	// Overlay result panel if visible
 	if m.resultPanel.IsVisible() {

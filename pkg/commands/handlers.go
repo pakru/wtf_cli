@@ -102,6 +102,20 @@ func (h *HistoryHandler) Execute(ctx *Context) *Result {
 	}
 }
 
+// SettingsHandler handles the /settings command
+type SettingsHandler struct{}
+
+func (h *SettingsHandler) Name() string        { return "/settings" }
+func (h *SettingsHandler) Description() string { return "Open settings panel" }
+
+func (h *SettingsHandler) Execute(ctx *Context) *Result {
+	// Special marker to tell UI to open settings panel
+	return &Result{
+		Title:   "__OPEN_SETTINGS__",
+		Content: "",
+	}
+}
+
 // HelpHandler handles the /help command
 type HelpHandler struct{}
 
