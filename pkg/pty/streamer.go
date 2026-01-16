@@ -56,10 +56,10 @@ func (bw *BufferedWrapper) ProxyIOWithBuffer() error {
 
 	// Create a line writer that buffers output
 	lw := &lineWriter{buffer: bw.buffer}
-	
+
 	// Tee PTY output to both stdout AND line writer (for buffer)
 	tee := io.TeeReader(bw.ptmx, lw)
-	
+
 	// Copy to stdout - this provides real-time output
 	io.Copy(os.Stdout, tee)
 

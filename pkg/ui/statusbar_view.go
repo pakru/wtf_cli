@@ -53,14 +53,14 @@ func (s *StatusBarView) Render() string {
 	if maxWidth < 10 {
 		maxWidth = 10
 	}
-	
+
 	if len(content) > maxWidth {
 		content = content[:maxWidth-3] + "..."
 	}
 
 	// Style first, then pad to fill width
 	styled := statusStyle.Render(content)
-	
+
 	// Calculate how much padding we need
 	// Use len(content) not lipgloss.Width(styled) which includes ANSI codes
 	contentWidth := len(content)
@@ -78,13 +78,13 @@ func getCurrentWorkingDir() string {
 	if err != nil {
 		return "~"
 	}
-	
+
 	// Replace home directory with ~
 	home, err := os.UserHomeDir()
 	if err == nil && strings.HasPrefix(dir, home) {
 		dir = "~" + dir[len(home):]
 	}
-	
+
 	return dir
 }
 
@@ -93,30 +93,30 @@ func getCurrentWorkingDir() string {
 var (
 	// Status bar with gradient background
 	statusStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FAFAFA")).
-		Background(lipgloss.Color("#7D56F4")).
-		Padding(0, 1).
-		Bold(true)
+			Foreground(lipgloss.Color("#FAFAFA")).
+			Background(lipgloss.Color("#7D56F4")).
+			Padding(0, 1).
+			Bold(true)
 
 	// Alternative color schemes for different themes
-	
+
 	// Cyan/purple gradient style
 	statusStyleCyan = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FAFAFA")).
-		Background(lipgloss.Color("#00B8D4")).
-		Padding(0, 1).
-		Bold(true)
-	
+			Foreground(lipgloss.Color("#FAFAFA")).
+			Background(lipgloss.Color("#00B8D4")).
+			Padding(0, 1).
+			Bold(true)
+
 	// Dark subtle style
 	statusStyleDark = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#D0D0D0")).
-		Background(lipgloss.Color("#3C3C3C")).
-		Padding(0, 1)
-	
+			Foreground(lipgloss.Color("#D0D0D0")).
+			Background(lipgloss.Color("#3C3C3C")).
+			Padding(0, 1)
+
 	// Highlight style for wtf_cli prefix
 	prefixStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFD700")).
-		Bold(true)
+			Foreground(lipgloss.Color("#FFD700")).
+			Bold(true)
 )
 
 // SetTheme allows changing the status bar theme

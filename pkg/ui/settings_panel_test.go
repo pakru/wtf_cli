@@ -252,7 +252,7 @@ func TestSettingsPanel_ViewHidden(t *testing.T) {
 }
 
 func containsString(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 && 
-		(s == substr || len(s) > len(substr) && 
+	return len(s) > 0 && len(substr) > 0 &&
+		(s == substr || len(s) > len(substr) &&
 			(s[:len(substr)] == substr || containsString(s[1:], substr)))
 }

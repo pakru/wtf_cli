@@ -48,7 +48,7 @@ func TestProxyIOWithBuffer_Capture(t *testing.T) {
 
 	// This test verifies the buffer is accessible and starts empty
 	// Full I/O testing would require PTY interaction which is complex
-	
+
 	if bw.GetBuffer().Size() != 0 {
 		t.Errorf("Expected empty buffer initially, got %d lines", bw.GetBuffer().Size())
 	}

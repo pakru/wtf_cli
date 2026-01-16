@@ -89,13 +89,13 @@ func (w *Wrapper) GetCwd() (string, error) {
 	if pid == 0 {
 		return "", fmt.Errorf("no process running")
 	}
-	
+
 	// Read the symlink at /proc/<pid>/cwd
 	procPath := fmt.Sprintf("/proc/%d/cwd", pid)
 	cwd, err := os.Readlink(procPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read cwd: %w", err)
 	}
-	
+
 	return cwd, nil
 }

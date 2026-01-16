@@ -13,11 +13,11 @@ import (
 
 // SettingField represents a single editable setting
 type SettingField struct {
-	Label    string
-	Key      string
-	Value    string
-	Type     string // "string", "int", "float", "bool"
-	Masked   bool   // For sensitive fields like API key
+	Label  string
+	Key    string
+	Value  string
+	Type   string // "string", "int", "float", "bool"
+	Masked bool   // For sensitive fields like API key
 }
 
 // SettingsPanel displays and edits configuration
@@ -307,7 +307,7 @@ func (sp *SettingsPanel) View() string {
 	// Render fields
 	for i, field := range sp.fields {
 		label := labelStyle.Render(field.Label + ":")
-		
+
 		var value string
 		if sp.editing && i == sp.selected {
 			// Show edit cursor

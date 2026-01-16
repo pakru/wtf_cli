@@ -27,7 +27,7 @@ func TestResize_Method(t *testing.T) {
 
 	// resize() might fail in headless/CI environment, but shouldn't panic
 	err = wrapper.resize()
-	
+
 	// In headless environment, this will error - that's OK
 	// The important thing is it doesn't panic
 	if err != nil {

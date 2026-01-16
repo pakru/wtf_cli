@@ -11,11 +11,11 @@ import (
 
 // StatusBar renders a status bar at the bottom of the terminal
 type StatusBar struct {
-	mu          sync.RWMutex
-	currentDir  string
-	message     string
-	termWidth   int
-	termHeight  int
+	mu         sync.RWMutex
+	currentDir string
+	message    string
+	termWidth  int
+	termHeight int
 }
 
 // NewStatusBar creates a new status bar
@@ -61,14 +61,14 @@ func (sb *StatusBar) Render() string {
 	if maxWidth < 10 {
 		maxWidth = 10 // Minimum width
 	}
-	
+
 	if len(content) > maxWidth {
 		content = content[:maxWidth-3] + "..."
 	}
 
 	// Pad to full width
 	padding := strings.Repeat(" ", sb.termWidth-len(content))
-	
+
 	// Build ANSI escape sequence for bottom bar
 	// Save cursor, move to bottom, print with inverse colors, restore cursor
 	return fmt.Sprintf(
@@ -108,12 +108,12 @@ func getWorkingDir() string {
 	if err != nil {
 		return "~"
 	}
-	
+
 	// Replace home directory with ~
 	home, err := os.UserHomeDir()
 	if err == nil && strings.HasPrefix(dir, home) {
 		dir = "~" + dir[len(home):]
 	}
-	
+
 	return dir
 }

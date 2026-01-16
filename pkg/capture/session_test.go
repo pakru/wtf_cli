@@ -53,11 +53,11 @@ func TestGetHistory(t *testing.T) {
 	commands := []string{"pwd", "ls", "cd /tmp"}
 	for i, cmd := range commands {
 		sc.AddCommand(CommandRecord{
-			Command:    cmd,
-			ExitCode:   0,
-			StartTime:  time.Now(),
-			EndTime:    time.Now(),
-			WorkingDir: "/home",
+			Command:     cmd,
+			ExitCode:    0,
+			StartTime:   time.Now(),
+			EndTime:     time.Now(),
+			WorkingDir:  "/home",
 			BufferStart: i * 10,
 			BufferEnd:   (i + 1) * 10,
 		})

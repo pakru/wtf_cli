@@ -18,7 +18,7 @@ func New(capacity int) *CircularBuffer {
 	if capacity <= 0 {
 		capacity = 2000 // Default capacity
 	}
-	
+
 	return &CircularBuffer{
 		data:     make([][]byte, capacity),
 		capacity: capacity,
@@ -59,7 +59,7 @@ func (cb *CircularBuffer) GetLastN(n int) [][]byte {
 	}
 
 	result := make([][]byte, n)
-	
+
 	// Calculate start position
 	start := (cb.head - n + cb.capacity) % cb.capacity
 
@@ -106,7 +106,7 @@ func (cb *CircularBuffer) Clear() {
 // with lines separated by newlines
 func (cb *CircularBuffer) ExportAsText() string {
 	lines := cb.GetAll()
-	
+
 	if len(lines) == 0 {
 		return ""
 	}
@@ -132,7 +132,7 @@ func (cb *CircularBuffer) ExportAsText() string {
 // ExportLastNAsText returns the last N lines as a single string
 func (cb *CircularBuffer) ExportLastNAsText(n int) string {
 	lines := cb.GetLastN(n)
-	
+
 	if len(lines) == 0 {
 		return ""
 	}

@@ -13,12 +13,12 @@ func ResizePTY(ptyFile *os.File, width, height int) error {
 	if ptyFile == nil {
 		return nil
 	}
-	
+
 	size := &pty.Winsize{
 		Rows: uint16(height),
 		Cols: uint16(width),
 	}
-	
+
 	return pty.Setsize(ptyFile, size)
 }
 
@@ -27,12 +27,12 @@ func GetPTYSize(ptyFile *os.File) (width, height int, err error) {
 	if ptyFile == nil {
 		return 80, 24, nil
 	}
-	
+
 	size, err := pty.GetsizeFull(ptyFile)
 	if err != nil {
 		return 80, 24, err
 	}
-	
+
 	return int(size.Cols), int(size.Rows), nil
 }
 
@@ -59,10 +59,10 @@ func getTerminalSize(fd uintptr) (width, height int, err error) {
 		uintptr(TIOCGWINSZ),
 		uintptr(unsafe.Pointer(&ws)),
 	)
-	
+
 	if errno != 0 {
 		return 0, 0, errno
 	}
-	
+
 	return int(ws.Col), int(ws.Row), nil
 }

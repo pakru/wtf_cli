@@ -108,15 +108,15 @@ func (ct *CursorTracker) RenderCursorOverlay(content string, cursorChar string) 
 	if len(content) == 0 {
 		return cursorChar
 	}
-	
+
 	// Remove trailing newlines, add cursor, restore newlines
 	trimmed := strings.TrimRight(content, "\n")
 	trailingNewlines := len(content) - len(trimmed)
-	
+
 	result := trimmed + cursorChar
 	for i := 0; i < trailingNewlines; i++ {
 		result += "\n"
 	}
-	
+
 	return result
 }

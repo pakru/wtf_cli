@@ -9,13 +9,13 @@ import (
 
 // ResultPanel displays command execution results
 type ResultPanel struct {
-	title    string
-	content  string
-	visible  bool
-	width    int
-	height   int
-	scrollY  int
-	lines    []string
+	title   string
+	content string
+	visible bool
+	width   int
+	height  int
+	scrollY int
+	lines   []string
 }
 
 // NewResultPanel creates a new result panel

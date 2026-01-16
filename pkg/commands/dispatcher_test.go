@@ -84,9 +84,9 @@ func TestDispatcher_Dispatch_HelpCommand(t *testing.T) {
 
 func TestContext_GetLastNLines_NilBuffer(t *testing.T) {
 	ctx := NewContext(nil, nil, "")
-	
+
 	lines := ctx.GetLastNLines(10)
-	
+
 	if lines != nil {
 		t.Error("Expected nil for nil buffer")
 	}
@@ -97,10 +97,10 @@ func TestContext_GetLastNLines_WithBuffer(t *testing.T) {
 	buf.Write([]byte("line 1"))
 	buf.Write([]byte("line 2"))
 	buf.Write([]byte("line 3"))
-	
+
 	ctx := NewContext(buf, nil, "")
 	lines := ctx.GetLastNLines(2)
-	
+
 	if len(lines) != 2 {
 		t.Errorf("Expected 2 lines, got %d", len(lines))
 	}

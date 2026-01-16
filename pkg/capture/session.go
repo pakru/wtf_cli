@@ -7,22 +7,22 @@ import (
 
 // CommandRecord represents a single command execution
 type CommandRecord struct {
-	Command      string
-	ExitCode     int
-	StartTime    time.Time
-	EndTime      time.Time
-	WorkingDir   string
-	BufferStart  int // Position in buffer where this command's output starts
-	BufferEnd    int // Position in buffer where this command's output ends
+	Command     string
+	ExitCode    int
+	StartTime   time.Time
+	EndTime     time.Time
+	WorkingDir  string
+	BufferStart int // Position in buffer where this command's output starts
+	BufferEnd   int // Position in buffer where this command's output ends
 }
 
 // SessionContext tracks the current terminal session state
 type SessionContext struct {
-	mu            sync.RWMutex
-	history       []CommandRecord
-	currentDir    string
-	maxHistory    int // Maximum number of commands to keep
-	sessionStart  time.Time
+	mu           sync.RWMutex
+	history      []CommandRecord
+	currentDir   string
+	maxHistory   int // Maximum number of commands to keep
+	sessionStart time.Time
 }
 
 // NewSessionContext creates a new session context tracker

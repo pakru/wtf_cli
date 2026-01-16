@@ -2,81 +2,6 @@
 
 A transparent PTY-based terminal wrapper that captures all terminal I/O for AI-powered assistance. Built with Go and the Bubble Tea TUI framework.
 
-![WTF CLI Demo](docs/demo.gif)
-
-## ✨ Features
-
-### Implemented ✅
-
-- **Transparent PTY Wrapper**: Seamless terminal proxy that feels native
-- **Full Terminal Support**: Works with vim, htop, nano, and all terminal apps
-- **Signal Handling**: Proper SIGWINCH (resize), SIGINT, SIGTERM support
-- **Circular Buffer**: Captures last 2000 lines of terminal output
-- **Modern TUI**: Built with Charm's Bubble Tea and Lipgloss
-- **Status Bar**: Shows current directory and helpful hints
-- **Command Palette**: Press `/` to access AI commands
-- **Welcome Banner**: Helpful shortcut reference on startup
-
-### Commands (Available)
-
-| Command | Description |
-|---------|-------------|
-| `/wtf` | Analyze last output and suggest fixes |
-| `/explain` | Explain what the last command did |
-| `/fix` | Suggest fix for last error |
-| `/history` | Show command history |
-| `/help` | Show help |
-
-### Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+D` | Exit terminal |
-| `Ctrl+C` | Cancel current command |
-| `Ctrl+Z` | Suspend process |
-| `/` | Open command palette (at empty prompt) |
-| `Esc` | Close palette/panel |
-
-## 📦 Project Status
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| Phase 1 | Basic PTY Wrapper | ✅ Complete |
-| Phase 2 | Output Capture & Buffering | ✅ Complete |
-| Phase 3 | Session Context Tracking | ✅ Complete |
-| Phase 4 | Bubble Tea TUI Integration | ✅ Complete |
-| Phase 5 | Slash Command System | ✅ Complete |
-| Phase 6 | AI Integration (OpenRouter) | 🚧 Next |
-| Phase 7 | Polish & Configuration | 📋 Planned |
-
-## 🏗️ Architecture
-
-```
-wtf_cli/
-├── cmd/wtf_cli/          # Main entry point
-├── pkg/
-│   ├── pty/              # PTY management, signals, streaming
-│   ├── buffer/           # Circular buffer for output capture
-│   ├── capture/          # Session context tracking
-│   ├── ui/               # Bubble Tea TUI components
-│   │   ├── model.go      # Main Bubble Tea model
-│   │   ├── viewport.go   # PTY output viewport
-│   │   ├── statusbar.go  # Status bar component
-│   │   ├── palette.go    # Command palette
-│   │   └── ...
-│   ├── commands/         # Slash command handlers
-│   └── config/           # Configuration management
-└── docs/                 # Documentation
-```
-
-### Technologies
-
-- **Go** - Core language
-- **[creack/pty](https://github.com/creack/pty)** - Pseudo-terminal management
-- **[Bubble Tea](https://github.com/charmbracelet/bubbletea)** - TUI framework
-- **[Lipgloss](https://github.com/charmbracelet/lipgloss)** - Styling
-- **OpenRouter API** - LLM integration (coming soon)
-
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -112,20 +37,121 @@ cd ~/projects
 # Select a command with arrow keys and Enter
 ```
 
+## ✨ Features
+
+### Implemented ✅
+
+- **Transparent PTY Wrapper**: Seamless terminal proxy that feels native
+- **Full Terminal Support**: Works with vim, htop, nano, and all terminal apps
+- **Signal Handling**: Proper SIGWINCH (resize), SIGINT, SIGTERM support
+- **Circular Buffer**: Captures last 2000 lines of terminal output
+- **Modern TUI**: Built with Charm's Bubble Tea and Lipgloss
+- **Status Bar**: Shows current directory and helpful hints
+- **Command Palette**: Press `/` to access AI commands
+- **Welcome Banner**: Helpful shortcut reference on startup
+
+### Commands (Available)
+
+| Command | Description |
+|---------|-------------|
+| `/wtf` | Analyze last output and suggest fixes |
+| `/explain` | Explain what the last command did |
+| `/fix` | Suggest fix for last error |
+| `/history` | Show command history |
+| `/help` | Show help |
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+D` | Exit terminal |
+| `Ctrl+C` | Cancel current command |
+| `Ctrl+Z` | Suspend process |
+| `/` | Open command palette (at empty prompt) |
+| `Esc` | Close palette/panel |
+
+
+### Tech Stack
+
+- **Go** - Core language
+- **[creack/pty](https://github.com/creack/pty)** - Pseudo-terminal management
+- **[Bubble Tea](https://github.com/charmbracelet/bubbletea)** - TUI framework
+- **[Lipgloss](https://github.com/charmbracelet/lipgloss)** - Styling
+- **OpenRouter API** - LLM integration (coming soon)
+
+
 ## 🧪 Development
 
+### Available Make Targets
+
 ```bash
-# Build
+# Run all checks, build, and test (default)
+make all
+
+# Build the binary
 make build
 
 # Run all tests
 make test
 
+# Format all Go code
+make fmt
+
+# Run static analysis
+make vet
+
+# Run formatting and vetting
+make lint
+
+# Full pre-commit validation (fmt, vet, build, test)
+make check
+
 # Clean build artifacts
 make clean
 
-# Run directly
+# Build and run the application
+make run
+
+# Show help with all available targets
+make help
+
+# Run directly without make
 go run cmd/wtf_cli/main.go
+```
+
+### Code Quality
+
+Before committing, run:
+```bash
+make check
+```
+
+This will automatically:
+1. Format your code with `go fmt`
+2. Run `go vet` for static analysis
+3. Build the project
+4. Run all tests
+
+## 🔧 Troubleshooting
+
+### Go Version Mismatch Error
+
+If you see an error like:
+```
+compile: version "go1.25.0" does not match go tool version "go1.25.5"
+```
+
+This happens when Go is updated but cached packages are from an older version. Fix it with:
+
+```bash
+# Clear all caches and reinstall standard library
+rm -rf ~/.cache/go-build
+go clean -cache -modcache -i -r
+go install std
+
+# Rebuild the project
+make clean
+make build
 ```
 
 ## 📝 Configuration
@@ -156,7 +182,3 @@ Contributions are welcome! Please read the contribution guidelines first.
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-**Built with ❤️ using Go and Charm**
