@@ -68,6 +68,9 @@ func (sp *SettingsPanel) buildFields() {
 		{Label: "API Timeout (sec)", Key: "api_timeout", Value: strconv.Itoa(sp.config.OpenRouter.APITimeoutSeconds), Type: "int"},
 		{Label: "Buffer Size", Key: "buffer_size", Value: strconv.Itoa(sp.config.BufferSize), Type: "int"},
 		{Label: "Context Window", Key: "context_window", Value: strconv.Itoa(sp.config.ContextWindow), Type: "int"},
+		{Label: "Log Level", Key: "log_level", Value: normalizeLogLevel(sp.config.LogLevel), Type: "string"},
+		{Label: "Log Format", Key: "log_format", Value: strings.ToLower(strings.TrimSpace(sp.config.LogFormat)), Type: "string"},
+		{Label: "Log File", Key: "log_file", Value: sp.config.LogFile, Type: "string"},
 	}
 }
 
@@ -136,6 +139,26 @@ func (sp *SettingsPanel) Update(msg tea.KeyMsg) tea.Cmd {
 			apiURL := sp.config.OpenRouter.APIURL
 			return func() tea.Msg {
 				return openModelPickerMsg{options: options, current: current, apiURL: apiURL}
+			}
+		}
+		if field.Key == "log_level" {
+			return func() tea.Msg {
+				return openOptionPickerMsg{
+					fieldKey: "log_level",
+					title:    "Log Level",
+					options:  logLevelOptions(),
+					current:  normalizeLogLevel(sp.config.LogLevel),
+				}
+			}
+		}
+		if field.Key == "log_format" {
+			return func() tea.Msg {
+				return openOptionPickerMsg{
+					fieldKey: "log_format",
+					title:    "Log Format",
+					options:  []string{"json", "text"},
+					current:  strings.ToLower(strings.TrimSpace(sp.config.LogFormat)),
+				}
 			}
 		}
 		if field.Type == "bool" {
@@ -266,6 +289,12 @@ func (sp *SettingsPanel) applyField(field *SettingField) {
 		if v, err := strconv.Atoi(field.Value); err == nil {
 			sp.config.ContextWindow = v
 		}
+	case "log_level":
+		sp.config.LogLevel = field.Value
+	case "log_format":
+		sp.config.LogFormat = field.Value
+	case "log_file":
+		sp.config.LogFile = field.Value
 	}
 }
 
@@ -387,11 +416,18 @@ func (sp *SettingsPanel) View() string {
 		if sp.changed {
 			hint = "↑↓ Navigate • Enter: Edit • s: Save • Esc: Save & Close"
 		}
-		if sp.selectedFieldKey() == "model" {
+		selectedKey := sp.selectedFieldKey()
+		if selectedKey == "model" {
 			if sp.changed {
 				hint = "↑↓ Navigate • Enter: Pick • e: Edit • s: Save • Esc: Save & Close"
 			} else {
 				hint = "↑↓ Navigate • Enter: Pick • e: Edit • Esc: Close"
+			}
+		} else if selectedKey == "log_level" || selectedKey == "log_format" {
+			if sp.changed {
+				hint = "↑↓ Navigate • Enter: Pick • s: Save • Esc: Save & Close"
+			} else {
+				hint = "↑↓ Navigate • Enter: Pick • Esc: Close"
 			}
 		}
 		content.WriteString(footerStyle.Render(hint))
@@ -411,10 +447,42 @@ func (sp *SettingsPanel) SetModelValue(value string) {
 	sp.changed = true
 }
 
+// SetLogLevelValue updates the log level and marks settings as changed.
+func (sp *SettingsPanel) SetLogLevelValue(value string) {
+	sp.setLogLevelValue(value)
+	sp.changed = true
+}
+
+// SetLogFormatValue updates the log format and marks settings as changed.
+func (sp *SettingsPanel) SetLogFormatValue(value string) {
+	sp.setLogFormatValue(value)
+	sp.changed = true
+}
+
 func (sp *SettingsPanel) setModelValue(value string) {
 	sp.config.OpenRouter.Model = value
 	for i := range sp.fields {
 		if sp.fields[i].Key == "model" {
+			sp.fields[i].Value = value
+			break
+		}
+	}
+}
+
+func (sp *SettingsPanel) setLogLevelValue(value string) {
+	sp.config.LogLevel = value
+	for i := range sp.fields {
+		if sp.fields[i].Key == "log_level" {
+			sp.fields[i].Value = value
+			break
+		}
+	}
+}
+
+func (sp *SettingsPanel) setLogFormatValue(value string) {
+	sp.config.LogFormat = value
+	for i := range sp.fields {
+		if sp.fields[i].Key == "log_format" {
 			sp.fields[i].Value = value
 			break
 		}
@@ -431,4 +499,16 @@ func (sp *SettingsPanel) selectedFieldKey() string {
 // SetModelCache updates the cached model list for picker use.
 func (sp *SettingsPanel) SetModelCache(cache ai.ModelCache) {
 	sp.modelCache = cache
+}
+
+func normalizeLogLevel(value string) string {
+	level := strings.ToLower(strings.TrimSpace(value))
+	if level == "warning" {
+		return "warn"
+	}
+	return level
+}
+
+func logLevelOptions() []string {
+	return []string{"debug", "info", "warn", "error"}
 }

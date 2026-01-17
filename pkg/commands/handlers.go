@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -49,19 +50,23 @@ type StreamingHandler interface {
 func (h *WtfHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error) {
 	lines := ctx.GetLastNLines(ai.DefaultContextLines)
 	if len(lines) == 0 {
+		slog.Info("wtf_stream_skip", "reason", "no_output")
 		return nil, nil
 	}
 
 	cfg, err := config.Load(config.GetConfigPath())
 	if err != nil {
+		slog.Error("wtf_stream_config_error", "error", err)
 		return nil, err
 	}
 	if err := cfg.Validate(); err != nil {
+		slog.Error("wtf_stream_config_invalid", "error", err)
 		return nil, err
 	}
 
 	provider, err := ai.NewOpenRouterProvider(cfg.OpenRouter)
 	if err != nil {
+		slog.Error("wtf_stream_provider_error", "error", err)
 		return nil, err
 	}
 
@@ -77,12 +82,23 @@ func (h *WtfHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error) {
 		MaxTokens:   &maxTokens,
 	}
 
+	slog.Info("wtf_stream_start",
+		"model", cfg.OpenRouter.Model,
+		"lines", len(lines),
+		"cwd", ctx.CurrentDir,
+		"temperature", temperature,
+		"max_tokens", maxTokens,
+	)
+
 	reqCtx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.OpenRouter.APITimeoutSeconds)*time.Second)
 	stream, err := provider.CreateChatCompletionStream(reqCtx, req)
 	if err != nil {
 		cancel()
+		slog.Error("wtf_stream_request_error", "error", err)
 		return nil, err
 	}
+
+	slog.Info("wtf_stream_ready", "model", cfg.OpenRouter.Model)
 
 	ch := make(chan WtfStreamEvent, 8)
 	go func() {

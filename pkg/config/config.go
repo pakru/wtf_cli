@@ -16,6 +16,8 @@ type Config struct {
 	BufferSize    int              `json:"buffer_size"`
 	ContextWindow int              `json:"context_window"`
 	StatusBar     StatusBarConfig  `json:"status_bar"`
+	LogFile       string           `json:"log_file"`
+	LogFormat     string           `json:"log_format"`
 	LogLevel      string           `json:"log_level"`
 }
 
@@ -57,7 +59,9 @@ func Default() Config {
 			Position: "bottom",
 			Colors:   "auto",
 		},
-		LogLevel: "info",
+		LogFile:   defaultLogFilePath(),
+		LogFormat: "json",
+		LogLevel:  "info",
 	}
 }
 
@@ -160,6 +164,22 @@ func (c Config) Validate() error {
 		return fmt.Errorf("context_window must be positive, got: %d", c.ContextWindow)
 	}
 
+	if strings.TrimSpace(c.LogLevel) != "" {
+		switch strings.ToLower(strings.TrimSpace(c.LogLevel)) {
+		case "debug", "info", "warn", "warning", "error":
+		default:
+			return fmt.Errorf("log_level must be one of debug, info, warn, error, got: %s", c.LogLevel)
+		}
+	}
+
+	if strings.TrimSpace(c.LogFormat) != "" {
+		switch strings.ToLower(strings.TrimSpace(c.LogFormat)) {
+		case "json", "text":
+		default:
+			return fmt.Errorf("log_format must be json or text, got: %s", c.LogFormat)
+		}
+	}
+
 	return nil
 }
 
@@ -181,7 +201,9 @@ type configPresence struct {
 		Position *string `json:"position"`
 		Colors   *string `json:"colors"`
 	} `json:"status_bar"`
-	LogLevel *string `json:"log_level"`
+	LogFile   *string `json:"log_file"`
+	LogFormat *string `json:"log_format"`
+	LogLevel  *string `json:"log_level"`
 }
 
 func applyDefaults(cfg Config, data []byte) Config {
@@ -243,11 +265,27 @@ func applyDefaults(cfg Config, data []byte) Config {
 		}
 	}
 
+	if presence.LogFile == nil || strings.TrimSpace(cfg.LogFile) == "" {
+		cfg.LogFile = defaults.LogFile
+	}
+
+	if presence.LogFormat == nil || strings.TrimSpace(cfg.LogFormat) == "" {
+		cfg.LogFormat = defaults.LogFormat
+	}
+
 	if presence.LogLevel == nil || strings.TrimSpace(cfg.LogLevel) == "" {
 		cfg.LogLevel = defaults.LogLevel
 	}
 
 	return cfg
+}
+
+func defaultLogFilePath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(homeDir) == "" {
+		return filepath.Join(".wtf_cli", "logs", "wtf_cli.log")
+	}
+	return filepath.Join(homeDir, ".wtf_cli", "logs", "wtf_cli.log")
 }
 
 // GetConfigPath returns the default configuration file path

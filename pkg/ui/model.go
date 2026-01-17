@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -33,6 +34,7 @@ type Model struct {
 	resultPanel   *ResultPanel    // Result panel overlay
 	settingsPanel *SettingsPanel  // Settings panel overlay
 	modelPicker   *ModelPickerPanel
+	optionPicker  *OptionPickerPanel
 	sidebar       *Sidebar // AI response sidebar
 
 	// Command system
@@ -81,6 +83,7 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		resultPanel:   NewResultPanel(),
 		settingsPanel: NewSettingsPanel(),
 		modelPicker:   NewModelPickerPanel(),
+		optionPicker:  NewOptionPickerPanel(),
 		sidebar:       NewSidebar(),
 		dispatcher:    commands.NewDispatcher(),
 		buffer:        buf,
@@ -114,12 +117,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
+		slog.Debug("window_resize", "width", m.width, "height", m.height)
 
 		m.applyLayout()
 
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.optionPicker != nil && m.optionPicker.IsVisible() {
+			cmd := m.optionPicker.Update(msg)
+			return m, cmd
+		}
+
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
 			cmd := m.modelPicker.Update(msg)
 			return m, cmd
@@ -144,8 +153,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.sidebar != nil && m.sidebar.IsVisible() && m.sidebar.ShouldHandleKey(msg) {
+			wasVisible := m.sidebar.IsVisible()
 			cmd := m.sidebar.Update(msg)
-			if !m.sidebar.IsVisible() {
+			if wasVisible && !m.sidebar.IsVisible() {
+				slog.Info("sidebar_close", "reason", "key")
 				m.applyLayout()
 			}
 			return m, cmd
@@ -162,12 +173,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case showPaletteMsg:
 		// Show the command palette
+		slog.Info("palette_open")
 		m.palette.Show()
 		m.inputHandler.SetPaletteMode(true)
 		return m, nil
 
 	case paletteSelectMsg:
 		// Command selected from palette
+		slog.Info("palette_select", "command", msg.command)
 		m.inputHandler.SetPaletteMode(false)
 
 		// Execute the command
@@ -181,6 +194,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Special case: /settings opens settings panel
 		if result.Title == "__OPEN_SETTINGS__" {
+			slog.Info("settings_open")
 			cfg, _ := config.Load(config.GetConfigPath())
 			m.settingsPanel.SetSize(m.width, m.height)
 			m.settingsPanel.Show(cfg, config.GetConfigPath())
@@ -192,6 +206,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			stream, err := streamHandler.StartStream(ctx)
 			if err != nil {
 				if m.sidebar != nil {
+					slog.Error("sidebar_open_error", "error", err)
 					m.sidebar.Show(result.Title, fmt.Sprintf("Error: %v", err))
 					m.applyLayout()
 				}
@@ -205,6 +220,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.sidebar != nil {
 				m.sidebar.Show(result.Title, result.Content)
+				slog.Info("sidebar_open", "title", result.Title, "streaming", true)
 				m.applyLayout()
 			}
 			m.wtfTitle = result.Title
@@ -216,6 +232,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if result.Title == "__CLOSE_SIDEBAR__" {
 			if m.sidebar != nil {
 				m.sidebar.Hide()
+				slog.Info("sidebar_close", "reason", "command")
 				m.applyLayout()
 			}
 			return m, nil
@@ -230,23 +247,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case paletteCancelMsg:
 		// Palette cancelled
+		slog.Info("palette_cancel")
 		m.inputHandler.SetPaletteMode(false)
 		return m, nil
 
 	case settingsCloseMsg:
 		// Settings panel closed
+		slog.Info("settings_close")
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
 			m.modelPicker.Hide()
+		}
+		if m.optionPicker != nil && m.optionPicker.IsVisible() {
+			m.optionPicker.Hide()
 		}
 		return m, nil
 
 	case settingsSaveMsg:
 		// Save settings to file
-		config.Save(msg.configPath, msg.config)
+		if err := config.Save(msg.configPath, msg.config); err != nil {
+			slog.Error("settings_save_error", "error", err)
+		} else {
+			slog.Info("settings_save",
+				"model", msg.config.OpenRouter.Model,
+				"log_level", msg.config.LogLevel,
+				"log_format", msg.config.LogFormat,
+				"log_file", msg.config.LogFile,
+			)
+		}
 		m.statusBar.SetModel(msg.config.OpenRouter.Model)
 		return m, nil
 
 	case openModelPickerMsg:
+		slog.Info("model_picker_open", "current", msg.current, "cached_models", len(msg.options))
 		if m.modelPicker != nil {
 			m.modelPicker.SetSize(m.width, m.height)
 			m.modelPicker.Show(msg.options, msg.current)
@@ -255,6 +287,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case modelPickerSelectMsg:
+		slog.Info("model_picker_select", "model", msg.modelID)
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
 			m.modelPicker.Hide()
 		}
@@ -263,8 +296,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case openOptionPickerMsg:
+		slog.Info("option_picker_open", "field", msg.fieldKey, "current", msg.current)
+		if m.optionPicker != nil {
+			m.optionPicker.SetSize(m.width, m.height)
+			m.optionPicker.Show(msg.title, msg.fieldKey, msg.options, msg.current)
+		}
+		return m, nil
+
+	case optionPickerSelectMsg:
+		slog.Info("option_picker_select", "field", msg.fieldKey, "value", msg.value)
+		if m.optionPicker != nil && m.optionPicker.IsVisible() {
+			m.optionPicker.Hide()
+		}
+		if m.settingsPanel != nil {
+			switch msg.fieldKey {
+			case "log_level":
+				m.settingsPanel.SetLogLevelValue(msg.value)
+			case "log_format":
+				m.settingsPanel.SetLogFormatValue(msg.value)
+			}
+		}
+		return m, nil
+
 	case modelPickerRefreshMsg:
 		if msg.err != nil {
+			slog.Error("model_picker_refresh_error", "error", msg.err)
 			return m, nil
 		}
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
@@ -273,6 +330,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.settingsPanel != nil {
 			m.settingsPanel.SetModelCache(msg.cache)
 		}
+		slog.Info("model_picker_refresh_done", "models", len(msg.cache.Models))
 		return m, nil
 
 	case resultPanelCloseMsg:
@@ -281,6 +339,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case commands.WtfStreamEvent:
 		if msg.Err != nil {
+			slog.Error("wtf_stream_error", "error", msg.Err)
 			m.wtfContent = fmt.Sprintf("Error: %v", msg.Err)
 			if m.sidebar != nil && m.sidebar.IsVisible() {
 				m.sidebar.SetContent(m.wtfContent)
@@ -299,6 +358,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if msg.Done {
+			slog.Info("wtf_stream_done")
 			m.wtfStream = nil
 			return m, nil
 		}
@@ -316,6 +376,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ptyErrorMsg:
 		// PTY error - probably shell exited
+		slog.Error("pty_error", "error", msg.err)
 		return m, tea.Quit
 
 	case directoryUpdateMsg:
@@ -353,6 +414,10 @@ func (m Model) View() string {
 	overlayView := baseView
 	if m.settingsPanel.IsVisible() {
 		overlayView = m.overlayCenter(overlayView, m.settingsPanel.View())
+	}
+
+	if m.optionPicker != nil && m.optionPicker.IsVisible() {
+		return m.overlayCenter(overlayView, m.optionPicker.View())
 	}
 
 	if m.modelPicker != nil && m.modelPicker.IsVisible() {
@@ -443,6 +508,9 @@ func (m *Model) applyLayout() {
 	if m.modelPicker != nil {
 		m.modelPicker.SetSize(m.width, m.height)
 	}
+	if m.optionPicker != nil {
+		m.optionPicker.SetSize(m.width, m.height)
+	}
 
 	if m.ptyFile != nil {
 		ResizePTY(m.ptyFile, viewportWidth, viewportHeight)
@@ -525,6 +593,7 @@ func refreshModelCacheCmd(apiURL string) tea.Cmd {
 	}
 
 	return func() tea.Msg {
+		slog.Info("model_picker_refresh_start", "api_url", trimmed)
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 

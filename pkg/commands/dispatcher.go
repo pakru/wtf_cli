@@ -1,5 +1,10 @@
 package commands
 
+import (
+	"log/slog"
+	"time"
+)
+
 // Result represents the result of a command execution
 type Result struct {
 	Title   string
@@ -44,15 +49,38 @@ func (d *Dispatcher) Register(h Handler) {
 
 // Dispatch executes a command by name
 func (d *Dispatcher) Dispatch(cmdName string, ctx *Context) *Result {
+	start := time.Now()
+	attrs := []any{"command", cmdName}
+	if ctx != nil {
+		attrs = append(attrs, "cwd", ctx.CurrentDir, "exit_code", ctx.LastExitCode)
+	}
+	slog.Info("command_start", attrs...)
+
 	handler, ok := d.handlers[cmdName]
 	if !ok {
+		slog.Warn("command_unknown", attrs...)
 		return &Result{
 			Title:   "Error",
 			Content: "Unknown command: " + cmdName,
 		}
 	}
 
-	return handler.Execute(ctx)
+	result := handler.Execute(ctx)
+	durationMs := time.Since(start).Milliseconds()
+	doneAttrs := append(attrs, "duration_ms", durationMs)
+	if result == nil {
+		slog.Warn("command_result_nil", doneAttrs...)
+		return result
+	}
+
+	doneAttrs = append(doneAttrs, "title", result.Title)
+	if result.Error != nil {
+		slog.Error("command_error", append(doneAttrs, "error", result.Error)...)
+	} else {
+		slog.Info("command_done", doneAttrs...)
+	}
+
+	return result
 }
 
 // GetHandler returns a handler by name

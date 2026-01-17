@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -303,6 +304,64 @@ func TestSettingsPanel_ModelPicker(t *testing.T) {
 	sp.SetModelValue(selectMsg.modelID)
 	if sp.config.OpenRouter.Model != "model-b" {
 		t.Errorf("Expected model 'model-b', got %q", sp.config.OpenRouter.Model)
+	}
+}
+
+func TestSettingsPanel_OpenLogLevelPicker(t *testing.T) {
+	withTempHome(t, nil)
+
+	sp := NewSettingsPanel()
+	cfg := config.Default()
+	sp.Show(cfg, "/tmp/test_config.json")
+
+	// Move to Log Level field (index 8)
+	for i := 0; i < 8; i++ {
+		sp.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+
+	cmd := sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Expected openOptionPickerMsg command")
+	}
+	msg := cmd()
+	openMsg, ok := msg.(openOptionPickerMsg)
+	if !ok {
+		t.Fatalf("Expected openOptionPickerMsg, got %T", msg)
+	}
+	if openMsg.fieldKey != "log_level" {
+		t.Fatalf("Expected fieldKey log_level, got %q", openMsg.fieldKey)
+	}
+	if openMsg.current != normalizeLogLevel(cfg.LogLevel) {
+		t.Fatalf("Expected current log level %q, got %q", normalizeLogLevel(cfg.LogLevel), openMsg.current)
+	}
+}
+
+func TestSettingsPanel_OpenLogFormatPicker(t *testing.T) {
+	withTempHome(t, nil)
+
+	sp := NewSettingsPanel()
+	cfg := config.Default()
+	sp.Show(cfg, "/tmp/test_config.json")
+
+	// Move to Log Format field (index 9)
+	for i := 0; i < 9; i++ {
+		sp.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+
+	cmd := sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Expected openOptionPickerMsg command")
+	}
+	msg := cmd()
+	openMsg, ok := msg.(openOptionPickerMsg)
+	if !ok {
+		t.Fatalf("Expected openOptionPickerMsg, got %T", msg)
+	}
+	if openMsg.fieldKey != "log_format" {
+		t.Fatalf("Expected fieldKey log_format, got %q", openMsg.fieldKey)
+	}
+	if openMsg.current != strings.ToLower(strings.TrimSpace(cfg.LogFormat)) {
+		t.Fatalf("Expected current log format %q, got %q", cfg.LogFormat, openMsg.current)
 	}
 }
 

@@ -193,6 +193,28 @@ func TestValidate_InvalidAPIURL(t *testing.T) {
 	}
 }
 
+func TestValidate_InvalidLogLevel(t *testing.T) {
+	cfg := Default()
+	cfg.OpenRouter.APIKey = "test"
+	cfg.LogLevel = "verbose"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Expected error for invalid log level, got nil")
+	}
+}
+
+func TestValidate_InvalidLogFormat(t *testing.T) {
+	cfg := Default()
+	cfg.OpenRouter.APIKey = "test"
+	cfg.LogFormat = "xml"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Expected error for invalid log format, got nil")
+	}
+}
+
 func TestValidate_MissingModel(t *testing.T) {
 	cfg := Default()
 	cfg.OpenRouter.APIKey = "test"
