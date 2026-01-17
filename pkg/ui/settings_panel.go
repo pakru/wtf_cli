@@ -443,7 +443,7 @@ func (sp *SettingsPanel) View() string {
 		Foreground(lipgloss.Color("252"))
 
 	selectedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("0")).
+		Foreground(lipgloss.Color("15")).
 		Background(lipgloss.Color("141")).
 		Bold(true)
 
@@ -491,7 +491,8 @@ func (sp *SettingsPanel) View() string {
 			if sp.editing {
 				line = "▶ " + label + " " + value
 			} else {
-				line = selectedStyle.Render(" " + field.Label + ": " + value + " ")
+				labelText := fmt.Sprintf("%-20s", field.Label+":")
+				line = selectedStyle.Render("  " + labelText + " " + value + " ")
 			}
 		} else {
 			line = "  " + label + " " + valueStyle.Render(value)
@@ -522,7 +523,7 @@ func (sp *SettingsPanel) View() string {
 			for i := start; i < end; i++ {
 				line := sp.modelOptionLabel(options[i])
 				if i == sp.modelPickerIndex {
-					content.WriteString(selectedStyle.Render(" " + line + " "))
+					content.WriteString(selectedStyle.Render("  " + line + "  "))
 				} else {
 					content.WriteString(normalStyle.Render("  " + line + "  "))
 				}

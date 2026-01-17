@@ -172,8 +172,12 @@ func (p *CommandPalette) View() string {
 		Foreground(lipgloss.Color("252"))
 
 	selectedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("0")).
+		Foreground(lipgloss.Color("15")).
 		Background(lipgloss.Color("141")).
+		Bold(true)
+
+	selectedDescStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("15")).
 		Bold(true)
 
 	descStyle := lipgloss.NewStyle().
@@ -203,15 +207,32 @@ func (p *CommandPalette) View() string {
 	if len(filtered) == 0 {
 		content.WriteString(descStyle.Render("No matching commands"))
 	} else {
-		for i, cmd := range filtered {
-			var line string
-			if i == p.selected {
-				line = selectedStyle.Render(" " + cmd.Name + " ")
-			} else {
-				line = normalStyle.Render("  " + cmd.Name + "  ")
+		maxNameWidth := 0
+		for _, cmd := range filtered {
+			if w := lipgloss.Width(cmd.Name); w > maxNameWidth {
+				maxNameWidth = w
 			}
-			line += " " + descStyle.Render(cmd.Description)
-			content.WriteString(line + "\n")
+		}
+		if maxNameWidth < 4 {
+			maxNameWidth = 4
+		}
+
+		for i, cmd := range filtered {
+			namePadding := maxNameWidth - lipgloss.Width(cmd.Name)
+			if namePadding < 0 {
+				namePadding = 0
+			}
+			nameLabel := cmd.Name + strings.Repeat(" ", namePadding)
+
+			if i == p.selected {
+				line := selectedStyle.Render("  " + nameLabel + " ")
+				line += " " + selectedDescStyle.Render(cmd.Description)
+				content.WriteString(line + "\n")
+			} else {
+				line := normalStyle.Render("  " + nameLabel + " ")
+				line += " " + descStyle.Render(cmd.Description)
+				content.WriteString(line + "\n")
+			}
 		}
 	}
 
