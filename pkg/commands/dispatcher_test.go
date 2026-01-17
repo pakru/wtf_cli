@@ -31,7 +31,7 @@ func TestNewDispatcher(t *testing.T) {
 	}
 
 	// Check all commands are registered
-	commands := []string{"/wtf", "/explain", "/fix", "/history", "/help"}
+	commands := []string{"/wtf", "/explain", "/fix", "/history", "/models", "/settings", "/close_sidebar", "/help"}
 	for _, cmd := range commands {
 		if _, ok := d.GetHandler(cmd); !ok {
 			t.Errorf("Expected handler for %s to be registered", cmd)

@@ -32,6 +32,19 @@ func (rp *ResultPanel) Show(title, content string) {
 	rp.lines = strings.Split(content, "\n")
 }
 
+// SetContent updates the panel content without resetting visibility.
+func (rp *ResultPanel) SetContent(content string) {
+	rp.content = content
+	rp.lines = strings.Split(content, "\n")
+	if rp.scrollY >= len(rp.lines) {
+		if len(rp.lines) > 0 {
+			rp.scrollY = len(rp.lines) - 1
+		} else {
+			rp.scrollY = 0
+		}
+	}
+}
+
 // Hide hides the result panel
 func (rp *ResultPanel) Hide() {
 	rp.visible = false
@@ -171,17 +184,6 @@ func (rp *ResultPanel) View() string {
 
 	// Render box
 	box := boxStyle.Render(sb.String())
-
-	// Center the box
-	boxWidth := lipgloss.Width(box)
-	leftPad := (rp.width - boxWidth) / 2
-	if leftPad > 0 {
-		lines := strings.Split(box, "\n")
-		for i, line := range lines {
-			lines[i] = strings.Repeat(" ", leftPad) + line
-		}
-		box = strings.Join(lines, "\n")
-	}
 
 	return box
 }

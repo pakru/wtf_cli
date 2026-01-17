@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -12,6 +13,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/cellbuf"
 )
 
 // Model represents the Bubble Tea application state
@@ -27,6 +30,7 @@ type Model struct {
 	palette       *CommandPalette // Command palette overlay
 	resultPanel   *ResultPanel    // Result panel overlay
 	settingsPanel *SettingsPanel  // Settings panel overlay
+	sidebar       *Sidebar        // AI response sidebar
 
 	// Command system
 	dispatcher *commands.Dispatcher
@@ -35,6 +39,11 @@ type Model struct {
 	buffer     *buffer.CircularBuffer
 	session    *capture.SessionContext
 	currentDir string
+
+	// Streaming state
+	wtfStream  <-chan commands.WtfStreamEvent
+	wtfContent string
+	wtfTitle   string
 
 	// UI state
 	width  int
@@ -56,15 +65,19 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 	viewport := NewPTYViewport()
 	viewport.AppendOutput([]byte(WelcomeMessage()))
 
+	statusBar := NewStatusBarView()
+	statusBar.SetModel(loadModelFromConfig())
+
 	return Model{
 		ptyFile:       ptyFile,
 		cwdFunc:       cwdFunc,
 		viewport:      viewport,
-		statusBar:     NewStatusBarView(),
+		statusBar:     statusBar,
 		inputHandler:  NewInputHandler(ptyFile),
 		palette:       NewCommandPalette(),
 		resultPanel:   NewResultPanel(),
 		settingsPanel: NewSettingsPanel(),
+		sidebar:       NewSidebar(),
 		dispatcher:    commands.NewDispatcher(),
 		buffer:        buf,
 		session:       sess,
@@ -98,17 +111,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 
-		// Update viewport size (leave room for status bar = 1 line)
-		m.viewport.SetSize(msg.Width, msg.Height-1)
-
-		// Update palette and result panel sizes
-		m.palette.SetSize(msg.Width, msg.Height)
-		m.resultPanel.SetSize(msg.Width, msg.Height)
-
-		// Synchronize PTY size with terminal size
-		if m.ptyFile != nil {
-			ResizePTY(m.ptyFile, msg.Width, msg.Height-1)
-		}
+		m.applyLayout()
 
 		return m, nil
 
@@ -128,6 +131,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If palette is visible, handle its keys first
 		if m.palette.IsVisible() {
 			cmd := m.palette.Update(msg)
+			return m, cmd
+		}
+
+		if m.sidebar != nil && m.sidebar.IsVisible() && m.sidebar.ShouldHandleKey(msg) {
+			cmd := m.sidebar.Update(msg)
+			if !m.sidebar.IsVisible() {
+				m.applyLayout()
+			}
 			return m, cmd
 		}
 
@@ -152,18 +163,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Execute the command
 		ctx := commands.NewContext(m.buffer, m.session, m.currentDir)
-		result := m.dispatcher.Dispatch(msg.command, ctx)
+		handler, ok := m.dispatcher.GetHandler(msg.command)
+		if !ok {
+			m.resultPanel.Show("Error", "Unknown command: "+msg.command)
+			return m, nil
+		}
+		result := handler.Execute(ctx)
 
 		// Special case: /settings opens settings panel
 		if result.Title == "__OPEN_SETTINGS__" {
 			cfg, _ := config.Load(config.GetConfigPath())
 			m.settingsPanel.SetSize(m.width, m.height)
 			m.settingsPanel.Show(cfg, config.GetConfigPath())
+			m.statusBar.SetModel(cfg.OpenRouter.Model)
+			return m, nil
+		}
+
+		if streamHandler, ok := handler.(commands.StreamingHandler); ok {
+			stream, err := streamHandler.StartStream(ctx)
+			if err != nil {
+				if m.sidebar != nil {
+					m.sidebar.Show(result.Title, fmt.Sprintf("Error: %v", err))
+					m.applyLayout()
+				}
+				return m, nil
+			}
+			if stream == nil {
+				m.resultPanel.Show(result.Title, result.Content)
+				m.wtfTitle = result.Title
+				m.wtfContent = ""
+				return m, nil
+			}
+			if m.sidebar != nil {
+				m.sidebar.Show(result.Title, result.Content)
+				m.applyLayout()
+			}
+			m.wtfTitle = result.Title
+			m.wtfContent = ""
+			m.wtfStream = stream
+			return m, listenToWtfStream(stream)
+		}
+
+		if result.Title == "__CLOSE_SIDEBAR__" {
+			if m.sidebar != nil {
+				m.sidebar.Hide()
+				m.applyLayout()
+			}
 			return m, nil
 		}
 
 		// Show result in panel
 		m.resultPanel.Show(result.Title, result.Content)
+		m.wtfTitle = result.Title
+		m.wtfContent = ""
+
 		return m, nil
 
 	case paletteCancelMsg:
@@ -178,10 +231,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case settingsSaveMsg:
 		// Save settings to file
 		config.Save(msg.configPath, msg.config)
+		m.statusBar.SetModel(msg.config.OpenRouter.Model)
 		return m, nil
 
 	case resultPanelCloseMsg:
 		// Result panel closed
+		return m, nil
+
+	case commands.WtfStreamEvent:
+		if msg.Err != nil {
+			m.wtfContent = fmt.Sprintf("Error: %v", msg.Err)
+			if m.sidebar != nil && m.sidebar.IsVisible() {
+				m.sidebar.SetContent(m.wtfContent)
+			}
+			m.wtfStream = nil
+			return m, nil
+		}
+		if msg.Delta != "" {
+			if m.wtfContent == "" {
+				m.wtfContent = msg.Delta
+			} else {
+				m.wtfContent += msg.Delta
+			}
+			if m.sidebar != nil && m.sidebar.IsVisible() {
+				m.sidebar.SetContent(m.wtfContent)
+			}
+		}
+		if msg.Done {
+			m.wtfStream = nil
+			return m, nil
+		}
+		if m.wtfStream != nil {
+			return m, listenToWtfStream(m.wtfStream)
+		}
 		return m, nil
 
 	case ptyOutputMsg:
@@ -220,11 +302,12 @@ func (m Model) View() string {
 	m.statusBar.SetDirectory(m.currentDir)
 
 	// Base view: viewport + status bar
-	baseView := lipgloss.JoinVertical(
-		lipgloss.Left,
-		m.viewport.View(),
-		m.statusBar.Render(),
-	)
+	topView := m.viewport.View()
+	if m.sidebar != nil && m.sidebar.IsVisible() {
+		topView = lipgloss.JoinHorizontal(lipgloss.Top, topView, m.sidebar.View())
+	}
+
+	baseView := lipgloss.JoinVertical(lipgloss.Left, topView, m.statusBar.Render())
 
 	// Overlay settings panel if visible
 	if m.settingsPanel.IsVisible() {
@@ -251,12 +334,31 @@ func (m Model) overlayCenter(base, panel string) string {
 
 	// Calculate vertical position (center)
 	panelHeight := len(panelLines)
+	if panelHeight > m.height {
+		panelLines = panelLines[:m.height]
+		panelHeight = len(panelLines)
+	}
 	startRow := (m.height - panelHeight) / 2
 	if startRow < 0 {
 		startRow = 0
 	}
 
-	// Build result
+	panelWidth := 0
+	for _, line := range panelLines {
+		width := ansi.StringWidth(line)
+		if width > panelWidth {
+			panelWidth = width
+		}
+	}
+	if panelWidth > m.width {
+		panelWidth = m.width
+	}
+	startCol := (m.width - panelWidth) / 2
+	if startCol < 0 {
+		startCol = 0
+	}
+
+	// Build result with overlay to preserve background text outside the panel.
 	result := make([]string, m.height)
 	for i := 0; i < m.height; i++ {
 		if i < len(baseLines) {
@@ -266,11 +368,11 @@ func (m Model) overlayCenter(base, panel string) string {
 		}
 	}
 
-	// Overlay panel lines (full width, just replace those rows)
+	// Overlay panel lines while keeping the base view visible outside the panel area.
 	for i, panelLine := range panelLines {
 		row := startRow + i
 		if row >= 0 && row < m.height {
-			result[row] = panelLine
+			result[row] = overlayLine(result[row], panelLine, startCol, panelWidth, m.width)
 		}
 	}
 
@@ -279,12 +381,134 @@ func (m Model) overlayCenter(base, panel string) string {
 
 // Helper functions
 
+func (m *Model) applyLayout() {
+	viewportHeight := m.height - 1
+	viewportWidth := m.width
+
+	if m.sidebar != nil && m.sidebar.IsVisible() {
+		left, right := splitSidebarWidths(m.width)
+		viewportWidth = left
+		m.sidebar.SetSize(right, viewportHeight)
+	}
+
+	m.viewport.SetSize(viewportWidth, viewportHeight)
+	m.palette.SetSize(m.width, m.height)
+	m.resultPanel.SetSize(m.width, m.height)
+	m.settingsPanel.SetSize(m.width, m.height)
+
+	if m.ptyFile != nil {
+		ResizePTY(m.ptyFile, viewportWidth, viewportHeight)
+	}
+}
+
+func splitSidebarWidths(total int) (left int, right int) {
+	const minPaneWidth = 20
+
+	if total <= 0 {
+		return 0, 0
+	}
+
+	if total < minPaneWidth*2 {
+		left = int(float64(total) * 0.6)
+		if left < 1 {
+			left = 1
+		}
+		right = total - left
+		if right < 1 {
+			right = 1
+			left = total - right
+		}
+		return left, right
+	}
+
+	left = int(float64(total) * 0.6)
+	right = total - left
+
+	if left < minPaneWidth {
+		left = minPaneWidth
+		right = total - left
+	}
+	if right < minPaneWidth {
+		right = minPaneWidth
+		left = total - right
+	}
+
+	if left < 1 {
+		left = 1
+	}
+	if right < 1 {
+		right = 1
+	}
+
+	return left, right
+}
+
 func getCurrentDir() string {
 	dir, err := os.Getwd()
 	if err != nil {
 		return "~"
 	}
 	return dir
+}
+
+func loadModelFromConfig() string {
+	modelName := config.Default().OpenRouter.Model
+	path := config.GetConfigPath()
+	if path == "" {
+		return modelName
+	}
+	if _, err := os.Stat(path); err != nil {
+		return modelName
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		return modelName
+	}
+	if strings.TrimSpace(cfg.OpenRouter.Model) == "" {
+		return modelName
+	}
+	return cfg.OpenRouter.Model
+}
+
+func overlayLine(baseLine, panelLine string, startCol, panelWidth, totalWidth int) string {
+	if totalWidth <= 0 {
+		return ""
+	}
+	if startCol < 0 {
+		startCol = 0
+	}
+	if startCol > totalWidth {
+		startCol = totalWidth
+	}
+	if panelWidth < 0 {
+		panelWidth = 0
+	}
+	if startCol+panelWidth > totalWidth {
+		panelWidth = totalWidth - startCol
+	}
+
+	baseBuf := cellbuf.NewBuffer(totalWidth, 1)
+	cellbuf.SetContent(baseBuf, baseLine)
+
+	if panelWidth > 0 && panelLine != "" {
+		panelBuf := cellbuf.NewBuffer(panelWidth, 1)
+		cellbuf.SetContent(panelBuf, panelLine)
+
+		for x := 0; x < panelWidth; x++ {
+			panelCell := panelBuf.Cell(x, 0)
+			if panelCell == nil || panelCell.Width == 0 {
+				continue
+			}
+			baseBuf.SetCell(startCol+x, 0, panelCell)
+		}
+	}
+
+	_, line := cellbuf.RenderLine(baseBuf, 0)
+	lineWidth := ansi.StringWidth(line)
+	if lineWidth < totalWidth {
+		line += ansi.ResetStyle + strings.Repeat(" ", totalWidth-lineWidth)
+	}
+	return line
 }
 
 // PTY message types
@@ -306,5 +530,15 @@ func listenToPTY(ptyFile *os.File) tea.Cmd {
 			return ptyErrorMsg{err: err}
 		}
 		return ptyOutputMsg{data: buf[:n]}
+	}
+}
+
+func listenToWtfStream(stream <-chan commands.WtfStreamEvent) tea.Cmd {
+	return func() tea.Msg {
+		event, ok := <-stream
+		if !ok {
+			return commands.WtfStreamEvent{Done: true}
+		}
+		return event
 	}
 }

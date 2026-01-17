@@ -17,6 +17,10 @@ func TestDefault(t *testing.T) {
 		t.Errorf("Expected model 'google/gemini-3.0-flash', got %q", cfg.OpenRouter.Model)
 	}
 
+	if cfg.OpenRouter.APIURL != "https://openrouter.ai/api/v1" {
+		t.Errorf("Expected API URL 'https://openrouter.ai/api/v1', got %q", cfg.OpenRouter.APIURL)
+	}
+
 	if cfg.BufferSize != 2000 {
 		t.Errorf("Expected BufferSize 2000, got %d", cfg.BufferSize)
 	}
@@ -66,6 +70,42 @@ func TestLoad_ExistingConfig(t *testing.T) {
 
 	if cfg.BufferSize != 5000 {
 		t.Errorf("Expected BufferSize 5000, got %d", cfg.BufferSize)
+	}
+}
+
+func TestLoad_MigrationDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	// Missing api_url and llm_provider, explicit temperature 0 should be preserved
+	raw := `{
+  "openrouter": {
+    "api_key": "test-key",
+    "model": "test-model",
+    "temperature": 0
+  },
+  "buffer_size": 4000,
+  "context_window": 900
+}`
+	if err := os.WriteFile(configPath, []byte(raw), 0600); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.LLMProvider != "openrouter" {
+		t.Errorf("Expected LLMProvider 'openrouter', got %q", cfg.LLMProvider)
+	}
+
+	if cfg.OpenRouter.APIURL != "https://openrouter.ai/api/v1" {
+		t.Errorf("Expected API URL default, got %q", cfg.OpenRouter.APIURL)
+	}
+
+	if cfg.OpenRouter.Temperature != 0 {
+		t.Errorf("Expected temperature 0, got %f", cfg.OpenRouter.Temperature)
 	}
 }
 
@@ -139,6 +179,39 @@ func TestValidate_MissingAPIKey(t *testing.T) {
 	err := cfg.Validate()
 	if err == nil {
 		t.Error("Expected error for missing API key, got nil")
+	}
+}
+
+func TestValidate_MissingAPIURL(t *testing.T) {
+	cfg := Default()
+	cfg.OpenRouter.APIKey = "test"
+	cfg.OpenRouter.APIURL = ""
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Expected error for missing API URL, got nil")
+	}
+}
+
+func TestValidate_InvalidAPIURL(t *testing.T) {
+	cfg := Default()
+	cfg.OpenRouter.APIKey = "test"
+	cfg.OpenRouter.APIURL = "not a url"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Expected error for invalid API URL, got nil")
+	}
+}
+
+func TestValidate_MissingModel(t *testing.T) {
+	cfg := Default()
+	cfg.OpenRouter.APIKey = "test"
+	cfg.OpenRouter.Model = "   "
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Expected error for missing model, got nil")
 	}
 }
 

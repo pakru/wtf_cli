@@ -3,8 +3,10 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Config represents the application configuration
@@ -21,6 +23,9 @@ type Config struct {
 // OpenRouterConfig holds the OpenRouter API configuration
 type OpenRouterConfig struct {
 	APIKey            string  `json:"api_key"`
+	APIURL            string  `json:"api_url"`
+	HTTPReferer       string  `json:"http_referer"`
+	XTitle            string  `json:"x_title"`
 	Model             string  `json:"model"`
 	Temperature       float64 `json:"temperature"`
 	MaxTokens         int     `json:"max_tokens"`
@@ -39,6 +44,9 @@ func Default() Config {
 		LLMProvider: "openrouter",
 		OpenRouter: OpenRouterConfig{
 			APIKey:            "",
+			APIURL:            "https://openrouter.ai/api/v1",
+			HTTPReferer:       "",
+			XTitle:            "",
 			Model:             "google/gemini-3.0-flash",
 			Temperature:       0.7,
 			MaxTokens:         2000,
@@ -84,6 +92,8 @@ func Load(configPath string) (Config, error) {
 		return Config{}, fmt.Errorf("failed to parse config: %w", err)
 	}
 
+	cfg = applyDefaults(cfg, data)
+
 	return cfg, nil
 }
 
@@ -113,6 +123,21 @@ func (c Config) Validate() error {
 		return fmt.Errorf("OpenRouter API key is required (set in config file)")
 	}
 
+	// Validate API URL
+	apiURL := strings.TrimSpace(c.OpenRouter.APIURL)
+	if apiURL == "" {
+		return fmt.Errorf("OpenRouter api_url is required (set in config file)")
+	}
+	parsedURL, err := url.Parse(apiURL)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return fmt.Errorf("OpenRouter api_url must be a valid URL, got: %s", c.OpenRouter.APIURL)
+	}
+
+	// Validate model
+	if strings.TrimSpace(c.OpenRouter.Model) == "" {
+		return fmt.Errorf("OpenRouter model is required (set in config file)")
+	}
+
 	// Validate temperature
 	if c.OpenRouter.Temperature < 0 || c.OpenRouter.Temperature > 2 {
 		return fmt.Errorf("temperature must be between 0 and 2, got: %f", c.OpenRouter.Temperature)
@@ -138,6 +163,94 @@ func (c Config) Validate() error {
 	}
 
 	return nil
+}
+
+type configPresence struct {
+	LLMProvider *string `json:"llm_provider"`
+	OpenRouter  *struct {
+		APIKey            *string  `json:"api_key"`
+		APIURL            *string  `json:"api_url"`
+		HTTPReferer       *string  `json:"http_referer"`
+		XTitle            *string  `json:"x_title"`
+		Model             *string  `json:"model"`
+		Temperature       *float64 `json:"temperature"`
+		MaxTokens         *int     `json:"max_tokens"`
+		APITimeoutSeconds *int     `json:"api_timeout_seconds"`
+	} `json:"openrouter"`
+	BufferSize    *int `json:"buffer_size"`
+	ContextWindow *int `json:"context_window"`
+	StatusBar     *struct {
+		Position *string `json:"position"`
+		Colors   *string `json:"colors"`
+	} `json:"status_bar"`
+	DryRun   *bool   `json:"dry_run"`
+	LogLevel *string `json:"log_level"`
+}
+
+func applyDefaults(cfg Config, data []byte) Config {
+	defaults := Default()
+	var presence configPresence
+	if err := json.Unmarshal(data, &presence); err != nil {
+		return cfg
+	}
+
+	if presence.LLMProvider == nil || strings.TrimSpace(cfg.LLMProvider) == "" {
+		cfg.LLMProvider = defaults.LLMProvider
+	}
+
+	if presence.OpenRouter == nil {
+		cfg.OpenRouter = defaults.OpenRouter
+	} else {
+		if presence.OpenRouter.APIKey == nil {
+			cfg.OpenRouter.APIKey = defaults.OpenRouter.APIKey
+		}
+		if presence.OpenRouter.APIURL == nil || strings.TrimSpace(cfg.OpenRouter.APIURL) == "" {
+			cfg.OpenRouter.APIURL = defaults.OpenRouter.APIURL
+		}
+		if presence.OpenRouter.HTTPReferer == nil {
+			cfg.OpenRouter.HTTPReferer = defaults.OpenRouter.HTTPReferer
+		}
+		if presence.OpenRouter.XTitle == nil {
+			cfg.OpenRouter.XTitle = defaults.OpenRouter.XTitle
+		}
+		if presence.OpenRouter.Model == nil || strings.TrimSpace(cfg.OpenRouter.Model) == "" {
+			cfg.OpenRouter.Model = defaults.OpenRouter.Model
+		}
+		if presence.OpenRouter.Temperature == nil {
+			cfg.OpenRouter.Temperature = defaults.OpenRouter.Temperature
+		}
+		if presence.OpenRouter.MaxTokens == nil || cfg.OpenRouter.MaxTokens <= 0 {
+			cfg.OpenRouter.MaxTokens = defaults.OpenRouter.MaxTokens
+		}
+		if presence.OpenRouter.APITimeoutSeconds == nil || cfg.OpenRouter.APITimeoutSeconds <= 0 {
+			cfg.OpenRouter.APITimeoutSeconds = defaults.OpenRouter.APITimeoutSeconds
+		}
+	}
+
+	if presence.BufferSize == nil || cfg.BufferSize <= 0 {
+		cfg.BufferSize = defaults.BufferSize
+	}
+
+	if presence.ContextWindow == nil || cfg.ContextWindow <= 0 {
+		cfg.ContextWindow = defaults.ContextWindow
+	}
+
+	if presence.StatusBar == nil {
+		cfg.StatusBar = defaults.StatusBar
+	} else {
+		if presence.StatusBar.Position == nil || strings.TrimSpace(cfg.StatusBar.Position) == "" {
+			cfg.StatusBar.Position = defaults.StatusBar.Position
+		}
+		if presence.StatusBar.Colors == nil || strings.TrimSpace(cfg.StatusBar.Colors) == "" {
+			cfg.StatusBar.Colors = defaults.StatusBar.Colors
+		}
+	}
+
+	if presence.LogLevel == nil || strings.TrimSpace(cfg.LogLevel) == "" {
+		cfg.LogLevel = defaults.LogLevel
+	}
+
+	return cfg
 }
 
 // GetConfigPath returns the default configuration file path

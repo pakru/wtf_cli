@@ -1,8 +1,12 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
+	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/config"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,6 +25,8 @@ func TestNewSettingsPanel(t *testing.T) {
 }
 
 func TestSettingsPanel_Show(t *testing.T) {
+	withTempHome(t, nil)
+
 	sp := NewSettingsPanel()
 	cfg := config.Default()
 
@@ -44,6 +50,8 @@ func TestSettingsPanel_Show(t *testing.T) {
 }
 
 func TestSettingsPanel_Hide(t *testing.T) {
+	withTempHome(t, nil)
+
 	sp := NewSettingsPanel()
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
@@ -56,6 +64,8 @@ func TestSettingsPanel_Hide(t *testing.T) {
 }
 
 func TestSettingsPanel_Navigation(t *testing.T) {
+	withTempHome(t, nil)
+
 	sp := NewSettingsPanel()
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
@@ -87,11 +97,14 @@ func TestSettingsPanel_Navigation(t *testing.T) {
 }
 
 func TestSettingsPanel_EditMode(t *testing.T) {
+	withTempHome(t, nil)
+
 	sp := NewSettingsPanel()
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	// Move to Model field (index 1)
+	// Move to Model field (index 2)
+	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
 	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
 
 	// Enter edit mode
@@ -124,27 +137,29 @@ func TestSettingsPanel_EditMode(t *testing.T) {
 }
 
 func TestSettingsPanel_BoolToggle(t *testing.T) {
+	withTempHome(t, nil)
+
 	sp := NewSettingsPanel()
 	cfg := config.Default()
 	cfg.DryRun = false
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	// Navigate to Dry Run field (last one, index 7)
-	for i := 0; i < 7; i++ {
+	// Navigate to Dry Run field (last one, index 9)
+	for i := 0; i < 9; i++ {
 		sp.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
 
 	// Initial value should be false
-	if sp.fields[7].Value != "false" {
-		t.Errorf("Expected 'false', got %q", sp.fields[7].Value)
+	if sp.fields[9].Value != "false" {
+		t.Errorf("Expected 'false', got %q", sp.fields[9].Value)
 	}
 
 	// Toggle with Enter
 	sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	// Should toggle to true
-	if sp.fields[7].Value != "true" {
-		t.Errorf("Expected 'true' after toggle, got %q", sp.fields[7].Value)
+	if sp.fields[9].Value != "true" {
+		t.Errorf("Expected 'true' after toggle, got %q", sp.fields[9].Value)
 	}
 
 	// Should be marked as changed
@@ -184,29 +199,31 @@ func TestSettingsPanel_ValidateValue(t *testing.T) {
 }
 
 func TestSettingsPanel_ApplyField(t *testing.T) {
+	withTempHome(t, nil)
+
 	sp := NewSettingsPanel()
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
 	// Modify model field
-	sp.fields[1].Value = "new-model"
-	sp.applyField(&sp.fields[1])
+	sp.fields[2].Value = "new-model"
+	sp.applyField(&sp.fields[2])
 
 	if sp.config.OpenRouter.Model != "new-model" {
 		t.Errorf("Expected model 'new-model', got %q", sp.config.OpenRouter.Model)
 	}
 
 	// Modify temperature
-	sp.fields[2].Value = "0.9"
-	sp.applyField(&sp.fields[2])
+	sp.fields[4].Value = "0.9"
+	sp.applyField(&sp.fields[4])
 
 	if sp.config.OpenRouter.Temperature != 0.9 {
 		t.Errorf("Expected temperature 0.9, got %f", sp.config.OpenRouter.Temperature)
 	}
 
 	// Modify buffer size
-	sp.fields[5].Value = "5000"
-	sp.applyField(&sp.fields[5])
+	sp.fields[7].Value = "5000"
+	sp.applyField(&sp.fields[7])
 
 	if sp.config.BufferSize != 5000 {
 		t.Errorf("Expected buffer size 5000, got %d", sp.config.BufferSize)
@@ -214,6 +231,8 @@ func TestSettingsPanel_ApplyField(t *testing.T) {
 }
 
 func TestSettingsPanel_View(t *testing.T) {
+	withTempHome(t, nil)
+
 	sp := NewSettingsPanel()
 	cfg := config.Default()
 	sp.SetSize(80, 24)
@@ -251,8 +270,68 @@ func TestSettingsPanel_ViewHidden(t *testing.T) {
 	}
 }
 
+func TestSettingsPanel_ModelPicker(t *testing.T) {
+	withTempHome(t, func(home string) {
+		cachePath := filepath.Join(home, ".wtf_cli", "models_cache.json")
+		cache := ai.ModelCache{
+			UpdatedAt: time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC),
+			Models: []ai.ModelInfo{
+				{ID: "model-a", Name: "Model A"},
+				{ID: "model-b", Name: "Model B"},
+			},
+		}
+		if err := ai.SaveModelCache(cachePath, cache); err != nil {
+			t.Fatalf("SaveModelCache() error: %v", err)
+		}
+	})
+
+	sp := NewSettingsPanel()
+	cfg := config.Default()
+	sp.Show(cfg, "/tmp/test_config.json")
+
+	// Move to Model field (index 2)
+	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
+	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
+
+	// Open model picker
+	sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !sp.modelPickerVisible {
+		t.Fatal("Expected model picker to be visible")
+	}
+
+	// Select second model
+	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
+	sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if sp.modelPickerVisible {
+		t.Fatal("Expected model picker to close after selection")
+	}
+	if sp.config.OpenRouter.Model != "model-b" {
+		t.Errorf("Expected model 'model-b', got %q", sp.config.OpenRouter.Model)
+	}
+}
+
 func containsString(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 &&
 		(s == substr || len(s) > len(substr) &&
 			(s[:len(substr)] == substr || containsString(s[1:], substr)))
+}
+
+func withTempHome(t *testing.T, setup func(string)) {
+	t.Helper()
+	tmpDir := t.TempDir()
+	oldHome, hadHome := os.LookupEnv("HOME")
+	if err := os.Setenv("HOME", tmpDir); err != nil {
+		t.Fatalf("Setenv(HOME) failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if hadHome {
+			_ = os.Setenv("HOME", oldHome)
+		} else {
+			_ = os.Unsetenv("HOME")
+		}
+	})
+	if setup != nil {
+		setup(tmpDir)
+	}
 }

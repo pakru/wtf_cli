@@ -12,6 +12,7 @@ import (
 type StatusBarView struct {
 	currentDir string
 	message    string
+	model      string
 	width      int
 }
 
@@ -33,6 +34,11 @@ func (s *StatusBarView) SetMessage(msg string) {
 	s.message = msg
 }
 
+// SetModel updates the active model displayed.
+func (s *StatusBarView) SetModel(model string) {
+	s.model = strings.TrimSpace(model)
+}
+
 // SetWidth updates the width for rendering
 func (s *StatusBarView) SetWidth(width int) {
 	s.width = width
@@ -42,10 +48,14 @@ func (s *StatusBarView) SetWidth(width int) {
 func (s *StatusBarView) Render() string {
 	// Build content
 	var content string
+	modelLabel := s.model
+	if modelLabel == "" {
+		modelLabel = "unknown"
+	}
 	if s.message != "" {
-		content = fmt.Sprintf("[wtf_cli] %s", s.message)
+		content = fmt.Sprintf("[wtf_cli] %s | [llm]: %s", s.message, modelLabel)
 	} else {
-		content = fmt.Sprintf("[wtf_cli] %s | Press / for commands", s.currentDir)
+		content = fmt.Sprintf("[wtf_cli] %s | [llm]: %s | Press / for commands", s.currentDir, modelLabel)
 	}
 
 	// Truncate if too long (use plain string length for truncation)

@@ -31,7 +31,9 @@ func NewCommandPalette() *CommandPalette {
 			{Name: "/explain", Description: "Explain what the last command did"},
 			{Name: "/fix", Description: "Suggest fix for last error"},
 			{Name: "/history", Description: "Show command history"},
+			{Name: "/models", Description: "Show available models"},
 			{Name: "/settings", Description: "Open settings panel"},
+			{Name: "/close_sidebar", Description: "Close AI sidebar"},
 			{Name: "/help", Description: "Show help"},
 		},
 		selected: 0,
@@ -146,8 +148,11 @@ func (p *CommandPalette) View() string {
 		return ""
 	}
 
-	// Use full terminal width
+	// Use a capped width for readability
 	boxWidth := p.width - 2 // Leave room for border
+	if boxWidth > 80 {
+		boxWidth = 80
+	}
 	if boxWidth < 40 {
 		boxWidth = 40
 	}

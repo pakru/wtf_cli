@@ -14,6 +14,7 @@ type StatusBar struct {
 	mu         sync.RWMutex
 	currentDir string
 	message    string
+	model      string
 	termWidth  int
 	termHeight int
 }
@@ -41,6 +42,13 @@ func (sb *StatusBar) SetMessage(msg string) {
 	sb.message = msg
 }
 
+// SetModel updates the active model displayed.
+func (sb *StatusBar) SetModel(model string) {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	sb.model = strings.TrimSpace(model)
+}
+
 // Render draws the status bar at the bottom of the terminal
 func (sb *StatusBar) Render() string {
 	sb.mu.RLock()
@@ -50,10 +58,14 @@ func (sb *StatusBar) Render() string {
 
 	// Build status bar content
 	var content string
+	modelLabel := sb.model
+	if modelLabel == "" {
+		modelLabel = "unknown"
+	}
 	if sb.message != "" {
-		content = fmt.Sprintf("[wtf_cli] %s", sb.message)
+		content = fmt.Sprintf("[wtf_cli] %s | [llm]: %s", sb.message, modelLabel)
 	} else {
-		content = fmt.Sprintf("[wtf_cli] %s | Press / for commands", sb.currentDir)
+		content = fmt.Sprintf("[wtf_cli] %s | [llm]: %s | Press / for commands", sb.currentDir, modelLabel)
 	}
 
 	// Truncate if too long

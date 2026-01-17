@@ -36,6 +36,7 @@ func TestStatusBarView_SetDirectory(t *testing.T) {
 func TestStatusBarView_SetMessage(t *testing.T) {
 	sb := NewStatusBarView()
 	sb.SetWidth(100)
+	sb.SetModel("test-model")
 
 	sb.SetMessage("Important notification")
 
@@ -54,6 +55,7 @@ func TestStatusBarView_Render(t *testing.T) {
 	sb := NewStatusBarView()
 	sb.SetWidth(80)
 	sb.SetDirectory("/test")
+	sb.SetModel("model-1")
 
 	rendered := sb.Render()
 
@@ -65,6 +67,11 @@ func TestStatusBarView_Render(t *testing.T) {
 	// Should contain directory
 	if !strings.Contains(rendered, "/test") {
 		t.Error("Expected directory")
+	}
+
+	// Should contain model label
+	if !strings.Contains(rendered, "[llm]: model-1") {
+		t.Error("Expected model indicator")
 	}
 
 	// Should contain help text
@@ -114,12 +121,17 @@ func TestStatusBarView_MessagePriority(t *testing.T) {
 	sb.SetWidth(100)
 	sb.SetDirectory("/home")
 	sb.SetMessage("Alert!")
+	sb.SetModel("model-2")
 
 	rendered := sb.Render()
 
 	// Message should be shown
 	if !strings.Contains(rendered, "Alert!") {
 		t.Error("Expected message to be displayed")
+	}
+
+	if !strings.Contains(rendered, "[llm]: model-2") {
+		t.Error("Expected model indicator")
 	}
 
 	// Clear message
