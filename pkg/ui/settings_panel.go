@@ -40,11 +40,6 @@ type SettingsPanel struct {
 
 	modelCache    ai.ModelCache
 	modelCacheErr error
-
-	modelPickerVisible bool
-	modelPickerIndex   int
-	modelPickerScroll  int
-	modelPickerFilter  string
 }
 
 // NewSettingsPanel creates a new settings panel
@@ -61,10 +56,6 @@ func (sp *SettingsPanel) Show(cfg config.Config, configPath string) {
 	sp.editing = false
 	sp.changed = false
 	sp.errorMsg = ""
-	sp.modelPickerVisible = false
-	sp.modelPickerIndex = 0
-	sp.modelPickerScroll = 0
-	sp.modelPickerFilter = ""
 	sp.loadModelCache()
 	sp.buildFields()
 }
@@ -91,7 +82,6 @@ func (sp *SettingsPanel) buildFields() {
 func (sp *SettingsPanel) Hide() {
 	sp.visible = false
 	sp.editing = false
-	sp.modelPickerVisible = false
 }
 
 // IsVisible returns whether the panel is visible
@@ -121,10 +111,6 @@ type settingsCloseMsg struct{}
 
 // Update handles keyboard input for the settings panel
 func (sp *SettingsPanel) Update(msg tea.KeyMsg) tea.Cmd {
-	if sp.modelPickerVisible {
-		return sp.handleModelPicker(msg)
-	}
-
 	// Editing mode
 	if sp.editing {
 		return sp.handleEditMode(msg)
@@ -151,8 +137,12 @@ func (sp *SettingsPanel) Update(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		if field.Key == "model" && sp.hasModelOptions() {
-			sp.openModelPicker()
-			return nil
+			options := make([]ai.ModelInfo, len(sp.modelCache.Models))
+			copy(options, sp.modelCache.Models)
+			current := sp.config.OpenRouter.Model
+			return func() tea.Msg {
+				return openModelPickerMsg{options: options, current: current}
+			}
 		}
 		if field.Type == "bool" {
 			// Toggle bool directly
@@ -231,85 +221,6 @@ func (sp *SettingsPanel) handleEditMode(msg tea.KeyMsg) tea.Cmd {
 
 	case tea.KeyRunes:
 		sp.editValue += msg.String()
-		return nil
-	}
-
-	return nil
-}
-
-func (sp *SettingsPanel) handleModelPicker(msg tea.KeyMsg) tea.Cmd {
-	switch msg.Type {
-	case tea.KeyEsc:
-		sp.closeModelPicker()
-		return nil
-
-	case tea.KeyEnter:
-		options := sp.filteredModelOptions()
-		if len(options) == 0 {
-			return nil
-		}
-		if sp.modelPickerIndex >= len(options) {
-			sp.modelPickerIndex = len(options) - 1
-		}
-		if sp.modelPickerIndex < 0 {
-			sp.modelPickerIndex = 0
-		}
-		modelID := options[sp.modelPickerIndex].ID
-		if modelID != "" {
-			sp.setModelValue(modelID)
-			sp.changed = true
-		}
-		sp.closeModelPicker()
-		return nil
-
-	case tea.KeyUp:
-		if sp.modelPickerIndex > 0 {
-			sp.modelPickerIndex--
-		}
-		sp.ensureModelPickerVisible()
-		return nil
-
-	case tea.KeyDown:
-		options := sp.filteredModelOptions()
-		if sp.modelPickerIndex < len(options)-1 {
-			sp.modelPickerIndex++
-		}
-		sp.ensureModelPickerVisible()
-		return nil
-
-	case tea.KeyPgUp:
-		if len(sp.filteredModelOptions()) == 0 {
-			return nil
-		}
-		sp.modelPickerIndex -= 10
-		if sp.modelPickerIndex < 0 {
-			sp.modelPickerIndex = 0
-		}
-		sp.ensureModelPickerVisible()
-		return nil
-
-	case tea.KeyPgDown:
-		options := sp.filteredModelOptions()
-		if len(options) == 0 {
-			return nil
-		}
-		sp.modelPickerIndex += 10
-		if sp.modelPickerIndex >= len(options) {
-			sp.modelPickerIndex = len(options) - 1
-		}
-		sp.ensureModelPickerVisible()
-		return nil
-
-	case tea.KeyBackspace:
-		if len(sp.modelPickerFilter) > 0 {
-			sp.modelPickerFilter = sp.modelPickerFilter[:len(sp.modelPickerFilter)-1]
-			sp.resetModelPickerSelection()
-		}
-		return nil
-
-	case tea.KeyRunes:
-		sp.modelPickerFilter += msg.String()
-		sp.resetModelPickerSelection()
 		return nil
 	}
 
@@ -439,9 +350,6 @@ func (sp *SettingsPanel) View() string {
 	valueStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("252"))
 
-	normalStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252"))
-
 	selectedStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("15")).
 		Background(lipgloss.Color("141")).
@@ -453,13 +361,6 @@ func (sp *SettingsPanel) View() string {
 
 	errorStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("196"))
-
-	descStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("245")).
-		Italic(true)
-
-	filterStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("214"))
 
 	footerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("245")).
@@ -500,38 +401,6 @@ func (sp *SettingsPanel) View() string {
 		content.WriteString(line + "\n")
 	}
 
-	if sp.modelPickerVisible {
-		content.WriteString("\n")
-		content.WriteString(titleStyle.Render("Model Picker"))
-		content.WriteString("\n")
-		if sp.modelPickerFilter != "" {
-			content.WriteString(filterStyle.Render("Filter: " + sp.modelPickerFilter))
-			content.WriteString("\n")
-		}
-		content.WriteString("\n")
-
-		options := sp.filteredModelOptions()
-		if len(options) == 0 {
-			content.WriteString(descStyle.Render("No matching models"))
-		} else {
-			visibleLines := sp.modelPickerVisibleLines()
-			start := sp.modelPickerScroll
-			end := start + visibleLines
-			if end > len(options) {
-				end = len(options)
-			}
-			for i := start; i < end; i++ {
-				line := sp.modelOptionLabel(options[i])
-				if i == sp.modelPickerIndex {
-					content.WriteString(selectedStyle.Render("  " + line + "  "))
-				} else {
-					content.WriteString(normalStyle.Render("  " + line + "  "))
-				}
-				content.WriteString("\n")
-			}
-		}
-	}
-
 	// Error message
 	if sp.errorMsg != "" {
 		content.WriteString("\n")
@@ -540,9 +409,7 @@ func (sp *SettingsPanel) View() string {
 
 	// Footer
 	content.WriteString("\n\n")
-	if sp.modelPickerVisible {
-		content.WriteString(footerStyle.Render("↑↓ Navigate • Enter: Apply • Esc: Cancel • Type to filter"))
-	} else if sp.editing {
+	if sp.editing {
 		content.WriteString(footerStyle.Render("Enter: Confirm • Esc: Cancel"))
 	} else {
 		hint := "↑↓ Navigate • Enter: Edit • Esc: Close"
@@ -567,91 +434,14 @@ func (sp *SettingsPanel) GetConfig() config.Config {
 	return sp.config
 }
 
+// SetModelValue updates the selected model and marks settings as changed.
+func (sp *SettingsPanel) SetModelValue(value string) {
+	sp.setModelValue(value)
+	sp.changed = true
+}
+
 func (sp *SettingsPanel) hasModelOptions() bool {
 	return len(sp.modelCache.Models) > 0
-}
-
-func (sp *SettingsPanel) filteredModelOptions() []ai.ModelInfo {
-	if !sp.hasModelOptions() {
-		return nil
-	}
-	filter := strings.ToLower(strings.TrimSpace(sp.modelPickerFilter))
-	if filter == "" {
-		return sp.modelCache.Models
-	}
-	filtered := make([]ai.ModelInfo, 0, len(sp.modelCache.Models))
-	for _, model := range sp.modelCache.Models {
-		id := strings.ToLower(model.ID)
-		name := strings.ToLower(model.Name)
-		if strings.Contains(id, filter) || strings.Contains(name, filter) {
-			filtered = append(filtered, model)
-		}
-	}
-	return filtered
-}
-
-func (sp *SettingsPanel) openModelPicker() {
-	sp.modelPickerVisible = true
-	sp.modelPickerFilter = ""
-	sp.modelPickerIndex = 0
-	sp.modelPickerScroll = 0
-
-	options := sp.filteredModelOptions()
-	if len(options) == 0 {
-		return
-	}
-	current := strings.TrimSpace(sp.config.OpenRouter.Model)
-	for i, model := range options {
-		if model.ID == current {
-			sp.modelPickerIndex = i
-			break
-		}
-	}
-	sp.ensureModelPickerVisible()
-}
-
-func (sp *SettingsPanel) closeModelPicker() {
-	sp.modelPickerVisible = false
-	sp.modelPickerFilter = ""
-	sp.modelPickerIndex = 0
-	sp.modelPickerScroll = 0
-}
-
-func (sp *SettingsPanel) resetModelPickerSelection() {
-	sp.modelPickerIndex = 0
-	sp.modelPickerScroll = 0
-}
-
-func (sp *SettingsPanel) ensureModelPickerVisible() {
-	visibleLines := sp.modelPickerVisibleLines()
-	if sp.modelPickerIndex < sp.modelPickerScroll {
-		sp.modelPickerScroll = sp.modelPickerIndex
-	}
-	if sp.modelPickerIndex >= sp.modelPickerScroll+visibleLines {
-		sp.modelPickerScroll = sp.modelPickerIndex - visibleLines + 1
-	}
-	if sp.modelPickerScroll < 0 {
-		sp.modelPickerScroll = 0
-	}
-}
-
-func (sp *SettingsPanel) modelPickerVisibleLines() int {
-	if sp.height <= 0 {
-		return 6
-	}
-	available := sp.height - (len(sp.fields) + 10)
-	if available < 3 {
-		return 3
-	}
-	return available
-}
-
-func (sp *SettingsPanel) modelOptionLabel(model ai.ModelInfo) string {
-	name := strings.TrimSpace(model.Name)
-	if name != "" && name != model.ID {
-		return model.ID + " - " + name
-	}
-	return model.ID
 }
 
 func (sp *SettingsPanel) setModelValue(value string) {

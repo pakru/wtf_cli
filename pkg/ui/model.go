@@ -30,7 +30,8 @@ type Model struct {
 	palette       *CommandPalette // Command palette overlay
 	resultPanel   *ResultPanel    // Result panel overlay
 	settingsPanel *SettingsPanel  // Settings panel overlay
-	sidebar       *Sidebar        // AI response sidebar
+	modelPicker   *ModelPickerPanel
+	sidebar       *Sidebar // AI response sidebar
 
 	// Command system
 	dispatcher *commands.Dispatcher
@@ -77,6 +78,7 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		palette:       NewCommandPalette(),
 		resultPanel:   NewResultPanel(),
 		settingsPanel: NewSettingsPanel(),
+		modelPicker:   NewModelPickerPanel(),
 		sidebar:       NewSidebar(),
 		dispatcher:    commands.NewDispatcher(),
 		buffer:        buf,
@@ -116,6 +118,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.modelPicker != nil && m.modelPicker.IsVisible() {
+			cmd := m.modelPicker.Update(msg)
+			return m, cmd
+		}
+
 		// If settings panel is visible, handle its keys first
 		if m.settingsPanel.IsVisible() {
 			cmd := m.settingsPanel.Update(msg)
@@ -226,12 +233,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case settingsCloseMsg:
 		// Settings panel closed
+		if m.modelPicker != nil && m.modelPicker.IsVisible() {
+			m.modelPicker.Hide()
+		}
 		return m, nil
 
 	case settingsSaveMsg:
 		// Save settings to file
 		config.Save(msg.configPath, msg.config)
 		m.statusBar.SetModel(msg.config.OpenRouter.Model)
+		return m, nil
+
+	case openModelPickerMsg:
+		if m.modelPicker != nil {
+			m.modelPicker.SetSize(m.width, m.height)
+			m.modelPicker.Show(msg.options, msg.current)
+		}
+		return m, nil
+
+	case modelPickerSelectMsg:
+		if m.modelPicker != nil && m.modelPicker.IsVisible() {
+			m.modelPicker.Hide()
+		}
+		if m.settingsPanel != nil {
+			m.settingsPanel.SetModelValue(msg.modelID)
+		}
 		return m, nil
 
 	case resultPanelCloseMsg:
@@ -309,22 +335,26 @@ func (m Model) View() string {
 
 	baseView := lipgloss.JoinVertical(lipgloss.Left, topView, m.statusBar.Render())
 
-	// Overlay settings panel if visible
+	overlayView := baseView
 	if m.settingsPanel.IsVisible() {
-		return m.overlayCenter(baseView, m.settingsPanel.View())
+		overlayView = m.overlayCenter(overlayView, m.settingsPanel.View())
+	}
+
+	if m.modelPicker != nil && m.modelPicker.IsVisible() {
+		return m.overlayCenter(overlayView, m.modelPicker.View())
 	}
 
 	// Overlay result panel if visible
 	if m.resultPanel.IsVisible() {
-		return m.overlayCenter(baseView, m.resultPanel.View())
+		return m.overlayCenter(overlayView, m.resultPanel.View())
 	}
 
 	// Overlay command palette if visible
 	if m.palette.IsVisible() {
-		return m.overlayCenter(baseView, m.palette.View())
+		return m.overlayCenter(overlayView, m.palette.View())
 	}
 
-	return baseView
+	return overlayView
 }
 
 // overlayCenter places a panel centered vertically over the base view
@@ -395,6 +425,9 @@ func (m *Model) applyLayout() {
 	m.palette.SetSize(m.width, m.height)
 	m.resultPanel.SetSize(m.width, m.height)
 	m.settingsPanel.SetSize(m.width, m.height)
+	if m.modelPicker != nil {
+		m.modelPicker.SetSize(m.width, m.height)
+	}
 
 	if m.ptyFile != nil {
 		ResizePTY(m.ptyFile, viewportWidth, viewportHeight)

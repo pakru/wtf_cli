@@ -1,0 +1,126 @@
+package ui
+
+import (
+	"fmt"
+	"testing"
+
+	"wtf_cli/pkg/ai"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+func TestModelPicker_ShowSelectCurrent(t *testing.T) {
+	picker := NewModelPickerPanel()
+	picker.SetSize(80, 24)
+
+	options := []ai.ModelInfo{
+		{ID: "model-a", Name: "Alpha"},
+		{ID: "model-b", Name: "Beta"},
+	}
+	picker.Show(options, "model-b")
+
+	if !picker.visible {
+		t.Fatal("Expected picker to be visible after Show")
+	}
+	if picker.filter != "" {
+		t.Fatalf("Expected empty filter, got %q", picker.filter)
+	}
+	if picker.selected != 1 {
+		t.Fatalf("Expected selected=1, got %d", picker.selected)
+	}
+}
+
+func TestModelPicker_FilterAndSelect(t *testing.T) {
+	picker := NewModelPickerPanel()
+	picker.SetSize(80, 24)
+
+	options := []ai.ModelInfo{
+		{ID: "model-a", Name: "Alpha"},
+		{ID: "model-b", Name: "Beta"},
+	}
+	picker.Show(options, "model-a")
+
+	picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	if picker.filter != "be" {
+		t.Fatalf("Expected filter 'be', got %q", picker.filter)
+	}
+	if picker.selected != 0 {
+		t.Fatalf("Expected selected reset to 0, got %d", picker.selected)
+	}
+
+	filtered := picker.filteredOptions()
+	if len(filtered) != 1 || filtered[0].ID != "model-b" {
+		t.Fatalf("Expected filtered model-b, got %+v", filtered)
+	}
+
+	picker.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if picker.filter != "b" {
+		t.Fatalf("Expected filter 'b' after backspace, got %q", picker.filter)
+	}
+
+	cmd := picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Expected modelPickerSelectMsg command")
+	}
+	msg := cmd()
+	selectMsg, ok := msg.(modelPickerSelectMsg)
+	if !ok {
+		t.Fatalf("Expected modelPickerSelectMsg, got %T", msg)
+	}
+	if selectMsg.modelID != "model-b" {
+		t.Fatalf("Expected model-b, got %q", selectMsg.modelID)
+	}
+	if picker.visible {
+		t.Fatal("Expected picker to close after selection")
+	}
+}
+
+func TestModelPicker_ScrollsWithNavigation(t *testing.T) {
+	picker := NewModelPickerPanel()
+	picker.SetSize(80, 10)
+
+	options := make([]ai.ModelInfo, 5)
+	for i := range options {
+		options[i] = ai.ModelInfo{
+			ID:   fmt.Sprintf("model-%d", i),
+			Name: fmt.Sprintf("Model %d", i),
+		}
+	}
+	picker.Show(options, "")
+
+	if picker.listHeight() != 1 {
+		t.Fatalf("Expected listHeight=1, got %d", picker.listHeight())
+	}
+	if picker.scroll != 0 {
+		t.Fatalf("Expected scroll=0, got %d", picker.scroll)
+	}
+
+	for i := 1; i < len(options); i++ {
+		picker.Update(tea.KeyMsg{Type: tea.KeyDown})
+		if picker.selected != i {
+			t.Fatalf("Expected selected=%d, got %d", i, picker.selected)
+		}
+		if picker.scroll != i {
+			t.Fatalf("Expected scroll=%d, got %d", i, picker.scroll)
+		}
+	}
+}
+
+func TestModelPicker_EscCloses(t *testing.T) {
+	picker := NewModelPickerPanel()
+	picker.SetSize(80, 24)
+
+	options := []ai.ModelInfo{
+		{ID: "model-a", Name: "Alpha"},
+	}
+	picker.Show(options, "model-a")
+
+	cmd := picker.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil {
+		t.Fatal("Expected nil command on Esc")
+	}
+	if picker.visible {
+		t.Fatal("Expected picker to be hidden after Esc")
+	}
+}

@@ -294,18 +294,42 @@ func TestSettingsPanel_ModelPicker(t *testing.T) {
 	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
 
 	// Open model picker
-	sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if !sp.modelPickerVisible {
-		t.Fatal("Expected model picker to be visible")
+	cmd := sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Expected openModelPickerMsg command")
 	}
+	msg := cmd()
+	openMsg, ok := msg.(openModelPickerMsg)
+	if !ok {
+		t.Fatalf("Expected openModelPickerMsg, got %T", msg)
+	}
+	if len(openMsg.options) != 2 {
+		t.Fatalf("Expected 2 model options, got %d", len(openMsg.options))
+	}
+	if openMsg.current != cfg.OpenRouter.Model {
+		t.Fatalf("Expected current model %q, got %q", cfg.OpenRouter.Model, openMsg.current)
+	}
+
+	picker := NewModelPickerPanel()
+	picker.SetSize(80, 24)
+	picker.Show(openMsg.options, openMsg.current)
 
 	// Select second model
-	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
-	sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
-
-	if sp.modelPickerVisible {
+	picker.Update(tea.KeyMsg{Type: tea.KeyDown})
+	cmd = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Expected modelPickerSelectMsg command")
+	}
+	msg = cmd()
+	selectMsg, ok := msg.(modelPickerSelectMsg)
+	if !ok {
+		t.Fatalf("Expected modelPickerSelectMsg, got %T", msg)
+	}
+	if picker.IsVisible() {
 		t.Fatal("Expected model picker to close after selection")
 	}
+
+	sp.SetModelValue(selectMsg.modelID)
 	if sp.config.OpenRouter.Model != "model-b" {
 		t.Errorf("Expected model 'model-b', got %q", sp.config.OpenRouter.Model)
 	}
