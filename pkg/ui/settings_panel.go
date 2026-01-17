@@ -1,9 +1,7 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -38,8 +36,7 @@ type SettingsPanel struct {
 	visible    bool
 	errorMsg   string
 
-	modelCache    ai.ModelCache
-	modelCacheErr error
+	modelCache ai.ModelCache
 }
 
 // NewSettingsPanel creates a new settings panel
@@ -62,19 +59,15 @@ func (sp *SettingsPanel) Show(cfg config.Config, configPath string) {
 
 // buildFields creates the field list from config
 func (sp *SettingsPanel) buildFields() {
-	modelCacheSummary := sp.modelCacheSummary()
-
 	sp.fields = []SettingField{
 		{Label: "API Key", Key: "api_key", Value: sp.config.OpenRouter.APIKey, Type: "string", Masked: true},
 		{Label: "API URL", Key: "api_url", Value: sp.config.OpenRouter.APIURL, Type: "string"},
 		{Label: "Model", Key: "model", Value: sp.config.OpenRouter.Model, Type: "string"},
-		{Label: "Models Cache", Key: "models_cache", Value: modelCacheSummary, Type: "info"},
 		{Label: "Temperature", Key: "temperature", Value: fmt.Sprintf("%.1f", sp.config.OpenRouter.Temperature), Type: "float"},
 		{Label: "Max Tokens", Key: "max_tokens", Value: strconv.Itoa(sp.config.OpenRouter.MaxTokens), Type: "int"},
 		{Label: "API Timeout (sec)", Key: "api_timeout", Value: strconv.Itoa(sp.config.OpenRouter.APITimeoutSeconds), Type: "int"},
 		{Label: "Buffer Size", Key: "buffer_size", Value: strconv.Itoa(sp.config.BufferSize), Type: "int"},
 		{Label: "Context Window", Key: "context_window", Value: strconv.Itoa(sp.config.ContextWindow), Type: "int"},
-		{Label: "Dry Run", Key: "dry_run", Value: strconv.FormatBool(sp.config.DryRun), Type: "bool"},
 	}
 }
 
@@ -136,12 +129,13 @@ func (sp *SettingsPanel) Update(msg tea.KeyMsg) tea.Cmd {
 		if field.Type == "info" {
 			return nil
 		}
-		if field.Key == "model" && sp.hasModelOptions() {
+		if field.Key == "model" {
 			options := make([]ai.ModelInfo, len(sp.modelCache.Models))
 			copy(options, sp.modelCache.Models)
 			current := sp.config.OpenRouter.Model
+			apiURL := sp.config.OpenRouter.APIURL
 			return func() tea.Msg {
-				return openModelPickerMsg{options: options, current: current}
+				return openModelPickerMsg{options: options, current: current, apiURL: apiURL}
 			}
 		}
 		if field.Type == "bool" {
@@ -272,8 +266,6 @@ func (sp *SettingsPanel) applyField(field *SettingField) {
 		if v, err := strconv.Atoi(field.Value); err == nil {
 			sp.config.ContextWindow = v
 		}
-	case "dry_run":
-		sp.config.DryRun = field.Value == "true"
 	}
 }
 
@@ -292,30 +284,9 @@ func (sp *SettingsPanel) loadModelCache() {
 	cache, err := ai.LoadModelCache(cachePath)
 	if err != nil {
 		sp.modelCache = ai.ModelCache{}
-		sp.modelCacheErr = err
 		return
 	}
 	sp.modelCache = cache
-	sp.modelCacheErr = nil
-}
-
-func (sp *SettingsPanel) modelCacheSummary() string {
-	if sp.modelCacheErr != nil {
-		if errors.Is(sp.modelCacheErr, os.ErrNotExist) {
-			return "Not cached (run /models)"
-		}
-		return "Cache read error"
-	}
-
-	if len(sp.modelCache.Models) == 0 {
-		return "Empty cache (run /models)"
-	}
-
-	if sp.modelCache.UpdatedAt.IsZero() {
-		return fmt.Sprintf("%d models (timestamp unknown)", len(sp.modelCache.Models))
-	}
-
-	return fmt.Sprintf("%d models, updated %s", len(sp.modelCache.Models), sp.modelCache.UpdatedAt.Local().Format("2006-01-02 15:04"))
 }
 
 // View renders the settings panel
@@ -416,7 +387,7 @@ func (sp *SettingsPanel) View() string {
 		if sp.changed {
 			hint = "↑↓ Navigate • Enter: Edit • s: Save • Esc: Save & Close"
 		}
-		if sp.selectedFieldKey() == "model" && sp.hasModelOptions() {
+		if sp.selectedFieldKey() == "model" {
 			if sp.changed {
 				hint = "↑↓ Navigate • Enter: Pick • e: Edit • s: Save • Esc: Save & Close"
 			} else {
@@ -440,10 +411,6 @@ func (sp *SettingsPanel) SetModelValue(value string) {
 	sp.changed = true
 }
 
-func (sp *SettingsPanel) hasModelOptions() bool {
-	return len(sp.modelCache.Models) > 0
-}
-
 func (sp *SettingsPanel) setModelValue(value string) {
 	sp.config.OpenRouter.Model = value
 	for i := range sp.fields {
@@ -459,4 +426,9 @@ func (sp *SettingsPanel) selectedFieldKey() string {
 		return ""
 	}
 	return sp.fields[sp.selected].Key
+}
+
+// SetModelCache updates the cached model list for picker use.
+func (sp *SettingsPanel) SetModelCache(cache ai.ModelCache) {
+	sp.modelCache = cache
 }

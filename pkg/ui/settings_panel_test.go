@@ -108,7 +108,7 @@ func TestSettingsPanel_EditMode(t *testing.T) {
 	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
 
 	// Enter edit mode
-	sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	sp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
 
 	if !sp.editing {
 		t.Error("Should be in editing mode after Enter")
@@ -133,38 +133,6 @@ func TestSettingsPanel_EditMode(t *testing.T) {
 
 	if sp.editing {
 		t.Error("Should exit editing mode after Esc")
-	}
-}
-
-func TestSettingsPanel_BoolToggle(t *testing.T) {
-	withTempHome(t, nil)
-
-	sp := NewSettingsPanel()
-	cfg := config.Default()
-	cfg.DryRun = false
-	sp.Show(cfg, "/tmp/test_config.json")
-
-	// Navigate to Dry Run field (last one, index 9)
-	for i := 0; i < 9; i++ {
-		sp.Update(tea.KeyMsg{Type: tea.KeyDown})
-	}
-
-	// Initial value should be false
-	if sp.fields[9].Value != "false" {
-		t.Errorf("Expected 'false', got %q", sp.fields[9].Value)
-	}
-
-	// Toggle with Enter
-	sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
-
-	// Should toggle to true
-	if sp.fields[9].Value != "true" {
-		t.Errorf("Expected 'true' after toggle, got %q", sp.fields[9].Value)
-	}
-
-	// Should be marked as changed
-	if !sp.changed {
-		t.Error("Should be marked as changed")
 	}
 }
 
@@ -214,16 +182,16 @@ func TestSettingsPanel_ApplyField(t *testing.T) {
 	}
 
 	// Modify temperature
-	sp.fields[4].Value = "0.9"
-	sp.applyField(&sp.fields[4])
+	sp.fields[3].Value = "0.9"
+	sp.applyField(&sp.fields[3])
 
 	if sp.config.OpenRouter.Temperature != 0.9 {
 		t.Errorf("Expected temperature 0.9, got %f", sp.config.OpenRouter.Temperature)
 	}
 
 	// Modify buffer size
-	sp.fields[7].Value = "5000"
-	sp.applyField(&sp.fields[7])
+	sp.fields[6].Value = "5000"
+	sp.applyField(&sp.fields[6])
 
 	if sp.config.BufferSize != 5000 {
 		t.Errorf("Expected buffer size 5000, got %d", sp.config.BufferSize)
@@ -308,6 +276,9 @@ func TestSettingsPanel_ModelPicker(t *testing.T) {
 	}
 	if openMsg.current != cfg.OpenRouter.Model {
 		t.Fatalf("Expected current model %q, got %q", cfg.OpenRouter.Model, openMsg.current)
+	}
+	if openMsg.apiURL != cfg.OpenRouter.APIURL {
+		t.Fatalf("Expected apiURL %q, got %q", cfg.OpenRouter.APIURL, openMsg.apiURL)
 	}
 
 	picker := NewModelPickerPanel()

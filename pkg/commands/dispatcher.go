@@ -30,7 +30,6 @@ func NewDispatcher() *Dispatcher {
 	d.Register(&ExplainHandler{})
 	d.Register(&FixHandler{})
 	d.Register(&HistoryHandler{})
-	d.Register(&ModelsHandler{})
 	d.Register(&SettingsHandler{})
 	d.Register(&CloseSidebarHandler{})
 	d.Register(&HelpHandler{})

@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/commands"
@@ -249,7 +251,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.modelPicker.SetSize(m.width, m.height)
 			m.modelPicker.Show(msg.options, msg.current)
 		}
-		return m, nil
+		cmd := refreshModelCacheCmd(msg.apiURL)
+		return m, cmd
 
 	case modelPickerSelectMsg:
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
@@ -257,6 +260,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.settingsPanel != nil {
 			m.settingsPanel.SetModelValue(msg.modelID)
+		}
+		return m, nil
+
+	case modelPickerRefreshMsg:
+		if msg.err != nil {
+			return m, nil
+		}
+		if m.modelPicker != nil && m.modelPicker.IsVisible() {
+			m.modelPicker.UpdateOptions(msg.cache.Models)
+		}
+		if m.settingsPanel != nil {
+			m.settingsPanel.SetModelCache(msg.cache)
 		}
 		return m, nil
 
@@ -501,6 +516,21 @@ func loadModelFromConfig() string {
 		return modelName
 	}
 	return cfg.OpenRouter.Model
+}
+
+func refreshModelCacheCmd(apiURL string) tea.Cmd {
+	trimmed := strings.TrimSpace(apiURL)
+	if trimmed == "" {
+		return nil
+	}
+
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		cache, err := ai.RefreshOpenRouterModelCache(ctx, trimmed, ai.DefaultModelCachePath())
+		return modelPickerRefreshMsg{cache: cache, err: err}
+	}
 }
 
 func overlayLine(baseLine, panelLine string, startCol, panelWidth, totalWidth int) string {

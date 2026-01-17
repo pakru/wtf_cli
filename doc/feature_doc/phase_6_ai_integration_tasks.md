@@ -42,16 +42,15 @@ Recommendation: use `openai-go` with OpenRouter base URL + headers.
 - Base URL and headers are configurable and tested.
 - Streaming works end-to-end for `/wtf`.
 
-### Task 6.3: Dynamic model list and cache
-**Goal:** implement the `/models` command and cached model lists.
+### Task 6.3: Model list command removed
+**Goal:** remove the `/models` command from the UI and codebase.
 
 **Tasks:**
-- Implement OpenRouter model list fetch (`GET /models`) and cache to `~/.wtf_cli/models_cache.json`.
-- Add `/models` command and integrate with the settings panel.
+- Drop `/models` from the command palette and help text.
+- Remove the `/models` handler and related formatting code.
 
 **Definition of Done:**
-- `/models` displays available models with pricing/context info when available.
-- Cache is read on startup and refreshable on demand.
+- No `/models` command is registered or displayed.
 
 ### Task 6.4: Context builder and prompt assembly
 **Goal:** assemble a stable, readable context for LLM calls.
@@ -112,7 +111,7 @@ Recommendation: use `openai-go` with OpenRouter base URL + headers.
 **Tasks:**
 - Unit tests for OpenRouter config validation.
 - Mocked integration tests for OpenRouter requests and streaming.
-- Tests for model list parsing and cache read/write.
+- Tests for model cache read/write used by the model picker.
 - UI tests for sidebar layout and scroll behavior.
 - UI tests for status bar model rendering.
 

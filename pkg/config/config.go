@@ -16,7 +16,6 @@ type Config struct {
 	BufferSize    int              `json:"buffer_size"`
 	ContextWindow int              `json:"context_window"`
 	StatusBar     StatusBarConfig  `json:"status_bar"`
-	DryRun        bool             `json:"dry_run"`
 	LogLevel      string           `json:"log_level"`
 }
 
@@ -58,7 +57,6 @@ func Default() Config {
 			Position: "bottom",
 			Colors:   "auto",
 		},
-		DryRun:   false,
 		LogLevel: "info",
 	}
 }
@@ -118,8 +116,8 @@ func (c Config) Validate() error {
 		return fmt.Errorf("unsupported LLM provider: %s", c.LLMProvider)
 	}
 
-	// API key required unless dry-run
-	if !c.DryRun && c.OpenRouter.APIKey == "" {
+	// API key required
+	if c.OpenRouter.APIKey == "" {
 		return fmt.Errorf("OpenRouter API key is required (set in config file)")
 	}
 
@@ -183,7 +181,6 @@ type configPresence struct {
 		Position *string `json:"position"`
 		Colors   *string `json:"colors"`
 	} `json:"status_bar"`
-	DryRun   *bool   `json:"dry_run"`
 	LogLevel *string `json:"log_level"`
 }
 

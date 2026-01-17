@@ -161,17 +161,6 @@ func TestValidate_Success(t *testing.T) {
 	}
 }
 
-func TestValidate_DryRunNoAPIKey(t *testing.T) {
-	cfg := Default()
-	cfg.DryRun = true
-	cfg.OpenRouter.APIKey = ""
-
-	// Should pass validation in dry-run mode
-	if err := cfg.Validate(); err != nil {
-		t.Errorf("Validate() should pass in dry-run mode: %v", err)
-	}
-}
-
 func TestValidate_MissingAPIKey(t *testing.T) {
 	cfg := Default()
 	cfg.OpenRouter.APIKey = ""

@@ -12,10 +12,16 @@ import (
 type openModelPickerMsg struct {
 	options []ai.ModelInfo
 	current string
+	apiURL  string
 }
 
 type modelPickerSelectMsg struct {
 	modelID string
+}
+
+type modelPickerRefreshMsg struct {
+	cache ai.ModelCache
+	err   error
 }
 
 // ModelPickerPanel provides a searchable list of models.
@@ -27,6 +33,7 @@ type ModelPickerPanel struct {
 	visible  bool
 	width    int
 	height   int
+	current  string
 }
 
 // NewModelPickerPanel creates a new model picker panel.
@@ -41,6 +48,7 @@ func (p *ModelPickerPanel) Show(options []ai.ModelInfo, current string) {
 	p.selected = 0
 	p.scroll = 0
 	p.options = append([]ai.ModelInfo(nil), options...)
+	p.current = current
 
 	if current != "" {
 		for i, option := range p.options {
@@ -52,6 +60,32 @@ func (p *ModelPickerPanel) Show(options []ai.ModelInfo, current string) {
 	}
 
 	p.ensureVisible(p.filteredOptions(), p.listHeight())
+}
+
+// UpdateOptions refreshes the picker list while preserving filter and selection.
+func (p *ModelPickerPanel) UpdateOptions(options []ai.ModelInfo) {
+	selectedID := ""
+	filtered := p.filteredOptions()
+	if len(filtered) > 0 && p.selected >= 0 && p.selected < len(filtered) {
+		selectedID = filtered[p.selected].ID
+	}
+	if selectedID == "" {
+		selectedID = p.current
+	}
+
+	p.options = append([]ai.ModelInfo(nil), options...)
+
+	filtered = p.filteredOptions()
+	p.selected = 0
+	if selectedID != "" {
+		for i, option := range filtered {
+			if option.ID == selectedID {
+				p.selected = i
+				break
+			}
+		}
+	}
+	p.ensureVisible(filtered, p.listHeight())
 }
 
 // Hide hides the model picker.

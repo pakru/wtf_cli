@@ -81,7 +81,6 @@ To create a transparent terminal wrapper (`wtf_cli`) that captures all input and
         "position": "bottom",
         "colors": "auto"
       },
-      "dry_run": false,
       "log_level": "info"
     }
     ```
@@ -248,7 +247,6 @@ type Config struct {
     BufferSize     int              `json:"buffer_size"`
     ContextWindow  int              `json:"context_window"`
     StatusBar      StatusBarConfig  `json:"status_bar"`
-    DryRun         bool             `json:"dry_run"`
     LogLevel       string           `json:"log_level"`
 }
 
@@ -270,7 +268,7 @@ type OpenRouterConfig struct {
   - ✅ **Unit tests**: Handle missing config (create defaults)
   - ✅ **Unit tests**: Handle corrupted JSON (fallback to defaults)
   - ✅ **Unit tests**: Validation rejects invalid values (negative buffer, bad temp range)
-  - ✅ **Unit tests**: API key validation (required unless dry-run)
+  - ✅ **Unit tests**: API key validation (required)
   - ✅ Config auto-saved on changes
   - ✅ Default model: `google/gemini-3.0-flash`
 
@@ -630,26 +628,15 @@ type OpenRouterConfig struct {
   - ✅ **Unit tests**: Provider selection logic
   - ✅ **Integration tests**: Mock API responses per provider
 
-#### Task 6.1.5: Dynamic model list fetching
+#### Task 6.1.5: Remove `/models` command
 **Description:**
-  - Fetch available models from provider's API
-  - OpenRouter: `GET https://openrouter.ai/api/v1/models`
-  - Cache model list locally (refresh on demand)
-  - Add `/models` command to view available models
-  - Enable model selection in settings panel
-
-**OpenRouter Models API:**
-  - **Endpoint**: `GET https://openrouter.ai/api/v1/models`
-  - **No auth required** for model list
-  - Returns: model ID, name, pricing, context length, capabilities
+  - Remove `/models` command registration and handler
+  - Drop `/models` from the command palette and help text
+  - Remove model list formatting helpers tied to `/models`
 
 **Definition of Done:**
-  - ✅ `pkg/ai/models.go` implements model fetching
-  - ✅ `/models` command shows available models with pricing
-  - ✅ Settings panel shows model dropdown (fetched from API)
-  - ✅ Model list cached to `~/.wtf_cli/models_cache.json`
-  - ✅ **Unit tests**: Model list parsing
-  - ✅ **Unit tests**: Cache read/write
+  - ✅ `/models` is no longer registered or displayed
+  - ✅ No `/models` references remain in UI/help
 
 #### Task 6.2: Context preparation
 **Description:**

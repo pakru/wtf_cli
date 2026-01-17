@@ -214,52 +214,6 @@ func (h *CloseSidebarHandler) Execute(ctx *Context) *Result {
 	}
 }
 
-// ModelsHandler handles the /models command
-type ModelsHandler struct{}
-
-func (h *ModelsHandler) Name() string        { return "/models" }
-func (h *ModelsHandler) Description() string { return "Show available models" }
-
-func (h *ModelsHandler) Execute(ctx *Context) *Result {
-	cfg, err := config.Load(config.GetConfigPath())
-	if err != nil {
-		return &Result{
-			Title:   "Models",
-			Content: fmt.Sprintf("Failed to load config: %v", err),
-		}
-	}
-
-	cachePath := ai.DefaultModelCachePath()
-	reqCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	cache, err := ai.RefreshOpenRouterModelCache(reqCtx, cfg.OpenRouter.APIURL, cachePath)
-	note := ""
-	if err != nil {
-		cached, cacheErr := ai.LoadModelCache(cachePath)
-		if cacheErr != nil {
-			return &Result{
-				Title: "Models",
-				Content: fmt.Sprintf(
-					"Failed to refresh models: %v\nAlso failed to read cache: %v",
-					err, cacheErr,
-				),
-			}
-		}
-		cache = cached
-		if !cache.UpdatedAt.IsZero() {
-			note = fmt.Sprintf("Warning: refresh failed (%v). Showing cached list from %s.", err, formatTimestamp(cache.UpdatedAt))
-		} else {
-			note = fmt.Sprintf("Warning: refresh failed (%v). Showing cached list.", err)
-		}
-	}
-
-	return &Result{
-		Title:   "Models",
-		Content: formatModelList(cache, note),
-	}
-}
-
 // HelpHandler handles the /help command
 type HelpHandler struct{}
 
@@ -276,7 +230,6 @@ Available Commands:
   /explain  - Explain what the last command did
   /fix      - Suggest fix for last error
   /history  - Show command history
-  /models   - Show available models
   /close_sidebar - Close AI sidebar
   /help     - Show this help
 
@@ -289,75 +242,4 @@ Shortcuts:
 
 Press Esc to close this panel.`,
 	}
-}
-
-func formatModelList(cache ai.ModelCache, note string) string {
-	var sb strings.Builder
-
-	if note != "" {
-		sb.WriteString(note)
-		sb.WriteString("\n\n")
-	}
-
-	sb.WriteString(fmt.Sprintf("Models (%d)\n", len(cache.Models)))
-	if !cache.UpdatedAt.IsZero() {
-		sb.WriteString("Updated: " + formatTimestamp(cache.UpdatedAt) + "\n")
-	}
-	sb.WriteString("\n")
-
-	for _, model := range cache.Models {
-		sb.WriteString(formatModelLine(model))
-		sb.WriteString("\n")
-	}
-
-	return sb.String()
-}
-
-func formatModelLine(model ai.ModelInfo) string {
-	name := strings.TrimSpace(model.Name)
-	label := model.ID
-	if name != "" && name != model.ID {
-		label = fmt.Sprintf("%s - %s", model.ID, name)
-	}
-
-	contextInfo := ""
-	if model.ContextLength > 0 {
-		contextInfo = fmt.Sprintf("ctx:%d", model.ContextLength)
-	}
-
-	pricingInfo := formatPricing(model.Pricing)
-
-	parts := []string{label}
-	if contextInfo != "" {
-		parts = append(parts, contextInfo)
-	}
-	if pricingInfo != "" {
-		parts = append(parts, pricingInfo)
-	}
-
-	return strings.Join(parts, " | ")
-}
-
-func formatPricing(pricing map[string]string) string {
-	if len(pricing) == 0 {
-		return ""
-	}
-
-	parts := make([]string, 0, 2)
-	if value := strings.TrimSpace(pricing["prompt"]); value != "" {
-		parts = append(parts, "prompt="+value)
-	}
-	if value := strings.TrimSpace(pricing["completion"]); value != "" {
-		parts = append(parts, "completion="+value)
-	}
-
-	if len(parts) == 0 {
-		return ""
-	}
-
-	return strings.Join(parts, ", ")
-}
-
-func formatTimestamp(ts time.Time) string {
-	return ts.Local().Format("2006-01-02 15:04")
 }
