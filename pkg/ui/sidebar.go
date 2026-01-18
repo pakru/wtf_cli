@@ -183,8 +183,13 @@ func (s *Sidebar) View() string {
 
 	content := strings.Join(lines, "\n")
 
+	boxWidth := s.width - 2*sidebarBorderSize
+	if boxWidth < 1 {
+		boxWidth = 1
+	}
+
 	box := sidebarBoxStyle.
-		Width(s.width).
+		Width(boxWidth).
 		Padding(sidebarPaddingV, sidebarPaddingH).
 		Render(content)
 
@@ -258,12 +263,16 @@ type markdownToken struct {
 
 func renderMarkdown(content string, width int) []string {
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "<br>", "\n")
+	normalized = strings.ReplaceAll(normalized, "<br/>", "\n")
+	normalized = strings.ReplaceAll(normalized, "<br />", "\n")
 	rawLines := strings.Split(normalized, "\n")
 
 	var rendered []string
 	inCode := false
 
-	for _, line := range rawLines {
+	for i := 0; i < len(rawLines); i++ {
+		line := rawLines[i]
 		line = strings.ReplaceAll(line, "\t", "    ")
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "```") {
@@ -274,6 +283,33 @@ func renderMarkdown(content string, width int) []string {
 		if inCode {
 			rendered = append(rendered, renderCodeLine(line, width)...)
 			continue
+		}
+
+		if isTableRow(line) {
+			block := []string{}
+			for i < len(rawLines) && isTableRow(rawLines[i]) {
+				block = append(block, rawLines[i])
+				i++
+			}
+			i--
+
+			rows := make([][]string, 0, len(block))
+			for _, rowLine := range block {
+				cells := splitTableRow(rowLine)
+				if len(cells) == 0 {
+					continue
+				}
+				rows = append(rows, cells)
+			}
+			if len(rows) > 0 {
+				header := false
+				if len(rows) > 1 && isSeparatorRow(rows[1]) {
+					header = true
+					rows = append(rows[:1], rows[2:]...)
+				}
+				rendered = append(rendered, renderTable(rows, header, width)...)
+				continue
+			}
 		}
 
 		rendered = append(rendered, renderMarkdownLine(line, width)...)
@@ -298,6 +334,153 @@ func renderMarkdownLine(line string, width int) []string {
 	return wrapTokens(tokens, width)
 }
 
+func renderTable(rows [][]string, header bool, width int) []string {
+	if width <= 0 || len(rows) == 0 {
+		return []string{""}
+	}
+
+	cols := 0
+	for _, row := range rows {
+		if len(row) > cols {
+			cols = len(row)
+		}
+	}
+	if cols == 0 {
+		return []string{""}
+	}
+
+	for i := range rows {
+		if len(rows[i]) < cols {
+			padded := make([]string, cols)
+			copy(padded, rows[i])
+			rows[i] = padded
+		}
+	}
+
+	colWidths := make([]int, cols)
+	for _, row := range rows {
+		for i, cell := range row {
+			if w := runewidth.StringWidth(cell); w > colWidths[i] {
+				colWidths[i] = w
+			}
+		}
+	}
+
+	fixedWidth := 3*cols + 1
+	maxContent := width - fixedWidth
+	if maxContent < cols {
+		return renderTableFallback(rows, width)
+	}
+
+	colWidths = fitColumnWidths(colWidths, maxContent)
+
+	var rendered []string
+	for rowIndex, row := range rows {
+		line := buildTableLine(row, colWidths)
+		if runewidth.StringWidth(line) > width {
+			line = trimToWidth(line, width)
+		}
+		if header && rowIndex == 0 {
+			rendered = append(rendered, sidebarBoldStyle.Render(line))
+			separator := buildTableSeparator(colWidths)
+			rendered = append(rendered, sidebarTextStyle.Render(separator))
+			continue
+		}
+		rendered = append(rendered, sidebarTextStyle.Render(line))
+	}
+
+	return rendered
+}
+
+func renderTableFallback(rows [][]string, width int) []string {
+	var rendered []string
+	for _, row := range rows {
+		line := strings.Join(row, " | ")
+		if width > 0 {
+			line = trimToWidth(line, width)
+		}
+		rendered = append(rendered, sidebarTextStyle.Render(line))
+	}
+	return rendered
+}
+
+func buildTableLine(row []string, widths []int) string {
+	var sb strings.Builder
+	sb.WriteString("|")
+	for i, cell := range row {
+		if i >= len(widths) {
+			break
+		}
+		text := trimToWidth(cell, widths[i])
+		text = padPlain(text, widths[i])
+		sb.WriteString(" ")
+		sb.WriteString(text)
+		sb.WriteString(" |")
+	}
+	return sb.String()
+}
+
+func buildTableSeparator(widths []int) string {
+	var sb strings.Builder
+	sb.WriteString("|")
+	for _, w := range widths {
+		if w < 1 {
+			w = 1
+		}
+		sb.WriteString(" ")
+		sb.WriteString(strings.Repeat("-", w))
+		sb.WriteString(" |")
+	}
+	return sb.String()
+}
+
+func fitColumnWidths(widths []int, maxContent int) []int {
+	if maxContent <= 0 {
+		out := make([]int, len(widths))
+		for i := range out {
+			out[i] = 1
+		}
+		return out
+	}
+
+	out := make([]int, len(widths))
+	copy(out, widths)
+
+	total := 0
+	for _, w := range out {
+		if w < 1 {
+			w = 1
+		}
+		total += w
+	}
+	if total <= maxContent {
+		return out
+	}
+
+	for total > maxContent {
+		maxIdx := -1
+		maxVal := 0
+		for i, w := range out {
+			if w > maxVal {
+				maxVal = w
+				maxIdx = i
+			}
+		}
+		if maxIdx == -1 || maxVal <= 1 {
+			break
+		}
+		out[maxIdx]--
+		total--
+	}
+
+	for i, w := range out {
+		if w < 1 {
+			out[i] = 1
+		}
+	}
+	return out
+}
+
 func renderCodeLine(line string, width int) []string {
 	if width <= 0 {
 		return []string{line}
@@ -314,6 +497,62 @@ func renderCodeLine(line string, width int) []string {
 		lines = append(lines, sidebarCodeStyle.Render(padded))
 	}
 	return lines
+}
+
+func isTableRow(line string) bool {
+	if strings.Count(line, "|") < 2 {
+		return false
+	}
+	cells := splitTableRow(line)
+	if len(cells) < 2 {
+		return false
+	}
+	for _, cell := range cells {
+		if strings.TrimSpace(cell) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func splitTableRow(line string) []string {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return nil
+	}
+	if strings.HasPrefix(trimmed, "|") {
+		trimmed = strings.TrimPrefix(trimmed, "|")
+	}
+	if strings.HasSuffix(trimmed, "|") {
+		trimmed = strings.TrimSuffix(trimmed, "|")
+	}
+	parts := strings.Split(trimmed, "|")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
+}
+
+func isSeparatorRow(cells []string) bool {
+	if len(cells) == 0 {
+		return false
+	}
+	for _, cell := range cells {
+		clean := strings.TrimSpace(cell)
+		if clean == "" {
+			return false
+		}
+		clean = strings.Trim(clean, ":")
+		if len(clean) < 3 {
+			return false
+		}
+		for _, r := range clean {
+			if r != '-' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func tokenizeBoldWords(line string) []markdownToken {

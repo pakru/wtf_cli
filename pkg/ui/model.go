@@ -57,6 +57,8 @@ type Model struct {
 
 	exitPending   bool
 	exitConfirmID int
+
+	ptyLineBuffer []byte
 }
 
 // NewModel creates a new Bubble Tea model
@@ -407,6 +409,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ptyOutputMsg:
 		// PTY sent output - append to viewport
+		m.appendPTYOutput(msg.data)
 		m.viewport.AppendOutput(msg.data)
 
 		// Schedule next read
@@ -710,5 +713,23 @@ func listenToWtfStream(stream <-chan commands.WtfStreamEvent) tea.Cmd {
 			return commands.WtfStreamEvent{Done: true}
 		}
 		return event
+	}
+}
+
+func (m *Model) appendPTYOutput(data []byte) {
+	if m.buffer == nil || len(data) == 0 {
+		return
+	}
+
+	normalized := normalizePTYOutput(data)
+	for _, b := range []byte(normalized) {
+		if b == '\n' {
+			if len(m.ptyLineBuffer) > 0 {
+				m.buffer.Write(m.ptyLineBuffer)
+				m.ptyLineBuffer = m.ptyLineBuffer[:0]
+			}
+			continue
+		}
+		m.ptyLineBuffer = append(m.ptyLineBuffer, b)
 	}
 }

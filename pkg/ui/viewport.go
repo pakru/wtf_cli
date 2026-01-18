@@ -34,7 +34,7 @@ func (v *PTYViewport) SetSize(width, height int) {
 
 // AppendOutput adds new output to the viewport
 func (v *PTYViewport) AppendOutput(data []byte) {
-	v.content += string(data)
+	v.content += normalizePTYOutput(data)
 
 	// Track cursor position from ANSI codes
 	v.cursorTracker.UpdateFromOutput(data)
@@ -71,7 +71,16 @@ func (v *PTYViewport) View() string {
 		return "Loading..."
 	}
 
-	return v.viewport.View()
+	view := v.viewport.View()
+	if v.viewport.Width <= 0 {
+		return view
+	}
+
+	lines := strings.Split(view, "\n")
+	for i := range lines {
+		lines[i] = padStyled(lines[i], v.viewport.Width)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Scrolling helpers

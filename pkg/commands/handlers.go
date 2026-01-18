@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/config"
@@ -71,7 +72,7 @@ func (h *WtfHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error) {
 	}
 
 	meta := buildTerminalMetadata(ctx)
-	messages, _ := ai.BuildWtfMessages(lines, meta)
+	messages, termCtx := ai.BuildWtfMessages(lines, meta)
 
 	temperature := cfg.OpenRouter.Temperature
 	maxTokens := cfg.OpenRouter.MaxTokens
@@ -86,6 +87,16 @@ func (h *WtfHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error) {
 		"model", cfg.OpenRouter.Model,
 		"lines", len(lines),
 		"cwd", ctx.CurrentDir,
+		"temperature", temperature,
+		"max_tokens", maxTokens,
+	)
+	slog.Debug("wtf_stream_request",
+		"model", cfg.OpenRouter.Model,
+		"message_count", len(messages),
+		"messages_preview", buildMessagePreview(messages, llmLogMaxMessages, llmLogMessagePreviewChars),
+		"messages_omitted", omittedCount(len(messages), llmLogMaxMessages),
+		"context_lines", termCtx.LineCount,
+		"context_truncated", termCtx.Truncated,
 		"temperature", temperature,
 		"max_tokens", maxTokens,
 	)
@@ -106,17 +117,35 @@ func (h *WtfHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error) {
 		defer cancel()
 		defer stream.Close()
 
+		responsePreview := newLogPreview(llmLogResponsePreviewChars)
+		totalRunes := 0
+
 		for stream.Next() {
 			delta := stream.Content()
 			if delta != "" {
+				responsePreview.Append(delta)
+				totalRunes += utf8.RuneCountInString(delta)
 				ch <- WtfStreamEvent{Delta: delta}
 			}
 		}
 
 		if err := stream.Err(); err != nil {
+			slog.Debug("wtf_stream_response",
+				"model", cfg.OpenRouter.Model,
+				"response_chars", totalRunes,
+				"response_preview", sanitizeForLog(responsePreview.String()),
+				"response_truncated", responsePreview.Truncated(),
+				"error", err,
+			)
 			ch <- WtfStreamEvent{Err: err, Done: true}
 			return
 		}
+		slog.Debug("wtf_stream_response",
+			"model", cfg.OpenRouter.Model,
+			"response_chars", totalRunes,
+			"response_preview", sanitizeForLog(responsePreview.String()),
+			"response_truncated", responsePreview.Truncated(),
+		)
 		ch <- WtfStreamEvent{Done: true}
 	}()
 
@@ -136,6 +165,108 @@ func buildTerminalMetadata(ctx *Context) ai.TerminalMetadata {
 		}
 	}
 	return meta
+}
+
+const (
+	llmLogMaxMessages          = 6
+	llmLogMessagePreviewChars  = 400
+	llmLogResponsePreviewChars = 2000
+)
+
+func buildMessagePreview(messages []ai.Message, maxMessages, maxChars int) []string {
+	if maxMessages <= 0 || maxChars <= 0 {
+		return nil
+	}
+	if len(messages) == 0 {
+		return nil
+	}
+
+	limit := len(messages)
+	if limit > maxMessages {
+		limit = maxMessages
+	}
+
+	preview := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		msg := messages[i]
+		role := strings.TrimSpace(msg.Role)
+		if role == "" {
+			role = "unknown"
+		}
+		content := strings.TrimSpace(msg.Content)
+		content = sanitizeForLog(content)
+		content, truncated := truncateForLog(content, maxChars)
+		if truncated {
+			content += "..."
+		}
+		preview = append(preview, fmt.Sprintf("%s: %s", role, content))
+	}
+
+	return preview
+}
+
+func omittedCount(total, max int) int {
+	if max <= 0 || total <= max {
+		return 0
+	}
+	return total - max
+}
+
+func truncateForLog(text string, maxChars int) (string, bool) {
+	if maxChars <= 0 || text == "" {
+		return "", text != ""
+	}
+	runes := []rune(text)
+	if len(runes) <= maxChars {
+		return text, false
+	}
+	return string(runes[:maxChars]), true
+}
+
+var logSanitizer = strings.NewReplacer("\r", "\\r", "\n", "\\n", "\t", "\\t")
+
+func sanitizeForLog(text string) string {
+	if text == "" {
+		return ""
+	}
+	return logSanitizer.Replace(text)
+}
+
+type logPreview struct {
+	max       int
+	runes     []rune
+	truncated bool
+}
+
+func newLogPreview(max int) *logPreview {
+	return &logPreview{max: max}
+}
+
+func (p *logPreview) Append(text string) {
+	if p == nil || p.truncated || p.max <= 0 || text == "" {
+		return
+	}
+	for _, r := range text {
+		if len(p.runes) >= p.max {
+			p.truncated = true
+			return
+		}
+		p.runes = append(p.runes, r)
+	}
+}
+
+func (p *logPreview) String() string {
+	if p == nil {
+		return ""
+	}
+	return string(p.runes)
+}
+
+func (p *logPreview) Truncated() bool {
+	if p == nil {
+		return false
+	}
+	return p.truncated
 }
 
 // ExplainHandler handles the /explain command
