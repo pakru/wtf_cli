@@ -520,12 +520,8 @@ func splitTableRow(line string) []string {
 	if trimmed == "" {
 		return nil
 	}
-	if strings.HasPrefix(trimmed, "|") {
-		trimmed = strings.TrimPrefix(trimmed, "|")
-	}
-	if strings.HasSuffix(trimmed, "|") {
-		trimmed = strings.TrimSuffix(trimmed, "|")
-	}
+	trimmed = strings.TrimPrefix(trimmed, "|")
+	trimmed = strings.TrimSuffix(trimmed, "|")
 	parts := strings.Split(trimmed, "|")
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
