@@ -60,6 +60,11 @@ type Model struct {
 
 	ptyLineBuffer []byte
 	ptyPendingCR  bool
+
+	// Full-screen app support (vim, nano, htop)
+	fullScreenMode  bool
+	fullScreenPanel *FullScreenPanel
+	altScreenState  *AltScreenState
 }
 
 // NewModel creates a new Bubble Tea model
@@ -80,21 +85,23 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 	statusBar.SetModel(loadModelFromConfig())
 
 	return Model{
-		ptyFile:       ptyFile,
-		cwdFunc:       cwdFunc,
-		viewport:      viewport,
-		statusBar:     statusBar,
-		inputHandler:  NewInputHandler(ptyFile),
-		palette:       NewCommandPalette(),
-		resultPanel:   NewResultPanel(),
-		settingsPanel: NewSettingsPanel(),
-		modelPicker:   NewModelPickerPanel(),
-		optionPicker:  NewOptionPickerPanel(),
-		sidebar:       NewSidebar(),
-		dispatcher:    commands.NewDispatcher(),
-		buffer:        buf,
-		session:       sess,
-		currentDir:    initialDir,
+		ptyFile:         ptyFile,
+		cwdFunc:         cwdFunc,
+		viewport:        viewport,
+		statusBar:       statusBar,
+		inputHandler:    NewInputHandler(ptyFile),
+		palette:         NewCommandPalette(),
+		resultPanel:     NewResultPanel(),
+		settingsPanel:   NewSettingsPanel(),
+		modelPicker:     NewModelPickerPanel(),
+		optionPicker:    NewOptionPickerPanel(),
+		sidebar:         NewSidebar(),
+		dispatcher:      commands.NewDispatcher(),
+		buffer:          buf,
+		session:         sess,
+		currentDir:      initialDir,
+		fullScreenPanel: NewFullScreenPanel(80, 24),
+		altScreenState:  NewAltScreenState(),
 	}
 }
 
@@ -134,6 +141,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.fullScreenMode {
+			handled, cmd := m.inputHandler.HandleKey(msg)
+			if handled {
+				return m, cmd
+			}
+			return m, nil
+		}
+
 		if m.exitPending && msg.Type != tea.KeyCtrlD {
 			m.exitPending = false
 			m.statusBar.SetMessage("")
@@ -409,9 +424,57 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ptyOutputMsg:
-		// PTY sent output - append to viewport
-		m.appendPTYOutput(msg.data)
-		m.viewport.AppendOutput(msg.data)
+		chunks := m.altScreenState.SplitTransitions(msg.data)
+		for i, chunk := range chunks {
+			if m.inputHandler != nil {
+				m.inputHandler.UpdateTerminalModes(chunk.data)
+			}
+
+			if chunk.entering {
+				if !m.fullScreenMode {
+					m.enterFullScreen(len(chunk.data))
+				}
+				if m.fullScreenPanel != nil && len(chunk.data) > 0 {
+					m.fullScreenPanel.Write(chunk.data)
+				}
+				continue
+			}
+
+			if chunk.exiting {
+				if m.fullScreenMode && hasFutureEnter(chunks[i+1:]) {
+					if m.fullScreenPanel != nil && len(chunk.data) > 0 {
+						m.fullScreenPanel.Write(chunk.data)
+					}
+					continue
+				}
+
+				if m.fullScreenMode && m.fullScreenPanel != nil && len(chunk.data) > 0 {
+					m.fullScreenPanel.Write(chunk.data)
+				}
+				if m.fullScreenMode {
+					m.exitFullScreen()
+				} else if len(chunk.data) > 0 {
+					m.appendPTYOutput(chunk.data)
+					m.viewport.AppendOutput(chunk.data)
+				}
+				continue
+			}
+
+			if len(chunk.data) == 0 {
+				continue
+			}
+
+			if m.fullScreenMode {
+				// Full-screen mode: send to panel, NOT to buffer (buffer isolation)
+				if m.fullScreenPanel != nil {
+					m.fullScreenPanel.Write(chunk.data)
+				}
+			} else {
+				// Normal mode: append to viewport AND buffer
+				m.appendPTYOutput(chunk.data)
+				m.viewport.AppendOutput(chunk.data)
+			}
+		}
 
 		// Schedule next read
 		return m, listenToPTY(m.ptyFile)
@@ -439,6 +502,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	if !m.ready {
 		return "Initializing..."
+	}
+
+	// Full-screen mode: render only the fullscreen panel (no status bar)
+	if m.fullScreenMode && m.fullScreenPanel != nil && m.fullScreenPanel.IsVisible() {
+		return m.fullScreenPanel.View()
 	}
 
 	// Update status bar width and directory
@@ -533,7 +601,52 @@ func (m Model) overlayCenter(base, panel string) string {
 
 // Helper functions
 
+func hasFutureEnter(chunks []altScreenChunk) bool {
+	for _, chunk := range chunks {
+		if chunk.entering {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) enterFullScreen(dataLen int) {
+	slog.Info("fullscreen_enter", "data_len", dataLen)
+	m.fullScreenMode = true
+	if m.fullScreenPanel != nil {
+		m.fullScreenPanel.Show()
+	}
+	if m.inputHandler != nil {
+		m.inputHandler.SetFullScreenMode(true)
+	}
+	m.applyLayout()
+}
+
+func (m *Model) exitFullScreen() {
+	slog.Info("fullscreen_exit")
+	m.fullScreenMode = false
+	if m.fullScreenPanel != nil {
+		m.fullScreenPanel.Hide()
+		m.fullScreenPanel.Reset()
+	}
+	if m.inputHandler != nil {
+		m.inputHandler.SetFullScreenMode(false)
+	}
+	m.applyLayout()
+}
+
 func (m *Model) applyLayout() {
+	if m.fullScreenMode {
+		if m.fullScreenPanel != nil {
+			m.fullScreenPanel.Resize(m.width, m.height)
+		}
+		if m.ptyFile != nil {
+			contentWidth, contentHeight := contentSize(m.width, m.height)
+			ResizePTY(m.ptyFile, contentWidth, contentHeight)
+		}
+		return
+	}
+
 	viewportHeight := m.height - 1
 	viewportWidth := m.width
 

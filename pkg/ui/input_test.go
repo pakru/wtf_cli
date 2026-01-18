@@ -65,6 +65,26 @@ func TestInputHandler_HandleKey_CtrlD(t *testing.T) {
 	}
 }
 
+func TestInputHandler_HandleKey_CtrlW(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	msg := tea.KeyMsg{Type: tea.KeyCtrlW}
+	handled, cmd := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected Ctrl+W to be handled")
+	}
+
+	if cmd != nil {
+		t.Error("Expected no command for Ctrl+W")
+	}
+
+	if buf.Len() != 1 || buf.Bytes()[0] != 23 {
+		t.Errorf("Expected byte 23 (ETB), got %v", buf.Bytes())
+	}
+}
+
 func TestInputHandler_HandleKey_Enter(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)
@@ -240,5 +260,177 @@ func TestInputHandler_HandleKey_SlashMidLine(t *testing.T) {
 	// Should NOT return palette command
 	if cmd != nil {
 		t.Error("Should not trigger palette when / is mid-line")
+	}
+}
+
+func TestInputHandler_FullScreenMode_BypassesSlashPalette(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	// Enable full-screen mode
+	ih.SetFullScreenMode(true)
+
+	// At line start (initial state), / should go to PTY, not palette
+	msg := tea.KeyMsg{
+		Type:  tea.KeyRunes,
+		Runes: []rune{'/'},
+	}
+	handled, cmd := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected / to be handled in fullscreen mode")
+	}
+
+	// Should send to PTY (not trigger palette)
+	if buf.String() != "/" {
+		t.Errorf("Expected '/' sent to PTY, got %q", buf.String())
+	}
+
+	// Should NOT return palette command
+	if cmd != nil {
+		t.Error("Should not trigger palette in fullscreen mode")
+	}
+}
+
+func TestInputHandler_FullScreenMode_BypassesCtrlD(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	// Enable full-screen mode
+	ih.SetFullScreenMode(true)
+
+	// Ctrl+D should go to PTY, not trigger exit confirmation
+	msg := tea.KeyMsg{Type: tea.KeyCtrlD}
+	handled, cmd := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected Ctrl+D to be handled in fullscreen mode")
+	}
+
+	// Should send ASCII 4 (EOT) to PTY
+	if buf.Len() != 1 || buf.Bytes()[0] != 4 {
+		t.Errorf("Expected byte 4 (EOT), got %v", buf.Bytes())
+	}
+
+	// Should NOT return ctrlDPressedMsg
+	if cmd != nil {
+		t.Error("Should not return ctrlDPressedMsg in fullscreen mode")
+	}
+}
+
+func TestInputHandler_FullScreenMode_CtrlX(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	ih.SetFullScreenMode(true)
+
+	msg := tea.KeyMsg{Type: tea.KeyCtrlX}
+	handled, _ := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected Ctrl+X to be handled in fullscreen mode")
+	}
+
+	if buf.Len() != 1 || buf.Bytes()[0] != 24 {
+		t.Errorf("Expected byte 24 (CAN), got %v", buf.Bytes())
+	}
+}
+
+func TestInputHandler_SetFullScreenMode(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	if ih.IsFullScreenMode() {
+		t.Error("Should not be in fullscreen mode initially")
+	}
+
+	ih.SetFullScreenMode(true)
+	if !ih.IsFullScreenMode() {
+		t.Error("Should be in fullscreen mode after SetFullScreenMode(true)")
+	}
+
+	ih.SetFullScreenMode(false)
+	if ih.IsFullScreenMode() {
+		t.Error("Should not be in fullscreen mode after SetFullScreenMode(false)")
+	}
+}
+
+func TestInputHandler_FullScreenMode_ArrowKeys(t *testing.T) {
+	tests := []struct {
+		name     string
+		keyType  tea.KeyType
+		expected string
+	}{
+		{"Up", tea.KeyUp, "\x1b[A"},
+		{"Down", tea.KeyDown, "\x1b[B"},
+		{"Right", tea.KeyRight, "\x1b[C"},
+		{"Left", tea.KeyLeft, "\x1b[D"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			ih := NewInputHandler(buf)
+			ih.SetFullScreenMode(true)
+
+			msg := tea.KeyMsg{Type: tt.keyType}
+			handled, _ := ih.HandleKey(msg)
+
+			if !handled {
+				t.Errorf("Expected %s to be handled in fullscreen mode", tt.name)
+			}
+
+			if buf.String() != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, buf.String())
+			}
+		})
+	}
+}
+
+func TestInputHandler_UpdateTerminalModes_CursorKeys(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	ih.UpdateTerminalModes([]byte("\x1b[?1h"))
+	if !ih.cursorKeysAppMode {
+		t.Error("Expected cursor keys app mode to be enabled")
+	}
+
+	ih.UpdateTerminalModes([]byte("\x1b[?1l"))
+	if ih.cursorKeysAppMode {
+		t.Error("Expected cursor keys app mode to be disabled")
+	}
+}
+
+func TestInputHandler_FullScreenMode_ArrowKeys_AppMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		keyType  tea.KeyType
+		expected string
+	}{
+		{"Up", tea.KeyUp, "\x1bOA"},
+		{"Down", tea.KeyDown, "\x1bOB"},
+		{"Right", tea.KeyRight, "\x1bOC"},
+		{"Left", tea.KeyLeft, "\x1bOD"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			ih := NewInputHandler(buf)
+			ih.SetFullScreenMode(true)
+			ih.UpdateTerminalModes([]byte("\x1b[?1h"))
+
+			msg := tea.KeyMsg{Type: tt.keyType}
+			handled, _ := ih.HandleKey(msg)
+
+			if !handled {
+				t.Errorf("Expected %s to be handled in fullscreen mode", tt.name)
+			}
+
+			if buf.String() != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, buf.String())
+			}
+		})
 	}
 }

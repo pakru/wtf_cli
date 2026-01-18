@@ -83,6 +83,53 @@ func TestModel_Update_PTYOutput(t *testing.T) {
 	}
 }
 
+func TestModel_Update_PTYOutput_BufferIsolation(t *testing.T) {
+	buf := buffer.New(100)
+	m := NewModel(nil, buf, capture.NewSessionContext(), nil)
+
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = newModel.(Model)
+
+	newModel, _ = m.Update(ptyOutputMsg{data: []byte("before\n")})
+	m = newModel.(Model)
+
+	altScreenData := []byte("\x1b[?1049hFULL\nSCREEN\n\x1b[?1049l")
+	newModel, _ = m.Update(ptyOutputMsg{data: altScreenData})
+	m = newModel.(Model)
+
+	newModel, _ = m.Update(ptyOutputMsg{data: []byte("after\n")})
+	m = newModel.(Model)
+
+	text := buf.ExportAsText()
+	if strings.Contains(text, "FULL") || strings.Contains(text, "SCREEN") || strings.Contains(text, "\x1b") {
+		t.Errorf("Expected buffer to exclude full-screen output, got %q", text)
+	}
+	if !strings.Contains(text, "before") || !strings.Contains(text, "after") {
+		t.Errorf("Expected buffer to contain normal output, got %q", text)
+	}
+}
+
+func TestModel_Update_PTYOutput_ExitSuppressedWithFutureEnter(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = newModel.(Model)
+
+	newModel, _ = m.Update(ptyOutputMsg{data: []byte("\x1b[?1049h")})
+	m = newModel.(Model)
+
+	if !m.fullScreenMode {
+		t.Fatal("Expected fullScreenMode to be true after enter")
+	}
+
+	newModel, _ = m.Update(ptyOutputMsg{data: []byte("\x1b[?1049l\x1b[?1049h")})
+	m = newModel.(Model)
+
+	if !m.fullScreenMode {
+		t.Error("Expected fullScreenMode to remain true when exit is followed by enter")
+	}
+}
+
 func TestModel_View_NotReady(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 

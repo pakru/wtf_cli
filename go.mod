@@ -12,6 +12,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/openai/openai-go/v3 v3.16.0
+	github.com/vito/midterm v0.2.3
 	golang.org/x/term v0.39.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
@@ -19,6 +20,10 @@ require (
 require (
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
+	github.com/danielgatis/go-ansicode v1.0.7 // indirect
+	github.com/danielgatis/go-iterator v0.0.1 // indirect
+	github.com/danielgatis/go-utf8 v1.0.0 // indirect
+	github.com/danielgatis/go-vte v1.0.8 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
