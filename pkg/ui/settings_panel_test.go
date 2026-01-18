@@ -137,6 +137,76 @@ func TestSettingsPanel_EditMode(t *testing.T) {
 	}
 }
 
+func TestSettingsPanel_EditModeCursorNavigation(t *testing.T) {
+	withTempHome(t, nil)
+
+	sp := NewSettingsPanel()
+	cfg := config.Default()
+	sp.Show(cfg, "/tmp/test_config.json")
+
+	sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !sp.editing {
+		t.Fatal("Should be in editing mode after Enter")
+	}
+
+	sp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("abcd")})
+	if sp.editValue != "abcd" {
+		t.Fatalf("Expected edit value %q, got %q", "abcd", sp.editValue)
+	}
+
+	sp.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	sp.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	sp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	if sp.editValue != "abXcd" {
+		t.Fatalf("Expected edit value %q, got %q", "abXcd", sp.editValue)
+	}
+
+	sp.Update(tea.KeyMsg{Type: tea.KeyHome})
+	sp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Z'}})
+	if sp.editValue != "ZabXcd" {
+		t.Fatalf("Expected edit value %q, got %q", "ZabXcd", sp.editValue)
+	}
+
+	sp.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	sp.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if sp.editValue != "ZabXc" {
+		t.Fatalf("Expected edit value %q, got %q", "ZabXc", sp.editValue)
+	}
+
+	sp.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	sp.Update(tea.KeyMsg{Type: tea.KeyDelete})
+	if sp.editValue != "ZabX" {
+		t.Fatalf("Expected edit value %q, got %q", "ZabX", sp.editValue)
+	}
+}
+
+func TestSettingsPanel_EditModePasteUsesRunes(t *testing.T) {
+	withTempHome(t, nil)
+
+	sp := NewSettingsPanel()
+	cfg := config.Default()
+	sp.Show(cfg, "/tmp/test_config.json")
+
+	sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !sp.editing {
+		t.Fatal("Should be in editing mode after Enter")
+	}
+
+	paste := tea.KeyMsg{
+		Type:  tea.KeyRunes,
+		Runes: []rune("sk-or-v1-123\n"),
+		Paste: true,
+	}
+	sp.Update(paste)
+
+	if sp.editValue != "sk-or-v1-123" {
+		t.Fatalf("Expected edit value %q, got %q", "sk-or-v1-123", sp.editValue)
+	}
+	if sp.editCursor != len([]rune(sp.editValue)) {
+		t.Fatalf("Expected cursor at %d, got %d", len([]rune(sp.editValue)), sp.editCursor)
+	}
+}
+
 func TestSettingsPanel_ValidateValue(t *testing.T) {
 	sp := NewSettingsPanel()
 

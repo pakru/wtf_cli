@@ -173,7 +173,7 @@ func (sp *SettingsPanel) Update(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			sp.editing = true
 			sp.editValue = field.Value
-			sp.editCursor = len(sp.editValue)
+			sp.editCursor = len([]rune(sp.editValue))
 		}
 		return nil
 
@@ -199,7 +199,7 @@ func (sp *SettingsPanel) Update(msg tea.KeyMsg) tea.Cmd {
 		if field.Key == "model" && field.Type == "string" {
 			sp.editing = true
 			sp.editValue = field.Value
-			sp.editCursor = len(sp.editValue)
+			sp.editCursor = len([]rune(sp.editValue))
 			return nil
 		}
 	}
@@ -231,13 +231,66 @@ func (sp *SettingsPanel) handleEditMode(msg tea.KeyMsg) tea.Cmd {
 		return nil
 
 	case tea.KeyBackspace:
-		if len(sp.editValue) > 0 {
-			sp.editValue = sp.editValue[:len(sp.editValue)-1]
+		runes := []rune(sp.editValue)
+		if sp.editCursor > len(runes) {
+			sp.editCursor = len(runes)
+		}
+		if sp.editCursor > 0 {
+			runes = append(runes[:sp.editCursor-1], runes[sp.editCursor:]...)
+			sp.editCursor--
+			sp.editValue = string(runes)
+		}
+		return nil
+
+	case tea.KeyDelete:
+		runes := []rune(sp.editValue)
+		if sp.editCursor > len(runes) {
+			sp.editCursor = len(runes)
+		}
+		if sp.editCursor < len(runes) {
+			runes = append(runes[:sp.editCursor], runes[sp.editCursor+1:]...)
+			sp.editValue = string(runes)
 		}
 		return nil
 
 	case tea.KeyRunes:
-		sp.editValue += msg.String()
+		insert := make([]rune, 0, len(msg.Runes))
+		for _, r := range msg.Runes {
+			if r == '\n' || r == '\r' {
+				continue
+			}
+			insert = append(insert, r)
+		}
+		if len(insert) == 0 {
+			return nil
+		}
+		runes := []rune(sp.editValue)
+		if sp.editCursor > len(runes) {
+			sp.editCursor = len(runes)
+		}
+		runes = append(runes[:sp.editCursor], append(insert, runes[sp.editCursor:]...)...)
+		sp.editCursor += len(insert)
+		sp.editValue = string(runes)
+		return nil
+
+	case tea.KeyLeft:
+		if sp.editCursor > 0 {
+			sp.editCursor--
+		}
+		return nil
+
+	case tea.KeyRight:
+		if sp.editCursor < len([]rune(sp.editValue)) {
+			sp.editCursor++
+		}
+		return nil
+
+	case tea.KeyHome:
+		sp.editCursor = 0
+		return nil
+
+	case tea.KeyEnd:
+		sp.editCursor = len([]rune(sp.editValue))
 		return nil
 	}
 
@@ -379,7 +432,7 @@ func (sp *SettingsPanel) View() string {
 		var value string
 		if sp.editing && i == sp.selected {
 			// Show edit cursor
-			value = editStyle.Render(sp.editValue + "█")
+			value = editStyle.Render(renderEditValue(sp.editValue, sp.editCursor))
 		} else if field.Masked && field.Value != "" {
 			// Mask sensitive values
 			value = strings.Repeat("•", len(field.Value))
@@ -499,6 +552,21 @@ func (sp *SettingsPanel) selectedFieldKey() string {
 // SetModelCache updates the cached model list for picker use.
 func (sp *SettingsPanel) SetModelCache(cache ai.ModelCache) {
 	sp.modelCache = cache
+}
+
+func renderEditValue(value string, cursor int) string {
+	runes := []rune(value)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+	withCursor := make([]rune, 0, len(runes)+1)
+	withCursor = append(withCursor, runes[:cursor]...)
+	withCursor = append(withCursor, '█')
+	withCursor = append(withCursor, runes[cursor:]...)
+	return string(withCursor)
 }
 
 func normalizeLogLevel(value string) string {
