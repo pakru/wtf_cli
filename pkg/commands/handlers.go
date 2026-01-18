@@ -155,13 +155,19 @@ func (h *WtfHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error) {
 func buildTerminalMetadata(ctx *Context) ai.TerminalMetadata {
 	meta := ai.TerminalMetadata{
 		WorkingDir: ctx.CurrentDir,
-		ExitCode:   ctx.LastExitCode,
+		ExitCode:   -1,
 	}
 	if ctx.Session != nil {
+		if meta.WorkingDir == "" {
+			meta.WorkingDir = ctx.Session.GetCurrentDir()
+		}
 		last := ctx.Session.GetLastN(1)
 		if len(last) > 0 {
 			meta.LastCommand = last[0].Command
 			meta.ExitCode = last[0].ExitCode
+			if meta.WorkingDir == "" {
+				meta.WorkingDir = last[0].WorkingDir
+			}
 		}
 	}
 	return meta
@@ -194,10 +200,10 @@ func buildMessagePreview(messages []ai.Message, maxMessages, maxChars int) []str
 			role = "unknown"
 		}
 		content := strings.TrimSpace(msg.Content)
+		content, truncated := tailForLog(content, maxChars)
 		content = sanitizeForLog(content)
-		content, truncated := truncateForLog(content, maxChars)
 		if truncated {
-			content += "..."
+			content = "..." + content
 		}
 		preview = append(preview, fmt.Sprintf("%s: %s", role, content))
 	}
@@ -212,7 +218,7 @@ func omittedCount(total, max int) int {
 	return total - max
 }
 
-func truncateForLog(text string, maxChars int) (string, bool) {
+func tailForLog(text string, maxChars int) (string, bool) {
 	if maxChars <= 0 || text == "" {
 		return "", text != ""
 	}
@@ -220,7 +226,7 @@ func truncateForLog(text string, maxChars int) (string, bool) {
 	if len(runes) <= maxChars {
 		return text, false
 	}
-	return string(runes[:maxChars]), true
+	return string(runes[len(runes)-maxChars:]), true
 }
 
 var logSanitizer = strings.NewReplacer("\r", "\\r", "\n", "\\n", "\t", "\\t")

@@ -103,15 +103,7 @@ func truncateOutput(output string, maxBytes int) (string, bool) {
 
 func buildUserPrompt(meta TerminalMetadata, ctx TerminalContext) string {
 	workingDir := strings.TrimSpace(meta.WorkingDir)
-	if workingDir == "" {
-		workingDir = "unknown"
-	}
-
 	lastCommand := strings.TrimSpace(meta.LastCommand)
-	if lastCommand == "" {
-		lastCommand = "unknown"
-	}
-
 	output := ctx.Output
 	if strings.TrimSpace(output) == "" {
 		output = "<no output captured>"
@@ -119,15 +111,21 @@ func buildUserPrompt(meta TerminalMetadata, ctx TerminalContext) string {
 
 	var sb strings.Builder
 	sb.WriteString("Please help diagnose the terminal issue and suggest fixes.\n")
-	sb.WriteString("Terminal metadata:\n")
-	sb.WriteString(fmt.Sprintf("cwd: %s\n", workingDir))
-	sb.WriteString(fmt.Sprintf("last_command: %s\n", lastCommand))
-	sb.WriteString(fmt.Sprintf("last_exit_code: %d\n", meta.ExitCode))
+	sb.WriteString("Terminal metadata (captured fields):\n")
+	if workingDir != "" {
+		sb.WriteString(fmt.Sprintf("cwd: %s\n", workingDir))
+	}
+	if lastCommand != "" {
+		sb.WriteString(fmt.Sprintf("last_command: %s\n", lastCommand))
+	}
+	if meta.ExitCode >= 0 {
+		sb.WriteString(fmt.Sprintf("last_exit_code: %d\n", meta.ExitCode))
+	}
 	sb.WriteString(fmt.Sprintf("output_lines: %d\n", ctx.LineCount))
 	if ctx.Truncated {
 		sb.WriteString("note: output truncated\n")
 	}
-	sb.WriteString("\nRecent output:\n")
+	sb.WriteString("\nRecent output (most recent lines, oldest -> newest):\n")
 	sb.WriteString(output)
 
 	return sb.String()
@@ -137,6 +135,9 @@ func wtfSystemPrompt() string {
 	return strings.Join([]string{
 		"You are a terminal assistant.",
 		"Use the provided terminal output and metadata to diagnose issues.",
+		"If last_command is provided, focus on that command and its output first.",
+		"If a metadata field is missing, do not assume or invent it.",
+		"Field definitions: cwd is the current working directory; last_command is the most recent captured command; last_exit_code is the exit code for last_command; output_lines is the number of lines in the output block; output may be truncated when noted.",
 		"Provide concise, actionable suggestions and likely causes.",
 		"If you need more information, ask focused questions.",
 	}, " ")
