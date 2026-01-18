@@ -59,6 +59,7 @@ type Model struct {
 	exitConfirmID int
 
 	ptyLineBuffer []byte
+	ptyPendingCR  bool
 }
 
 // NewModel creates a new Bubble Tea model
@@ -721,15 +722,35 @@ func (m *Model) appendPTYOutput(data []byte) {
 		return
 	}
 
-	normalized := normalizePTYOutput(data)
-	for _, b := range []byte(normalized) {
-		if b == '\n' {
+	for _, b := range data {
+		if m.ptyPendingCR {
+			if b == '\n' {
+				if len(m.ptyLineBuffer) > 0 {
+					m.buffer.Write(m.ptyLineBuffer)
+					m.ptyLineBuffer = m.ptyLineBuffer[:0]
+				}
+				m.ptyPendingCR = false
+				continue
+			}
+			if b == '\r' {
+				continue
+			}
+			m.ptyLineBuffer = m.ptyLineBuffer[:0]
+			m.ptyPendingCR = false
+		}
+
+		switch b {
+		case '\r':
+			m.ptyPendingCR = true
+		case '\n':
 			if len(m.ptyLineBuffer) > 0 {
 				m.buffer.Write(m.ptyLineBuffer)
 				m.ptyLineBuffer = m.ptyLineBuffer[:0]
 			}
-			continue
+		case '\t':
+			m.ptyLineBuffer = append(m.ptyLineBuffer, tabSpaces...)
+		default:
+			m.ptyLineBuffer = append(m.ptyLineBuffer, b)
 		}
-		m.ptyLineBuffer = append(m.ptyLineBuffer, b)
 	}
 }

@@ -14,6 +14,7 @@ type PTYViewport struct {
 	content       string
 	cursorTracker *CursorTracker
 	ready         bool
+	pendingCR     bool
 }
 
 // NewPTYViewport creates a new PTY viewport
@@ -34,7 +35,7 @@ func (v *PTYViewport) SetSize(width, height int) {
 
 // AppendOutput adds new output to the viewport
 func (v *PTYViewport) AppendOutput(data []byte) {
-	v.content += normalizePTYOutput(data)
+	v.content = appendPTYContent(v.content, data, &v.pendingCR)
 
 	// Track cursor position from ANSI codes
 	v.cursorTracker.UpdateFromOutput(data)

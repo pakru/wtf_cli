@@ -1,48 +1,56 @@
 package ui
 
 import (
+	"bytes"
 	"strings"
-
-	"github.com/mattn/go-runewidth"
 )
 
 const tabWidth = 4
 
-func normalizePTYOutput(data []byte) string {
+var tabSpaces = []byte(strings.Repeat(" ", tabWidth))
+
+func appendPTYContent(content string, data []byte, pendingCR *bool) string {
 	if len(data) == 0 {
-		return ""
-	}
-	text := string(data)
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "")
-	return expandTabs(text, tabWidth)
-}
-
-func expandTabs(text string, width int) string {
-	if width <= 0 || !strings.Contains(text, "\t") {
-		return text
+		return content
 	}
 
-	var sb strings.Builder
-	col := 0
+	buf := []byte(content)
 
-	for _, r := range text {
-		switch r {
-		case '\n':
-			sb.WriteRune(r)
-			col = 0
-		case '\t':
-			spaces := width - (col % width)
-			if spaces <= 0 {
-				spaces = width
+	for _, b := range data {
+		if pendingCR != nil && *pendingCR {
+			if b == '\n' {
+				buf = append(buf, '\n')
+				*pendingCR = false
+				continue
 			}
-			sb.WriteString(strings.Repeat(" ", spaces))
-			col += spaces
+			if b == '\r' {
+				continue
+			}
+			buf = trimToLineStart(buf)
+			*pendingCR = false
+		}
+
+		switch b {
+		case '\r':
+			if pendingCR != nil {
+				*pendingCR = true
+			}
+		case '\n':
+			buf = append(buf, '\n')
+		case '\t':
+			buf = append(buf, tabSpaces...)
 		default:
-			sb.WriteRune(r)
-			col += runewidth.RuneWidth(r)
+			buf = append(buf, b)
 		}
 	}
 
-	return sb.String()
+	return string(buf)
+}
+
+func trimToLineStart(buf []byte) []byte {
+	idx := bytes.LastIndexByte(buf, '\n')
+	if idx == -1 {
+		return buf[:0]
+	}
+	return buf[:idx+1]
 }
