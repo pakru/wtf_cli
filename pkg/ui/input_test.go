@@ -48,14 +48,20 @@ func TestInputHandler_HandleKey_CtrlD(t *testing.T) {
 		t.Error("Expected Ctrl+D to be handled")
 	}
 
-	// Should send ASCII 4 (EOT)
-	if buf.Bytes()[0] != 4 {
-		t.Errorf("Expected byte 4, got %d", buf.Bytes()[0])
+	if len(buf.Bytes()) != 0 {
+		t.Errorf("Expected no PTY output, got %v", buf.Bytes())
 	}
 
-	// Should return Quit command
+	// Should return ctrlDPressedMsg command
 	if cmd == nil {
-		t.Error("Expected Quit command for Ctrl+D")
+		t.Error("Expected ctrlDPressedMsg command for Ctrl+D")
+	}
+
+	if cmd != nil {
+		msg := cmd()
+		if _, ok := msg.(ctrlDPressedMsg); !ok {
+			t.Errorf("Expected ctrlDPressedMsg, got %T", msg)
+		}
 	}
 }
 

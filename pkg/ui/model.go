@@ -54,6 +54,9 @@ type Model struct {
 	width  int
 	height int
 	ready  bool
+
+	exitPending   bool
+	exitConfirmID int
 }
 
 // NewModel creates a new Bubble Tea model
@@ -109,6 +112,10 @@ func tickDirectory() tea.Cmd {
 
 type directoryUpdateMsg struct{}
 
+type exitConfirmTimeoutMsg struct {
+	id int
+}
+
 // Update handles messages and updates model state (Bubble Tea lifecycle method)
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -124,6 +131,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.exitPending && msg.Type != tea.KeyCtrlD {
+			m.exitPending = false
+			m.statusBar.SetMessage("")
+		}
+
 		if m.optionPicker != nil && m.optionPicker.IsVisible() {
 			cmd := m.optionPicker.Update(msg)
 			return m, cmd
@@ -275,6 +287,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 		}
 		m.statusBar.SetModel(msg.config.OpenRouter.Model)
+		return m, nil
+
+	case ctrlDPressedMsg:
+		if m.exitPending {
+			m.exitPending = false
+			m.statusBar.SetMessage("")
+			if m.inputHandler != nil {
+				if err := m.inputHandler.SendToPTY([]byte{4}); err != nil {
+					slog.Error("exit_send_eof_error", "error", err)
+				}
+			}
+			return m, tea.Quit
+		}
+		m.exitPending = true
+		m.exitConfirmID++
+		confirmID := m.exitConfirmID
+		m.statusBar.SetMessage("Press Ctrl+D again to exit")
+		return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return exitConfirmTimeoutMsg{id: confirmID}
+		})
+
+	case exitConfirmTimeoutMsg:
+		if m.exitPending && msg.id == m.exitConfirmID {
+			m.exitPending = false
+			m.statusBar.SetMessage("")
+		}
 		return m, nil
 
 	case openModelPickerMsg:

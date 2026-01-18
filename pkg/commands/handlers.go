@@ -250,7 +250,7 @@ Available Commands:
   /help     - Show this help
 
 Shortcuts:
-  Ctrl+D    - Exit terminal
+  Ctrl+D    - Exit terminal (press twice)
   Ctrl+C    - Cancel current command
   Ctrl+Z    - Suspend process
   /         - Open command palette (at empty prompt)

@@ -12,7 +12,7 @@ func WelcomeMessage() string {
 		"│              Welcome to WTF CLI Terminal                │",
 		"│                                                         │",
 		"│  Shortcuts:                                             │",
-		"│    Ctrl+D     Exit terminal                             │",
+		"│    Ctrl+D     Exit terminal (press twice)               │",
 		"│    Ctrl+C     Cancel current command                    │",
 		"│    Ctrl+Z     Suspend process                           │",
 		"│    /          Command palette (coming soon)             │",

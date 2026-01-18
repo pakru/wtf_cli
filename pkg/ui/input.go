@@ -34,6 +34,8 @@ func (ih *InputHandler) IsPaletteMode() bool {
 // showPaletteMsg is sent when / is pressed at line start
 type showPaletteMsg struct{}
 
+type ctrlDPressedMsg struct{}
+
 // HandleKey processes a key message and returns whether it was handled
 func (ih *InputHandler) HandleKey(msg tea.KeyMsg) (handled bool, cmd tea.Cmd) {
 	// If palette mode is active, don't process keys here
@@ -51,9 +53,9 @@ func (ih *InputHandler) HandleKey(msg tea.KeyMsg) (handled bool, cmd tea.Cmd) {
 		return true, nil
 
 	case tea.KeyCtrlD:
-		// Ctrl+D - send EOF to PTY (will trigger shell exit)
-		ih.ptyWriter.Write([]byte{4}) // ASCII EOT (Ctrl+D)
-		return true, tea.Quit
+		return true, func() tea.Msg {
+			return ctrlDPressedMsg{}
+		}
 
 	case tea.KeyCtrlZ:
 		// Ctrl+Z - suspend (send to PTY)
