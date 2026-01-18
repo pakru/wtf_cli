@@ -26,7 +26,12 @@ func appendPTYContent(content string, data []byte, pendingCR *bool) string {
 			if b == '\r' {
 				continue
 			}
-			buf = trimToLineStart(buf)
+			// Don't trim line when followed by ESC - let ANSI escape sequences
+			// (like ESC[K for clear-to-end-of-line) be processed by terminal emulator.
+			// This fixes issues with Ctrl+C which sends \r followed by ESC sequences.
+			if b != 0x1b {
+				buf = trimToLineStart(buf)
+			}
 			*pendingCR = false
 		}
 
