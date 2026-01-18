@@ -1,12 +1,14 @@
-# WTF CLI - Terminal Wrapper with AI Assistance
+# WTF CLI - AI Assisted terminal
 
-A transparent PTY-based terminal wrapper that captures all terminal I/O for AI-powered assistance. Built with Go and the Bubble Tea TUI framework.
+A transparent PTY-based terminal with AI-powered assistance.
+
+![WTF CLI Interface](docs/images/wtf_cli_interface.png)
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.24+
 - Linux or macOS
 
 ### Installation
