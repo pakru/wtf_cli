@@ -5,8 +5,8 @@ import (
 
 	"wtf_cli/pkg/ai"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 type openModelPickerMsg struct {
@@ -105,30 +105,31 @@ func (p *ModelPickerPanel) SetSize(width, height int) {
 }
 
 // Update handles keyboard input for the picker.
-func (p *ModelPickerPanel) Update(msg tea.KeyMsg) tea.Cmd {
+func (p *ModelPickerPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 	if !p.visible {
 		return nil
 	}
 
 	filtered := p.filteredOptions()
 	listHeight := p.listHeight()
+	keyStr := msg.String()
 
-	switch msg.Type {
-	case tea.KeyUp:
+	switch keyStr {
+	case "up":
 		if p.selected > 0 {
 			p.selected--
 		}
 		p.ensureVisible(filtered, listHeight)
 		return nil
 
-	case tea.KeyDown:
+	case "down":
 		if p.selected < len(filtered)-1 {
 			p.selected++
 		}
 		p.ensureVisible(filtered, listHeight)
 		return nil
 
-	case tea.KeyPgUp:
+	case "pgup":
 		if len(filtered) > 0 {
 			p.selected -= listHeight
 			if p.selected < 0 {
@@ -138,7 +139,7 @@ func (p *ModelPickerPanel) Update(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyPgDown:
+	case "pgdown":
 		if len(filtered) > 0 {
 			p.selected += listHeight
 			if p.selected > len(filtered)-1 {
@@ -148,21 +149,21 @@ func (p *ModelPickerPanel) Update(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyHome:
+	case "home":
 		if len(filtered) > 0 {
 			p.selected = 0
 			p.ensureVisible(filtered, listHeight)
 		}
 		return nil
 
-	case tea.KeyEnd:
+	case "end":
 		if len(filtered) > 0 {
 			p.selected = len(filtered) - 1
 			p.ensureVisible(filtered, listHeight)
 		}
 		return nil
 
-	case tea.KeyEnter:
+	case "enter":
 		if len(filtered) > 0 && p.selected < len(filtered) {
 			modelID := filtered[p.selected].ID
 			p.Hide()
@@ -172,11 +173,11 @@ func (p *ModelPickerPanel) Update(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyEsc:
+	case "esc":
 		p.Hide()
 		return nil
 
-	case tea.KeyBackspace:
+	case "backspace":
 		if len(p.filter) > 0 {
 			p.filter = p.filter[:len(p.filter)-1]
 			p.selected = 0
@@ -184,14 +185,16 @@ func (p *ModelPickerPanel) Update(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyRunes:
-		p.filter += msg.String()
-		p.selected = 0
-		p.scroll = 0
+	default:
+		// Add to filter if it's printable text
+		key := msg.Key()
+		if key.Text != "" {
+			p.filter += key.Text
+			p.selected = 0
+			p.scroll = 0
+		}
 		return nil
 	}
-
-	return nil
 }
 
 // View renders the model picker.

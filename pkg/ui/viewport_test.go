@@ -22,12 +22,12 @@ func TestPTYViewport_SetSize(t *testing.T) {
 
 	vp.SetSize(80, 24)
 
-	if vp.viewport.Width != 80 {
-		t.Errorf("Expected width 80, got %d", vp.viewport.Width)
+	if vp.viewport.Width() != 80 {
+		t.Errorf("Expected width 80, got %d", vp.viewport.Width())
 	}
 
-	if vp.viewport.Height != 24 {
-		t.Errorf("Expected height 24, got %d", vp.viewport.Height)
+	if vp.viewport.Height() != 24 {
+		t.Errorf("Expected height 24, got %d", vp.viewport.Height())
 	}
 
 	if !vp.ready {

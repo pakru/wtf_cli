@@ -3,8 +3,8 @@ package ui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 type openOptionPickerMsg struct {
@@ -74,29 +74,30 @@ func (p *OptionPickerPanel) SetSize(width, height int) {
 }
 
 // Update handles keyboard input for the picker.
-func (p *OptionPickerPanel) Update(msg tea.KeyMsg) tea.Cmd {
+func (p *OptionPickerPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 	if !p.visible {
 		return nil
 	}
 
 	listHeight := p.listHeight()
 
-	switch msg.Type {
-	case tea.KeyUp:
+	keyStr := msg.String()
+	switch keyStr {
+	case "up":
 		if p.selected > 0 {
 			p.selected--
 		}
 		p.ensureVisible(listHeight)
 		return nil
 
-	case tea.KeyDown:
+	case "down":
 		if p.selected < len(p.options)-1 {
 			p.selected++
 		}
 		p.ensureVisible(listHeight)
 		return nil
 
-	case tea.KeyPgUp:
+	case "pgup":
 		if len(p.options) > 0 {
 			p.selected -= listHeight
 			if p.selected < 0 {
@@ -106,7 +107,7 @@ func (p *OptionPickerPanel) Update(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyPgDown:
+	case "pgdown":
 		if len(p.options) > 0 {
 			p.selected += listHeight
 			if p.selected > len(p.options)-1 {
@@ -116,21 +117,21 @@ func (p *OptionPickerPanel) Update(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyHome:
+	case "home":
 		if len(p.options) > 0 {
 			p.selected = 0
 			p.ensureVisible(listHeight)
 		}
 		return nil
 
-	case tea.KeyEnd:
+	case "end":
 		if len(p.options) > 0 {
 			p.selected = len(p.options) - 1
 			p.ensureVisible(listHeight)
 		}
 		return nil
 
-	case tea.KeyEnter:
+	case "enter":
 		if len(p.options) > 0 && p.selected >= 0 && p.selected < len(p.options) {
 			value := p.options[p.selected]
 			p.Hide()
@@ -140,7 +141,7 @@ func (p *OptionPickerPanel) Update(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyEsc:
+	case "esc":
 		p.Hide()
 		return nil
 	}

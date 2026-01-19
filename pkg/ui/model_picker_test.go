@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"wtf_cli/pkg/ai"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestModelPicker_ShowSelectCurrent(t *testing.T) {
@@ -40,8 +38,8 @@ func TestModelPicker_FilterAndSelect(t *testing.T) {
 	}
 	picker.Show(options, "model-a")
 
-	picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
-	picker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	picker.Update(newTextKeyPressMsg("b"))
+	picker.Update(newTextKeyPressMsg("e"))
 	if picker.filter != "be" {
 		t.Fatalf("Expected filter 'be', got %q", picker.filter)
 	}
@@ -54,12 +52,12 @@ func TestModelPicker_FilterAndSelect(t *testing.T) {
 		t.Fatalf("Expected filtered model-b, got %+v", filtered)
 	}
 
-	picker.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	picker.Update(testKeyBackspace)
 	if picker.filter != "b" {
 		t.Fatalf("Expected filter 'b' after backspace, got %q", picker.filter)
 	}
 
-	cmd := picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd := picker.Update(testKeyEnter)
 	if cmd == nil {
 		t.Fatal("Expected modelPickerSelectMsg command")
 	}
@@ -97,7 +95,7 @@ func TestModelPicker_ScrollsWithNavigation(t *testing.T) {
 	}
 
 	for i := 1; i < len(options); i++ {
-		picker.Update(tea.KeyMsg{Type: tea.KeyDown})
+		picker.Update(testKeyDown)
 		if picker.selected != i {
 			t.Fatalf("Expected selected=%d, got %d", i, picker.selected)
 		}
@@ -116,7 +114,7 @@ func TestModelPicker_EscCloses(t *testing.T) {
 	}
 	picker.Show(options, "model-a")
 
-	cmd := picker.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	cmd := picker.Update(testKeyEsc)
 	if cmd != nil {
 		t.Fatal("Expected nil command on Esc")
 	}

@@ -3,7 +3,7 @@ package ui
 import (
 	"io"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // InputHandler manages keyboard input routing
@@ -43,7 +43,7 @@ type showPaletteMsg struct{}
 type ctrlDPressedMsg struct{}
 
 // HandleKey processes a key message and returns whether it was handled
-func (ih *InputHandler) HandleKey(msg tea.KeyMsg) (handled bool, cmd tea.Cmd) {
+func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cmd) {
 	// FULL-SCREEN MODE: bypass all special handling, send directly to PTY
 	if ih.fullScreenMode {
 		ih.sendKeyToPTY(msg)
@@ -56,67 +56,84 @@ func (ih *InputHandler) HandleKey(msg tea.KeyMsg) (handled bool, cmd tea.Cmd) {
 		return false, nil
 	}
 
-	// Check for special keys first
-	switch msg.Type {
-	case tea.KeyCtrlC:
+	keyStr := msg.String()
+
+	// Check for special keys first using string matching (v2 API)
+	switch keyStr {
+	case "ctrl+c":
 		// Ctrl+C - send interrupt to PTY
 		ih.ptyWriter.Write([]byte{3}) // ASCII ETX (Ctrl+C)
 		ih.atLineStart = true         // After interrupt, usually at new prompt
 		return true, nil
 
-	case tea.KeyCtrlD:
+	case "ctrl+d":
 		return true, func() tea.Msg {
 			return ctrlDPressedMsg{}
 		}
 
-	case tea.KeyCtrlZ:
+	case "ctrl+z":
 		// Ctrl+Z - suspend (send to PTY)
 		ih.ptyWriter.Write([]byte{26}) // ASCII SUB (Ctrl+Z)
 		return true, nil
 
-	case tea.KeyTab:
+	case "tab":
 		// Tab - send to PTY
 		ih.ptyWriter.Write([]byte{9}) // ASCII TAB
 		ih.atLineStart = false
 		return true, nil
 
-	case tea.KeyEnter:
+	case "enter":
 		// Enter - send newline to PTY
 		ih.ptyWriter.Write([]byte{13}) // CR (some shells need this)
 		ih.atLineStart = true          // After enter, we're at new line start
 		return true, nil
 
-	case tea.KeyBackspace:
+	case "backspace":
 		// Backspace - send to PTY
 		ih.ptyWriter.Write([]byte{127}) // ASCII DEL
 		// We can't perfectly track if we're at line start after backspace
 		// but it's conservative to keep atLineStart false
 		return true, nil
 
-	case tea.KeySpace:
+	case " ":
 		// Space - send to PTY
 		ih.ptyWriter.Write([]byte{32}) // ASCII SPACE
 		ih.atLineStart = false
 		return true, nil
 
-	case tea.KeyEsc:
+	case "esc":
 		// Escape - send to PTY
 		ih.ptyWriter.Write([]byte{27}) // ASCII ESC
 		return true, nil
-	}
 
-	if b, ok := ctrlKeyByte(msg.Type); ok {
-		ih.ptyWriter.Write([]byte{b})
-		if b == '\r' || b == '\n' {
-			ih.atLineStart = true
-		} else {
-			ih.atLineStart = false
-		}
+	case "up":
+		ih.ptyWriter.Write([]byte("\x1b[A"))
+		return true, nil
+	case "down":
+		ih.ptyWriter.Write([]byte("\x1b[B"))
+		return true, nil
+	case "right":
+		ih.ptyWriter.Write([]byte("\x1b[C"))
+		return true, nil
+	case "left":
+		ih.ptyWriter.Write([]byte("\x1b[D"))
 		return true, nil
 	}
 
+	// Handle ctrl key combinations
+	if len(keyStr) > 5 && keyStr[:5] == "ctrl+" {
+		if b, ok := ctrlKeyByteFromString(keyStr); ok {
+			ih.ptyWriter.Write([]byte{b})
+			if b == '\r' || b == '\n' {
+				ih.atLineStart = true
+			} else {
+				ih.atLineStart = false
+			}
+			return true, nil
+		}
+	}
+
 	// Check for slash at line start - trigger command palette
-	keyStr := msg.String()
 	if keyStr == "/" && ih.atLineStart {
 		// Trigger command palette
 		return true, func() tea.Msg {
@@ -131,26 +148,11 @@ func (ih *InputHandler) HandleKey(msg tea.KeyMsg) (handled bool, cmd tea.Cmd) {
 		return true, nil
 	}
 
-	// Normal typing - send to PTY
-	if msg.Type == tea.KeyRunes {
-		ih.ptyWriter.Write([]byte(keyStr))
+	// Normal typing - send to PTY if it's printable text
+	key := msg.Key()
+	if key.Text != "" {
+		ih.ptyWriter.Write([]byte(key.Text))
 		ih.atLineStart = false
-		return true, nil
-	}
-
-	// Arrow keys and other special keys - generate ANSI escape sequences
-	switch msg.Type {
-	case tea.KeyUp:
-		ih.ptyWriter.Write([]byte("\x1b[A"))
-		return true, nil
-	case tea.KeyDown:
-		ih.ptyWriter.Write([]byte("\x1b[B"))
-		return true, nil
-	case tea.KeyRight:
-		ih.ptyWriter.Write([]byte("\x1b[C"))
-		return true, nil
-	case tea.KeyLeft:
-		ih.ptyWriter.Write([]byte("\x1b[D"))
 		return true, nil
 	}
 
@@ -233,7 +235,7 @@ func (ih *InputHandler) IsFullScreenMode() bool {
 }
 
 // sendKeyToPTY sends a key directly to PTY with proper encoding
-func (ih *InputHandler) sendKeyToPTY(msg tea.KeyMsg) {
+func (ih *InputHandler) sendKeyToPTY(msg tea.KeyPressMsg) {
 	cursorSeq := func(normal, app string) []byte {
 		if ih.cursorKeysAppMode {
 			return []byte(app)
@@ -241,86 +243,160 @@ func (ih *InputHandler) sendKeyToPTY(msg tea.KeyMsg) {
 		return []byte(normal)
 	}
 
-	switch msg.Type {
-	case tea.KeyCtrlC:
+	keyStr := msg.String()
+	key := msg.Key()
+
+	switch keyStr {
+	case "ctrl+c":
 		ih.ptyWriter.Write([]byte{3}) // ASCII ETX (Ctrl+C)
-	case tea.KeyCtrlD:
+	case "ctrl+d":
 		ih.ptyWriter.Write([]byte{4}) // ASCII EOT (Ctrl+D)
-	case tea.KeyCtrlZ:
+	case "ctrl+z":
 		ih.ptyWriter.Write([]byte{26}) // ASCII SUB (Ctrl+Z)
-	case tea.KeyTab:
+	case "tab":
 		ih.ptyWriter.Write([]byte{9}) // ASCII TAB
-	case tea.KeyEnter:
+	case "enter":
 		ih.ptyWriter.Write([]byte{13}) // CR
-	case tea.KeyBackspace:
+	case "backspace":
 		ih.ptyWriter.Write([]byte{127}) // ASCII DEL
-	case tea.KeySpace:
+	case " ":
 		ih.ptyWriter.Write([]byte{32}) // ASCII SPACE
-	case tea.KeyEsc:
+	case "esc":
 		ih.ptyWriter.Write([]byte{27}) // ASCII ESC
-	case tea.KeyUp:
+	case "up":
 		ih.ptyWriter.Write(cursorSeq("\x1b[A", "\x1bOA"))
-	case tea.KeyDown:
+	case "down":
 		ih.ptyWriter.Write(cursorSeq("\x1b[B", "\x1bOB"))
-	case tea.KeyRight:
+	case "right":
 		ih.ptyWriter.Write(cursorSeq("\x1b[C", "\x1bOC"))
-	case tea.KeyLeft:
+	case "left":
 		ih.ptyWriter.Write(cursorSeq("\x1b[D", "\x1bOD"))
-	case tea.KeyHome:
+	case "home":
 		ih.ptyWriter.Write(cursorSeq("\x1b[H", "\x1bOH"))
-	case tea.KeyEnd:
+	case "end":
 		ih.ptyWriter.Write(cursorSeq("\x1b[F", "\x1bOF"))
-	case tea.KeyPgUp:
+	case "pgup":
 		ih.ptyWriter.Write([]byte("\x1b[5~"))
-	case tea.KeyPgDown:
+	case "pgdown":
 		ih.ptyWriter.Write([]byte("\x1b[6~"))
-	case tea.KeyDelete:
+	case "delete":
 		ih.ptyWriter.Write([]byte("\x1b[3~"))
-	case tea.KeyInsert:
+	case "insert":
 		ih.ptyWriter.Write([]byte("\x1b[2~"))
-	case tea.KeyF1:
+	case "f1":
 		ih.ptyWriter.Write([]byte("\x1bOP"))
-	case tea.KeyF2:
+	case "f2":
 		ih.ptyWriter.Write([]byte("\x1bOQ"))
-	case tea.KeyF3:
+	case "f3":
 		ih.ptyWriter.Write([]byte("\x1bOR"))
-	case tea.KeyF4:
+	case "f4":
 		ih.ptyWriter.Write([]byte("\x1bOS"))
-	case tea.KeyF5:
+	case "f5":
 		ih.ptyWriter.Write([]byte("\x1b[15~"))
-	case tea.KeyF6:
+	case "f6":
 		ih.ptyWriter.Write([]byte("\x1b[17~"))
-	case tea.KeyF7:
+	case "f7":
 		ih.ptyWriter.Write([]byte("\x1b[18~"))
-	case tea.KeyF8:
+	case "f8":
 		ih.ptyWriter.Write([]byte("\x1b[19~"))
-	case tea.KeyF9:
+	case "f9":
 		ih.ptyWriter.Write([]byte("\x1b[20~"))
-	case tea.KeyF10:
+	case "f10":
 		ih.ptyWriter.Write([]byte("\x1b[21~"))
-	case tea.KeyF11:
+	case "f11":
 		ih.ptyWriter.Write([]byte("\x1b[23~"))
-	case tea.KeyF12:
+	case "f12":
 		ih.ptyWriter.Write([]byte("\x1b[24~"))
-	case tea.KeyRunes:
-		ih.ptyWriter.Write([]byte(msg.String()))
 	default:
-		if b, ok := ctrlKeyByte(msg.Type); ok {
-			ih.ptyWriter.Write([]byte{b})
-			return
+		// Handle ctrl key combinations
+		if len(keyStr) > 5 && keyStr[:5] == "ctrl+" {
+			if b, ok := ctrlKeyByteFromString(keyStr); ok {
+				ih.ptyWriter.Write([]byte{b})
+				return
+			}
 		}
-		// For other keys, try to send the string representation
-		if s := msg.String(); len(s) > 0 {
-			ih.ptyWriter.Write([]byte(s))
+		// For text input, send the text
+		if key.Text != "" {
+			ih.ptyWriter.Write([]byte(key.Text))
+		} else if len(keyStr) > 0 {
+			// Fallback to string representation
+			ih.ptyWriter.Write([]byte(keyStr))
 		}
 	}
 }
 
-func ctrlKeyByte(key tea.KeyType) (byte, bool) {
-	if key >= tea.KeyCtrlAt && key <= tea.KeyCtrlUnderscore {
-		return byte(key), true
+// ctrlKeyByteFromString converts a ctrl+X string to the corresponding byte
+func ctrlKeyByteFromString(keyStr string) (byte, bool) {
+	if len(keyStr) < 6 {
+		return 0, false
 	}
-	if key == tea.KeyCtrlQuestionMark {
+	char := keyStr[5:]
+	switch char {
+	case "@":
+		return 0, true // ctrl+@
+	case "a":
+		return 1, true
+	case "b":
+		return 2, true
+	case "c":
+		return 3, true
+	case "d":
+		return 4, true
+	case "e":
+		return 5, true
+	case "f":
+		return 6, true
+	case "g":
+		return 7, true
+	case "h":
+		return 8, true
+	case "i":
+		return 9, true // tab
+	case "j":
+		return 10, true
+	case "k":
+		return 11, true
+	case "l":
+		return 12, true
+	case "m":
+		return 13, true // enter
+	case "n":
+		return 14, true
+	case "o":
+		return 15, true
+	case "p":
+		return 16, true
+	case "q":
+		return 17, true
+	case "r":
+		return 18, true
+	case "s":
+		return 19, true
+	case "t":
+		return 20, true
+	case "u":
+		return 21, true
+	case "v":
+		return 22, true
+	case "w":
+		return 23, true
+	case "x":
+		return 24, true
+	case "y":
+		return 25, true
+	case "z":
+		return 26, true
+	case "[":
+		return 27, true // esc
+	case "\\":
+		return 28, true
+	case "]":
+		return 29, true
+	case "^":
+		return 30, true
+	case "_":
+		return 31, true
+	case "?":
 		return 127, true
 	}
 	return 0, false

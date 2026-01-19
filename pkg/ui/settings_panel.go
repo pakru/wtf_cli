@@ -8,8 +8,8 @@ import (
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/config"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // SettingField represents a single editable setting
@@ -106,27 +106,29 @@ type settingsSaveMsg struct {
 type settingsCloseMsg struct{}
 
 // Update handles keyboard input for the settings panel
-func (sp *SettingsPanel) Update(msg tea.KeyMsg) tea.Cmd {
+func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 	// Editing mode
 	if sp.editing {
 		return sp.handleEditMode(msg)
 	}
 
+	keyStr := msg.String()
+
 	// Navigation mode
-	switch msg.Type {
-	case tea.KeyUp:
+	switch keyStr {
+	case "up":
 		if sp.selected > 0 {
 			sp.selected--
 		}
 		return nil
 
-	case tea.KeyDown:
+	case "down":
 		if sp.selected < len(sp.fields)-1 {
 			sp.selected++
 		}
 		return nil
 
-	case tea.KeyEnter:
+	case "enter":
 		// Enter edit mode for current field
 		field := &sp.fields[sp.selected]
 		if field.Type == "info" {
@@ -177,7 +179,7 @@ func (sp *SettingsPanel) Update(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyEsc:
+	case "esc":
 		// Close panel
 		if sp.changed {
 			// Save changes
@@ -187,14 +189,14 @@ func (sp *SettingsPanel) Update(msg tea.KeyMsg) tea.Cmd {
 		return func() tea.Msg {
 			return settingsCloseMsg{}
 		}
-	}
 
-	// 's' to save
-	if msg.String() == "s" && sp.changed {
-		return sp.saveAndClose()
-	}
+	case "s":
+		if sp.changed {
+			return sp.saveAndClose()
+		}
+		return nil
 
-	if msg.String() == "e" {
+	case "e":
 		field := &sp.fields[sp.selected]
 		if field.Key == "model" && field.Type == "string" {
 			sp.editing = true
@@ -202,15 +204,19 @@ func (sp *SettingsPanel) Update(msg tea.KeyMsg) tea.Cmd {
 			sp.editCursor = len([]rune(sp.editValue))
 			return nil
 		}
+		return nil
 	}
 
 	return nil
 }
 
 // handleEditMode handles input when editing a field
-func (sp *SettingsPanel) handleEditMode(msg tea.KeyMsg) tea.Cmd {
-	switch msg.Type {
-	case tea.KeyEnter:
+func (sp *SettingsPanel) handleEditMode(msg tea.KeyPressMsg) tea.Cmd {
+	keyStr := msg.String()
+	key := msg.Key()
+
+	switch keyStr {
+	case "enter":
 		// Apply edit
 		field := &sp.fields[sp.selected]
 		if sp.validateValue(field.Type, sp.editValue) {
@@ -224,13 +230,13 @@ func (sp *SettingsPanel) handleEditMode(msg tea.KeyMsg) tea.Cmd {
 		sp.editing = false
 		return nil
 
-	case tea.KeyEsc:
+	case "esc":
 		// Cancel edit
 		sp.editing = false
 		sp.errorMsg = ""
 		return nil
 
-	case tea.KeyBackspace:
+	case "backspace":
 		runes := []rune(sp.editValue)
 		if sp.editCursor > len(runes) {
 			sp.editCursor = len(runes)
@@ -242,7 +248,7 @@ func (sp *SettingsPanel) handleEditMode(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyDelete:
+	case "delete":
 		runes := []rune(sp.editValue)
 		if sp.editCursor > len(runes) {
 			sp.editCursor = len(runes)
@@ -253,48 +259,50 @@ func (sp *SettingsPanel) handleEditMode(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyRunes:
-		insert := make([]rune, 0, len(msg.Runes))
-		for _, r := range msg.Runes {
-			if r == '\n' || r == '\r' {
-				continue
-			}
-			insert = append(insert, r)
-		}
-		if len(insert) == 0 {
-			return nil
-		}
-		runes := []rune(sp.editValue)
-		if sp.editCursor > len(runes) {
-			sp.editCursor = len(runes)
-		}
-		runes = append(runes[:sp.editCursor], append(insert, runes[sp.editCursor:]...)...)
-		sp.editCursor += len(insert)
-		sp.editValue = string(runes)
-		return nil
-
-	case tea.KeyLeft:
+	case "left":
 		if sp.editCursor > 0 {
 			sp.editCursor--
 		}
 		return nil
 
-	case tea.KeyRight:
+	case "right":
 		if sp.editCursor < len([]rune(sp.editValue)) {
 			sp.editCursor++
 		}
 		return nil
 
-	case tea.KeyHome:
+	case "home":
 		sp.editCursor = 0
 		return nil
 
-	case tea.KeyEnd:
+	case "end":
 		sp.editCursor = len([]rune(sp.editValue))
 		return nil
-	}
 
-	return nil
+	default:
+		// Handle text input
+		if key.Text != "" {
+			insert := []rune(key.Text)
+			// Filter out newlines
+			filtered := make([]rune, 0, len(insert))
+			for _, r := range insert {
+				if r != '\n' && r != '\r' {
+					filtered = append(filtered, r)
+				}
+			}
+			if len(filtered) == 0 {
+				return nil
+			}
+			runes := []rune(sp.editValue)
+			if sp.editCursor > len(runes) {
+				sp.editCursor = len(runes)
+			}
+			runes = append(runes[:sp.editCursor], append(filtered, runes[sp.editCursor:]...)...)
+			sp.editCursor += len(filtered)
+			sp.editValue = string(runes)
+		}
+		return nil
+	}
 }
 
 // validateValue checks if a value is valid for its type

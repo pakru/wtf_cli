@@ -3,9 +3,9 @@ package ui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // PTYViewport wraps Bubble Tea's viewport for displaying PTY output
@@ -20,7 +20,7 @@ type PTYViewport struct {
 // NewPTYViewport creates a new PTY viewport
 func NewPTYViewport() PTYViewport {
 	return PTYViewport{
-		viewport:      viewport.New(0, 0),
+		viewport:      viewport.New(),
 		content:       "",
 		cursorTracker: NewCursorTracker(),
 	}
@@ -28,8 +28,8 @@ func NewPTYViewport() PTYViewport {
 
 // SetSize updates the viewport dimensions
 func (v *PTYViewport) SetSize(width, height int) {
-	v.viewport.Width = width
-	v.viewport.Height = height
+	v.viewport.SetWidth(width)
+	v.viewport.SetHeight(height)
 	v.ready = true
 }
 
@@ -73,13 +73,13 @@ func (v *PTYViewport) View() string {
 	}
 
 	view := v.viewport.View()
-	if v.viewport.Width <= 0 {
+	if v.viewport.Width() <= 0 {
 		return view
 	}
 
 	lines := strings.Split(view, "\n")
 	for i := range lines {
-		lines[i] = padStyled(lines[i], v.viewport.Width)
+		lines[i] = padStyled(lines[i], v.viewport.Width())
 	}
 	return strings.Join(lines, "\n")
 }
@@ -88,22 +88,22 @@ func (v *PTYViewport) View() string {
 
 // ScrollUp scrolls the viewport up
 func (v *PTYViewport) ScrollUp() {
-	v.viewport.LineUp(1)
+	v.viewport.ScrollUp(1)
 }
 
 // ScrollDown scrolls the viewport down
 func (v *PTYViewport) ScrollDown() {
-	v.viewport.LineDown(1)
+	v.viewport.ScrollDown(1)
 }
 
 // PageUp scrolls up one page
 func (v *PTYViewport) PageUp() {
-	v.viewport.ViewUp()
+	v.viewport.PageUp()
 }
 
 // PageDown scrolls down one page
 func (v *PTYViewport) PageDown() {
-	v.viewport.ViewDown()
+	v.viewport.PageDown()
 }
 
 // IsAtBottom returns true if scrolled to bottom
@@ -116,7 +116,7 @@ func (v *PTYViewport) Stats() (totalLines, visibleLines, scrollPercent int) {
 	// Count total lines
 	lines := strings.Split(v.content, "\n")
 	totalLines = len(lines)
-	visibleLines = v.viewport.Height
+	visibleLines = v.viewport.Height()
 
 	// Calculate scroll percentage
 	if totalLines <= visibleLines {

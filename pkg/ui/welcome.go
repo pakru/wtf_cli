@@ -6,7 +6,7 @@ import (
 
 	"wtf_cli/pkg/version"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/mattn/go-runewidth"
 )
 

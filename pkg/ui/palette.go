@@ -3,8 +3,8 @@ package ui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Command represents a slash command
@@ -86,23 +86,24 @@ type paletteSelectMsg struct {
 type paletteCancelMsg struct{}
 
 // Update handles keyboard input for the palette
-func (p *CommandPalette) Update(msg tea.KeyMsg) tea.Cmd {
+func (p *CommandPalette) Update(msg tea.KeyPressMsg) tea.Cmd {
 	filtered := p.filteredCommands()
+	keyStr := msg.String()
 
-	switch msg.Type {
-	case tea.KeyUp:
+	switch keyStr {
+	case "up":
 		if p.selected > 0 {
 			p.selected--
 		}
 		return nil
 
-	case tea.KeyDown:
+	case "down":
 		if p.selected < len(filtered)-1 {
 			p.selected++
 		}
 		return nil
 
-	case tea.KeyEnter:
+	case "enter":
 		// Select current command
 		if len(filtered) > 0 && p.selected < len(filtered) {
 			cmd := filtered[p.selected]
@@ -113,14 +114,14 @@ func (p *CommandPalette) Update(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyEsc:
+	case "esc":
 		// Cancel palette
 		p.Hide()
 		return func() tea.Msg {
 			return paletteCancelMsg{}
 		}
 
-	case tea.KeyBackspace:
+	case "backspace":
 		// Delete filter character
 		if len(p.filter) > 0 {
 			p.filter = p.filter[:len(p.filter)-1]
@@ -128,14 +129,15 @@ func (p *CommandPalette) Update(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyRunes:
-		// Add to filter
-		p.filter += msg.String()
-		p.selected = 0 // Reset selection when filter changes
+	default:
+		// Add to filter if it's printable text
+		key := msg.Key()
+		if key.Text != "" {
+			p.filter += key.Text
+			p.selected = 0 // Reset selection when filter changes
+		}
 		return nil
 	}
-
-	return nil
 }
 
 // View renders the command palette

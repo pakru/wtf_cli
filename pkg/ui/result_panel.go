@@ -3,8 +3,8 @@ package ui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // ResultPanel displays command execution results
@@ -65,40 +65,41 @@ func (rp *ResultPanel) SetSize(width, height int) {
 type resultPanelCloseMsg struct{}
 
 // Update handles keyboard input for the result panel
-func (rp *ResultPanel) Update(msg tea.KeyMsg) tea.Cmd {
+func (rp *ResultPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 	maxScroll := len(rp.lines) - (rp.height - 6) // Account for box borders
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
 
-	switch msg.Type {
-	case tea.KeyEsc, tea.KeyEnter:
+	keyStr := msg.String()
+	switch keyStr {
+	case "esc", "enter":
 		// Close the panel
 		rp.Hide()
 		return func() tea.Msg {
 			return resultPanelCloseMsg{}
 		}
 
-	case tea.KeyUp:
+	case "up":
 		if rp.scrollY > 0 {
 			rp.scrollY--
 		}
 		return nil
 
-	case tea.KeyDown:
+	case "down":
 		if rp.scrollY < maxScroll {
 			rp.scrollY++
 		}
 		return nil
 
-	case tea.KeyPgUp:
+	case "pgup":
 		rp.scrollY -= 10
 		if rp.scrollY < 0 {
 			rp.scrollY = 0
 		}
 		return nil
 
-	case tea.KeyPgDown:
+	case "pgdown":
 		rp.scrollY += 10
 		if rp.scrollY > maxScroll {
 			rp.scrollY = maxScroll

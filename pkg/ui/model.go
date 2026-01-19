@@ -14,8 +14,8 @@ import (
 	"wtf_cli/pkg/commands"
 	"wtf_cli/pkg/config"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 )
@@ -203,7 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.fullScreenMode {
 			handled, cmd := m.inputHandler.HandleKey(msg)
 			if handled {
@@ -212,7 +212,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if m.exitPending && msg.Type != tea.KeyCtrlD {
+		if m.exitPending && msg.String() != "ctrl+d" {
 			m.exitPending = false
 			m.statusBar.SetMessage("")
 		}
@@ -559,14 +559,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the UI (Bubble Tea lifecycle method)
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	var v tea.View
 	if !m.ready {
-		return "Initializing..."
+		v.SetContent("Initializing...")
+		return v
 	}
 
 	// Full-screen mode: render only the fullscreen panel (no status bar)
 	if m.fullScreenMode && m.fullScreenPanel != nil && m.fullScreenPanel.IsVisible() {
-		return m.fullScreenPanel.View()
+		v.AltScreen = true
+		v.SetContent(m.fullScreenPanel.View())
+		return v
 	}
 
 	// Update status bar width and directory
@@ -587,24 +591,29 @@ func (m Model) View() string {
 	}
 
 	if m.optionPicker != nil && m.optionPicker.IsVisible() {
-		return m.overlayCenter(overlayView, m.optionPicker.View())
+		v.SetContent(m.overlayCenter(overlayView, m.optionPicker.View()))
+		return v
 	}
 
 	if m.modelPicker != nil && m.modelPicker.IsVisible() {
-		return m.overlayCenter(overlayView, m.modelPicker.View())
+		v.SetContent(m.overlayCenter(overlayView, m.modelPicker.View()))
+		return v
 	}
 
 	// Overlay result panel if visible
 	if m.resultPanel.IsVisible() {
-		return m.overlayCenter(overlayView, m.resultPanel.View())
+		v.SetContent(m.overlayCenter(overlayView, m.resultPanel.View()))
+		return v
 	}
 
 	// Overlay command palette if visible
 	if m.palette.IsVisible() {
-		return m.overlayCenter(overlayView, m.palette.View())
+		v.SetContent(m.overlayCenter(overlayView, m.palette.View()))
+		return v
 	}
 
-	return overlayView
+	v.SetContent(overlayView)
+	return v
 }
 
 // overlayCenter places a panel centered vertically over the base view

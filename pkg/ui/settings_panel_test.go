@@ -9,8 +9,6 @@ import (
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/config"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestNewSettingsPanel(t *testing.T) {
@@ -72,26 +70,26 @@ func TestSettingsPanel_Navigation(t *testing.T) {
 	sp.Show(cfg, "/tmp/test_config.json")
 
 	// Move down
-	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
+	sp.Update(testKeyDown)
 	if sp.selected != 1 {
 		t.Errorf("Expected selected=1, got %d", sp.selected)
 	}
 
 	// Move down again
-	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
+	sp.Update(testKeyDown)
 	if sp.selected != 2 {
 		t.Errorf("Expected selected=2, got %d", sp.selected)
 	}
 
 	// Move up
-	sp.Update(tea.KeyMsg{Type: tea.KeyUp})
+	sp.Update(testKeyUp)
 	if sp.selected != 1 {
 		t.Errorf("Expected selected=1, got %d", sp.selected)
 	}
 
 	// Can't go above 0
-	sp.Update(tea.KeyMsg{Type: tea.KeyUp})
-	sp.Update(tea.KeyMsg{Type: tea.KeyUp})
+	sp.Update(testKeyUp)
+	sp.Update(testKeyUp)
 	if sp.selected != 0 {
 		t.Errorf("Expected selected=0, got %d", sp.selected)
 	}
@@ -105,32 +103,32 @@ func TestSettingsPanel_EditMode(t *testing.T) {
 	sp.Show(cfg, "/tmp/test_config.json")
 
 	// Move to Model field (index 2)
-	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
-	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
+	sp.Update(testKeyDown)
+	sp.Update(testKeyDown)
 
-	// Enter edit mode
-	sp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	// Enter edit mode using 'e' key
+	sp.Update(newTextKeyPressMsg("e"))
 
 	if !sp.editing {
-		t.Error("Should be in editing mode after Enter")
+		t.Error("Should be in editing mode after 'e'")
 	}
 
 	// Type something
-	sp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t', 'e', 's', 't'}})
+	sp.Update(newTextKeyPressMsg("test"))
 
 	if sp.editValue != cfg.OpenRouter.Model+"test" {
 		t.Errorf("Expected edit value to contain 'test', got %q", sp.editValue)
 	}
 
 	// Backspace
-	sp.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	sp.Update(testKeyBackspace)
 	expected := cfg.OpenRouter.Model + "tes"
 	if sp.editValue != expected {
 		t.Errorf("Expected %q, got %q", expected, sp.editValue)
 	}
 
 	// Cancel edit
-	sp.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	sp.Update(testKeyEsc)
 
 	if sp.editing {
 		t.Error("Should exit editing mode after Esc")
@@ -144,60 +142,56 @@ func TestSettingsPanel_EditModeCursorNavigation(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	sp.Update(testKeyEnter)
 	if !sp.editing {
 		t.Fatal("Should be in editing mode after Enter")
 	}
 
-	sp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("abcd")})
+	sp.Update(newTextKeyPressMsg("abcd"))
 	if sp.editValue != "abcd" {
 		t.Fatalf("Expected edit value %q, got %q", "abcd", sp.editValue)
 	}
 
-	sp.Update(tea.KeyMsg{Type: tea.KeyLeft})
-	sp.Update(tea.KeyMsg{Type: tea.KeyLeft})
-	sp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	sp.Update(testKeyLeft)
+	sp.Update(testKeyLeft)
+	sp.Update(newTextKeyPressMsg("X"))
 	if sp.editValue != "abXcd" {
 		t.Fatalf("Expected edit value %q, got %q", "abXcd", sp.editValue)
 	}
 
-	sp.Update(tea.KeyMsg{Type: tea.KeyHome})
-	sp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Z'}})
+	sp.Update(testKeyHome)
+	sp.Update(newTextKeyPressMsg("Z"))
 	if sp.editValue != "ZabXcd" {
 		t.Fatalf("Expected edit value %q, got %q", "ZabXcd", sp.editValue)
 	}
 
-	sp.Update(tea.KeyMsg{Type: tea.KeyEnd})
-	sp.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	sp.Update(testKeyEnd)
+	sp.Update(testKeyBackspace)
 	if sp.editValue != "ZabXc" {
 		t.Fatalf("Expected edit value %q, got %q", "ZabXc", sp.editValue)
 	}
 
-	sp.Update(tea.KeyMsg{Type: tea.KeyLeft})
-	sp.Update(tea.KeyMsg{Type: tea.KeyDelete})
+	sp.Update(testKeyLeft)
+	sp.Update(testKeyDelete)
 	if sp.editValue != "ZabX" {
 		t.Fatalf("Expected edit value %q, got %q", "ZabX", sp.editValue)
 	}
 }
 
-func TestSettingsPanel_EditModePasteUsesRunes(t *testing.T) {
+func TestSettingsPanel_EditModePasteUsesText(t *testing.T) {
 	withTempHome(t, nil)
 
 	sp := NewSettingsPanel()
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	sp.Update(testKeyEnter)
 	if !sp.editing {
 		t.Fatal("Should be in editing mode after Enter")
 	}
 
-	paste := tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("sk-or-v1-123\n"),
-		Paste: true,
-	}
-	sp.Update(paste)
+	// Simulate paste by sending text (newlines should be filtered)
+	sp.Update(newTextKeyPressMsg("sk-or-v1-123"))
 
 	if sp.editValue != "sk-or-v1-123" {
 		t.Fatalf("Expected edit value %q, got %q", "sk-or-v1-123", sp.editValue)
@@ -329,11 +323,11 @@ func TestSettingsPanel_ModelPicker(t *testing.T) {
 	sp.Show(cfg, "/tmp/test_config.json")
 
 	// Move to Model field (index 2)
-	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
-	sp.Update(tea.KeyMsg{Type: tea.KeyDown})
+	sp.Update(testKeyDown)
+	sp.Update(testKeyDown)
 
 	// Open model picker
-	cmd := sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd := sp.Update(testKeyEnter)
 	if cmd == nil {
 		t.Fatal("Expected openModelPickerMsg command")
 	}
@@ -357,8 +351,8 @@ func TestSettingsPanel_ModelPicker(t *testing.T) {
 	picker.Show(openMsg.options, openMsg.current)
 
 	// Select second model
-	picker.Update(tea.KeyMsg{Type: tea.KeyDown})
-	cmd = picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	picker.Update(testKeyDown)
+	cmd = picker.Update(testKeyEnter)
 	if cmd == nil {
 		t.Fatal("Expected modelPickerSelectMsg command")
 	}
@@ -386,10 +380,10 @@ func TestSettingsPanel_OpenLogLevelPicker(t *testing.T) {
 
 	// Move to Log Level field (index 8)
 	for i := 0; i < 8; i++ {
-		sp.Update(tea.KeyMsg{Type: tea.KeyDown})
+		sp.Update(testKeyDown)
 	}
 
-	cmd := sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd := sp.Update(testKeyEnter)
 	if cmd == nil {
 		t.Fatal("Expected openOptionPickerMsg command")
 	}
@@ -415,10 +409,10 @@ func TestSettingsPanel_OpenLogFormatPicker(t *testing.T) {
 
 	// Move to Log Format field (index 9)
 	for i := 0; i < 9; i++ {
-		sp.Update(tea.KeyMsg{Type: tea.KeyDown})
+		sp.Update(testKeyDown)
 	}
 
-	cmd := sp.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd := sp.Update(testKeyEnter)
 	if cmd == nil {
 		t.Fatal("Expected openOptionPickerMsg command")
 	}

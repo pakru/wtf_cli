@@ -5,9 +5,9 @@ import (
 	"os"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	osc52 "github.com/aymanbagabas/go-osc52/v2"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -71,18 +71,14 @@ func (s *Sidebar) SetContent(content string) {
 }
 
 // ShouldHandleKey returns true when the sidebar should intercept the key.
-func (s *Sidebar) ShouldHandleKey(msg tea.KeyMsg) bool {
+func (s *Sidebar) ShouldHandleKey(msg tea.KeyPressMsg) bool {
 	if !s.visible {
 		return false
 	}
 
-	switch msg.Type {
-	case tea.KeyEsc, tea.KeyUp, tea.KeyDown, tea.KeyPgUp, tea.KeyPgDown:
-		return true
-	}
-
-	switch msg.String() {
-	case "q", "y":
+	keyStr := msg.String()
+	switch keyStr {
+	case "esc", "up", "down", "pgup", "pgdown", "q", "y":
 		return true
 	}
 
@@ -90,33 +86,34 @@ func (s *Sidebar) ShouldHandleKey(msg tea.KeyMsg) bool {
 }
 
 // Update handles keyboard input for the sidebar.
-func (s *Sidebar) Update(msg tea.KeyMsg) tea.Cmd {
+func (s *Sidebar) Update(msg tea.KeyPressMsg) tea.Cmd {
 	if !s.visible {
 		return nil
 	}
 
 	maxScroll := s.maxScroll()
+	keyStr := msg.String()
 
-	switch msg.Type {
-	case tea.KeyEsc:
+	switch keyStr {
+	case "esc":
 		s.Hide()
 		return nil
 
-	case tea.KeyUp:
+	case "up":
 		if s.scrollY > 0 {
 			s.scrollY--
 			s.follow = false
 		}
 		return nil
 
-	case tea.KeyDown:
+	case "down":
 		if s.scrollY < maxScroll {
 			s.scrollY++
 		}
 		s.follow = s.scrollY >= maxScroll
 		return nil
 
-	case tea.KeyPgUp:
+	case "pgup":
 		s.scrollY -= 10
 		if s.scrollY < 0 {
 			s.scrollY = 0
@@ -124,19 +121,18 @@ func (s *Sidebar) Update(msg tea.KeyMsg) tea.Cmd {
 		s.follow = false
 		return nil
 
-	case tea.KeyPgDown:
+	case "pgdown":
 		s.scrollY += 10
 		if s.scrollY > maxScroll {
 			s.scrollY = maxScroll
 		}
 		s.follow = s.scrollY >= maxScroll
 		return nil
-	}
 
-	switch msg.String() {
 	case "q":
 		s.Hide()
 		return nil
+
 	case "y":
 		return s.copyToClipboard()
 	}

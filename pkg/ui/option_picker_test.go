@@ -2,8 +2,6 @@ package ui
 
 import (
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestOptionPicker_ShowSelectCurrent(t *testing.T) {
@@ -34,8 +32,8 @@ func TestOptionPicker_SelectEmitsMsg(t *testing.T) {
 	options := []string{"json", "text"}
 	picker.Show("Log Format", "log_format", options, "json")
 
-	picker.Update(tea.KeyMsg{Type: tea.KeyDown})
-	cmd := picker.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	picker.Update(testKeyDown)
+	cmd := picker.Update(testKeyEnter)
 	if cmd == nil {
 		t.Fatal("Expected optionPickerSelectMsg command")
 	}
@@ -62,7 +60,7 @@ func TestOptionPicker_EscCloses(t *testing.T) {
 	options := []string{"debug", "info"}
 	picker.Show("Log Level", "log_level", options, "debug")
 
-	cmd := picker.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	cmd := picker.Update(testKeyEsc)
 	if cmd != nil {
 		t.Fatal("Expected nil command on Esc")
 	}
