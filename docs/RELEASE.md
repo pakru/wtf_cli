@@ -31,30 +31,12 @@ Run tests to ensure everything works:
 make check
 ```
 
-### 2. Update Version
-
-Update the version in `version.txt`:
-```bash
-# For a new minor version
-echo "v0.2.0" > version.txt
-
-# Or edit manually
-nano version.txt
-```
+### 2. Create and Push Tag
 
 Version format: `vMAJOR.MINOR.PATCH` (e.g., `v1.2.3`)
 - **MAJOR**: Breaking changes
 - **MINOR**: New features, backward compatible
 - **PATCH**: Bug fixes, backward compatible
-
-### 3. Commit Version Change
-
-```bash
-git add version.txt
-git commit -m "Bump version to v0.2.0"
-```
-
-### 4. Create and Push Tag
 
 ```bash
 # Create annotated tag
@@ -65,16 +47,16 @@ git push origin main
 git push origin v0.2.0
 ```
 
-**Important**: The tag must match the format `v*.*.*` to trigger the release workflow.
+**Important**: The tag is the source of truth for the version number.
 
-### 5. Monitor Release Build
+### 3. Monitor Release Build
 
 1. Go to: https://github.com/pakru/wtf_cli/actions
 2. Find the "Release" workflow
 3. Watch it build and publish the release
 4. If it fails, check the logs and fix any issues
 
-### 6. Verify Release
+### 4. Verify Release
 
 Once the workflow completes:
 
@@ -88,7 +70,7 @@ Once the workflow completes:
    ./wtf_cli --version
    ```
 
-### 7. Update Release Notes (Optional)
+### 5. Update Release Notes (Optional)
 
 If needed, edit the release notes on GitHub:
 1. Go to the release page

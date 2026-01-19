@@ -8,6 +8,9 @@
 # Project binary
 wtf_cli
 
+# Version file (using git tags instead)
+version.txt
+
 # Test binary, built with `go test -c`
 *.test
 

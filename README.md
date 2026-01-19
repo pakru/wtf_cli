@@ -182,12 +182,11 @@ For maintainers: See [docs/RELEASE.md](docs/RELEASE.md) for detailed release ins
 
 **Quick Release:**
 ```bash
-# Update version in version.txt
-echo "v0.2.0" > version.txt
+# Commit your changes
+git add .
+git commit -m "Your changes"
 
-# Commit and tag
-git add version.txt
-git commit -m "Bump version to v0.2.0"
+# Create and push tag (version comes from the tag)
 git tag v0.2.0
 git push origin main --tags
 
