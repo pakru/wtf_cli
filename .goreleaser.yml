@@ -1,0 +1,115 @@
+# GoReleaser configuration
+# Documentation: https://goreleaser.com
+
+version: 2
+
+before:
+  hooks:
+    # Ensure dependencies are up to date
+    - go mod tidy
+
+builds:
+  - id: wtf_cli
+    main: ./cmd/wtf_cli
+    binary: wtf_cli
+    
+    # Version information via ldflags
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+    
+    env:
+      - CGO_ENABLED=0
+    
+    # Build for multiple platforms
+    goos:
+      - linux
+      - darwin
+      - windows
+    
+    goarch:
+      - amd64
+      - arm64
+    
+    # Skip combinations that don't make sense
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: wtf_cli
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    
+    # Use zip for windows
+    format_overrides:
+      - goos: windows
+        format: zip
+    
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Performance Improvements
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: pakru
+    name: wtf_cli
+  
+  # Create a draft release for manual review
+  draft: false
+  
+  # Replace existing release if exists
+  replace: true
+  
+  # Release notes
+  header: |
+    ## WTF CLI {{.Version}}
+    
+    Thank you for using WTF CLI! This release includes improvements and bug fixes.
+    
+    Download the appropriate binary for your platform below.
+  
+  footer: |
+    ## Installation
+    
+    Download the archive for your platform, extract it, and run:
+    ```bash
+    chmod +x wtf_cli  # Unix-like systems only
+    ./wtf_cli --version
+    ```
+    
+    **Full Changelog**: https://github.com/pakru/wtf_cli/compare/{{ .PreviousTag }}...{{ .Tag }}

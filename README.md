@@ -13,9 +13,26 @@ A transparent PTY-based terminal with AI-powered assistance.
 
 ### Installation
 
+#### Option 1: Download Pre-built Binary (Recommended)
+
+Download the latest release for your platform from the [Releases page](https://github.com/pakru/wtf_cli/releases):
+
+```bash
+# Linux/macOS example
+wget https://github.com/pakru/wtf_cli/releases/latest/download/wtf_cli_<version>_<os>_<arch>.tar.gz
+tar -xzf wtf_cli_<version>_<os>_<arch>.tar.gz
+chmod +x wtf_cli
+./wtf_cli --version
+
+# Optionally move to PATH
+sudo mv wtf_cli /usr/local/bin/
+```
+
+#### Option 2: Build from Source
+
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/wtf_cli.git
+git clone https://github.com/pakru/wtf_cli.git
 cd wtf_cli
 
 # Build
@@ -28,6 +45,9 @@ make build
 ### Usage
 
 ```bash
+# Check version
+./wtf_cli --version
+
 # Start the wrapper
 ./wtf_cli
 
@@ -154,6 +174,24 @@ go install std
 # Rebuild the project
 make clean
 make build
+```
+
+## 🚀 Release Process
+
+For maintainers: See [docs/RELEASE.md](docs/RELEASE.md) for detailed release instructions.
+
+**Quick Release:**
+```bash
+# Update version in version.txt
+echo "v0.2.0" > version.txt
+
+# Commit and tag
+git add version.txt
+git commit -m "Bump version to v0.2.0"
+git tag v0.2.0
+git push origin main --tags
+
+# GitHub Actions will automatically build and create the release
 ```
 
 ## 📝 Configuration

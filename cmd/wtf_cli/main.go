@@ -15,6 +15,12 @@ import (
 )
 
 func main() {
+	// Check for version flag
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+		printVersion()
+		os.Exit(0)
+	}
+
 	// Load configuration
 	cfg, err := config.Load(config.GetConfigPath())
 	if err != nil {
