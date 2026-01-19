@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
@@ -150,5 +151,110 @@ func TestModel_View_Ready(t *testing.T) {
 	// (might have ANSI codes for cursor highlighting)
 	if !strings.Contains(view, "ello world") { // Check for most of the text
 		t.Errorf("Expected view to contain 'ello world', got %q", view)
+	}
+}
+
+func TestModel_Update_WindowSize_Debounce(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	// First resize
+	newModel, cmd := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = newModel.(Model)
+
+	if m.resizeDebounceID != 1 {
+		t.Errorf("Expected resizeDebounceID 1, got %d", m.resizeDebounceID)
+	}
+	if cmd == nil {
+		t.Error("Expected cmd for debounced resize")
+	}
+
+	// Second resize should increment debounce ID
+	newModel, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = newModel.(Model)
+
+	if m.resizeDebounceID != 2 {
+		t.Errorf("Expected resizeDebounceID 2, got %d", m.resizeDebounceID)
+	}
+
+	// Stale resize message should be ignored
+	newModel, _ = m.Update(resizeApplyMsg{id: 1, width: 80, height: 24})
+	m = newModel.(Model)
+
+	// initialResize should still be false because stale message was ignored
+	if m.initialResize {
+		t.Error("Expected initialResize to remain false after stale message")
+	}
+}
+
+func TestModel_Update_ResizeApply_SkipsInitial(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.resizeDebounceID = 1
+
+	// First resize apply should be skipped (initial)
+	newModel, _ := m.Update(resizeApplyMsg{id: 1, width: 80, height: 24})
+	m = newModel.(Model)
+
+	if !m.initialResize {
+		t.Error("Expected initialResize to be true after first apply")
+	}
+	if !m.resizeTime.IsZero() {
+		t.Error("Expected resizeTime to be zero after skipped initial resize")
+	}
+
+	// Second resize apply would set resizeTime, but only if ptyFile is set
+	// Since we don't have a real PTY in tests, just verify initialResize remains true
+	m.resizeDebounceID = 2
+	m.width = 100
+	m.height = 30
+	newModel, _ = m.Update(resizeApplyMsg{id: 2, width: 100, height: 30})
+	m = newModel.(Model)
+
+	// Without ptyFile, resizeTime won't be set, but the logic path was taken
+	// The key invariant is that initialResize stays true after first apply
+	if !m.initialResize {
+		t.Error("Expected initialResize to remain true")
+	}
+}
+
+func TestModel_Update_PTYOutput_SuppressedAfterResize(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 24)
+
+	// Simulate recent resize
+	m.resizeTime = time.Now()
+
+	// PTY output should be suppressed
+	testData := []byte("prompt$ ")
+	newModel, cmd := m.Update(ptyOutputMsg{data: testData})
+	m = newModel.(Model)
+
+	// Output should NOT appear in viewport
+	content := m.viewport.GetContent()
+	if strings.Contains(content, "prompt$") {
+		t.Error("Expected PTY output to be suppressed after resize")
+	}
+	// But cmd should schedule next read
+	if cmd == nil {
+		t.Error("Expected cmd to schedule next PTY read")
+	}
+}
+
+func TestModel_Update_PTYOutput_NotSuppressedAfterDelay(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 24)
+
+	// Simulate old resize (more than 100ms ago)
+	m.resizeTime = time.Now().Add(-200 * time.Millisecond)
+
+	// PTY output should NOT be suppressed
+	testData := []byte("normal output")
+	newModel, _ := m.Update(ptyOutputMsg{data: testData})
+	m = newModel.(Model)
+
+	content := m.viewport.GetContent()
+	if !strings.Contains(content, "normal output") {
+		t.Error("Expected PTY output to appear after resize delay")
 	}
 }

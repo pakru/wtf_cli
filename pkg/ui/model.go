@@ -58,6 +58,10 @@ type Model struct {
 	exitPending   bool
 	exitConfirmID int
 
+	resizeDebounceID int       // Counter to debounce resize events
+	resizeTime       time.Time // When last PTY resize occurred (to suppress prompt reprint)
+	initialResize    bool      // Track if we've done the initial resize
+
 	ptyLineBuffer []byte
 	ptyPendingCR  bool
 
@@ -126,6 +130,12 @@ type exitConfirmTimeoutMsg struct {
 	id int
 }
 
+type resizeApplyMsg struct {
+	id     int
+	width  int
+	height int
+}
+
 // Update handles messages and updates model state (Bubble Tea lifecycle method)
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -136,8 +146,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ready = true
 		slog.Debug("window_resize", "width", m.width, "height", m.height)
 
-		m.applyLayout()
+		// Update UI component sizes immediately for display
+		viewportHeight := m.height - 1
+		viewportWidth := m.width
+		if m.sidebar != nil && m.sidebar.IsVisible() {
+			left, right := splitSidebarWidths(m.width)
+			viewportWidth = left
+			m.sidebar.SetSize(right, viewportHeight)
+		}
+		m.viewport.SetSize(viewportWidth, viewportHeight)
+		m.palette.SetSize(m.width, m.height)
+		m.resultPanel.SetSize(m.width, m.height)
+		m.settingsPanel.SetSize(m.width, m.height)
+		if m.modelPicker != nil {
+			m.modelPicker.SetSize(m.width, m.height)
+		}
+		if m.optionPicker != nil {
+			m.optionPicker.SetSize(m.width, m.height)
+		}
+		if m.fullScreenMode && m.fullScreenPanel != nil {
+			m.fullScreenPanel.Resize(m.width, m.height)
+		}
 
+		// Debounce PTY resize to avoid multiple prompt reprints during drag
+		m.resizeDebounceID++
+		resizeID := m.resizeDebounceID
+		return m, tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
+			return resizeApplyMsg{id: resizeID, width: msg.Width, height: msg.Height}
+		})
+
+	case resizeApplyMsg:
+		// Only apply PTY resize if this is the most recent resize event
+		if msg.id != m.resizeDebounceID {
+			return m, nil
+		}
+		// Skip PTY resize on initial startup - PTY already has correct size from spawn
+		if !m.initialResize {
+			m.initialResize = true
+			return m, nil
+		}
+		// Resize PTY so bash knows correct terminal dimensions for line wrapping
+		if m.ptyFile != nil {
+			if m.fullScreenMode {
+				contentWidth, contentHeight := contentSize(m.width, m.height)
+				ResizePTY(m.ptyFile, contentWidth, contentHeight)
+			} else {
+				viewportHeight := m.height - 1
+				viewportWidth := m.width
+				if m.sidebar != nil && m.sidebar.IsVisible() {
+					left, _ := splitSidebarWidths(m.width)
+					viewportWidth = left
+				}
+				ResizePTY(m.ptyFile, viewportWidth, viewportHeight)
+				// Track resize time to suppress prompt reprint output
+				m.resizeTime = time.Now()
+			}
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -424,6 +488,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ptyOutputMsg:
+		// Suppress PTY output briefly after resize to prevent prompt reprint from showing
+		if !m.resizeTime.IsZero() && time.Since(m.resizeTime) < 100*time.Millisecond {
+			// Skip appending to viewport but still schedule next read
+			return m, listenToPTY(m.ptyFile)
+		}
+
 		chunks := m.altScreenState.SplitTransitions(msg.data)
 		for i, chunk := range chunks {
 			if m.inputHandler != nil {
@@ -666,10 +736,8 @@ func (m *Model) applyLayout() {
 	if m.optionPicker != nil {
 		m.optionPicker.SetSize(m.width, m.height)
 	}
-
-	if m.ptyFile != nil {
-		ResizePTY(m.ptyFile, viewportWidth, viewportHeight)
-	}
+	// NOTE: PTY resize is handled by the debounced resizeApplyMsg handler
+	// to avoid duplicate prompts during terminal resize
 }
 
 func splitSidebarWidths(total int) (left int, right int) {
