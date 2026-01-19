@@ -7,9 +7,9 @@ import (
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/config"
+	"wtf_cli/pkg/ui/styles"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
 // SettingField represents a single editable setting
@@ -394,38 +394,14 @@ func (sp *SettingsPanel) View() string {
 	}
 
 	// Styles
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("141")).
-		Padding(1, 2).
-		Width(boxWidth)
-
-	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("141")).
-		Bold(true)
-
-	labelStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("245")).
-		Width(20)
-
-	valueStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252"))
-
-	selectedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("141")).
-		Bold(true)
-
-	editStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("214")).
-		Bold(true)
-
-	errorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("196"))
-
-	footerStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("245")).
-		Italic(true)
+	boxStyle := styles.BoxStyle.Width(boxWidth)
+	titleStyle := styles.TitleStyle
+	labelStyle := styles.LabelStyle
+	valueStyle := styles.ValueStyle
+	selectedStyle := styles.SelectedStyle
+	editStyle := styles.EditStyle
+	errorStyle := styles.ErrorStyle
+	footerStyle := styles.FooterStyle
 
 	// Build content
 	var content strings.Builder

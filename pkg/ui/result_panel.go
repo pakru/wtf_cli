@@ -3,8 +3,9 @@ package ui
 import (
 	"strings"
 
+	"wtf_cli/pkg/ui/styles"
+
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
 // ResultPanel displays command execution results
@@ -135,22 +136,10 @@ func (rp *ResultPanel) View() string {
 	}
 
 	// Styles
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("141")).
-		Padding(1, 2).
-		Width(panelWidth)
-
-	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("141")).
-		Bold(true)
-
-	contentStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252"))
-
-	footerStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("245")).
-		Italic(true)
+	boxStyle := styles.BoxStyle.Width(panelWidth)
+	titleStyle := styles.TitleStyle
+	contentStyle := styles.TextStyle
+	footerStyle := styles.FooterStyle
 
 	// Build content
 	var sb strings.Builder

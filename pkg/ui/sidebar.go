@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 
+	"wtf_cli/pkg/ui/styles"
+
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	osc52 "github.com/aymanbagabas/go-osc52/v2"
@@ -722,24 +724,11 @@ func padStyled(text string, width int) string {
 var (
 	sidebarBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("141"))
+			BorderForeground(styles.ColorBorder)
 
-	sidebarTitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("141")).
-				Bold(true)
-
-	sidebarTextStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("252"))
-
-	sidebarBoldStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("252")).
-				Bold(true)
-
-	sidebarCodeStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("213")).
-				Background(lipgloss.Color("235"))
-
-	sidebarFooterStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("245")).
-				Italic(true)
+	sidebarTitleStyle  = styles.TitleStyle
+	sidebarTextStyle   = styles.TextStyle
+	sidebarBoldStyle   = styles.TextBoldStyle
+	sidebarCodeStyle   = styles.CodeStyle
+	sidebarFooterStyle = styles.FooterStyle
 )

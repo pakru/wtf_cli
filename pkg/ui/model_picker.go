@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"wtf_cli/pkg/ai"
+	"wtf_cli/pkg/ui/styles"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -205,39 +206,14 @@ func (p *ModelPickerPanel) View() string {
 
 	boxWidth, contentWidth, listHeight := p.dimensions()
 
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("141")).
-		Padding(1, 2).
-		Width(boxWidth)
-
-	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("141")).
-		Bold(true)
-
-	normalStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252"))
-
-	selectedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("141")).
-		Bold(true)
-
-	descStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("245")).
-		Italic(true)
-
-	filterStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("214")).
-		Bold(true)
-
-	placeholderStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
-		Italic(true)
-
-	footerStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("245")).
-		Italic(true)
+	boxStyle := styles.BoxStyle.Width(boxWidth)
+	titleStyle := styles.TitleStyle
+	normalStyle := styles.TextStyle
+	selectedStyle := styles.SelectedStyle
+	descStyle := styles.TextMutedStyle
+	filterStyle := styles.FilterStyle
+	placeholderStyle := styles.PlaceholderStyle
+	footerStyle := styles.FooterStyle
 
 	var content strings.Builder
 
