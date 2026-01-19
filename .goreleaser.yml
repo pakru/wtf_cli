@@ -92,9 +92,6 @@ release:
   # Create a draft release for manual review
   draft: false
   
-  # Replace existing release if exists
-  replace: true
-  
   # Release notes
   header: |
     ## WTF CLI {{.Version}}
