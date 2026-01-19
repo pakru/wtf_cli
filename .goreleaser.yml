@@ -27,7 +27,6 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
     
     goarch:
       - amd64
@@ -35,22 +34,19 @@ builds:
     
     # Skip combinations that don't make sense
     ignore:
-      - goos: windows
-        goarch: arm64
+      # No macOS amd64 (only Apple Silicon requested)
+      - goos: darwin
+        goarch: amd64
 
 archives:
   - id: wtf_cli
-    format: tar.gz
+    formats: 
+      - tar.gz
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
-    
-    # Use zip for windows
-    format_overrides:
-      - goos: windows
-        format: zip
     
     files:
       - README.md
