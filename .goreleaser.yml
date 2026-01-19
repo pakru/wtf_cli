@@ -16,9 +16,9 @@ builds:
     # Version information via ldflags
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.ShortCommit}}
-      - -X main.date={{.Date}}
+      - -X wtf_cli/pkg/version.Version={{.Version}}
+      - -X wtf_cli/pkg/version.Commit={{.ShortCommit}}
+      - -X wtf_cli/pkg/version.Date={{.Date}}
     
     env:
       - CGO_ENABLED=0

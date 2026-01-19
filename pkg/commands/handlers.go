@@ -10,6 +10,7 @@ import (
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/config"
+	"wtf_cli/pkg/version"
 )
 
 // ExplainHandler handles the /explain command.
@@ -332,7 +333,9 @@ func (h *HelpHandler) Description() string { return "Show help" }
 func (h *HelpHandler) Execute(ctx *Context) *Result {
 	return &Result{
 		Title: "Help",
-		Content: `📚 WTF CLI Help
+		Content: fmt.Sprintf(`📚 WTF CLI Help
+
+Version: %s
 
 Available Commands:
   /explain  - Analyze last output and suggest fixes
@@ -347,5 +350,6 @@ Shortcuts:
   Esc       - Close command palette or result
 
 Press Esc to close this panel.`,
+			version.Summary()),
 	}
 }

@@ -2,22 +2,15 @@ package main
 
 import (
 	"fmt"
-	"runtime"
-)
 
-// These variables are set via ldflags during build
-var (
-	version   = "dev"
-	commit    = "none"
-	date      = "unknown"
-	goVersion = runtime.Version()
+	"wtf_cli/pkg/version"
 )
 
 // printVersion prints the version information
 func printVersion() {
-	fmt.Printf("wtf_cli version %s\n", version)
-	fmt.Printf("  commit: %s\n", commit)
-	fmt.Printf("  built: %s\n", date)
-	fmt.Printf("  go: %s\n", goVersion)
-	fmt.Printf("  platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("wtf_cli version %s\n", version.Version)
+	fmt.Printf("  commit: %s\n", version.Commit)
+	fmt.Printf("  built: %s\n", version.Date)
+	fmt.Printf("  go: %s\n", version.GoVersion)
+	fmt.Printf("  platform: %s\n", version.Platform())
 }

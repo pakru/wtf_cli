@@ -4,7 +4,7 @@
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS := -X 'main.version=$(VERSION)' -X 'main.commit=$(GIT_COMMIT)' -X 'main.date=$(BUILD_DATE)'
+LDFLAGS := -X 'wtf_cli/pkg/version.Version=$(VERSION)' -X 'wtf_cli/pkg/version.Commit=$(GIT_COMMIT)' -X 'wtf_cli/pkg/version.Date=$(BUILD_DATE)'
 
 # Default target
 all: check build test
