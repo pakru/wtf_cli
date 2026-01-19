@@ -1,4 +1,4 @@
-.PHONY: all build test clean run fmt vet lint check help version release-local
+.PHONY: all build test clean run fmt vet lint check help version release-local install
 
 # Version information
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -12,6 +12,13 @@ all: check build test
 # Build the binary
 build:
 	go build -ldflags "$(LDFLAGS)" -o wtf_cli ./cmd/wtf_cli
+
+# Install the binary to ~/.local/bin
+install: build
+	@mkdir -p ~/.local/bin
+	@cp wtf_cli ~/.local/bin/wtf_cli
+	@echo "✓ Installed wtf_cli to ~/.local/bin"
+	@echo "Make sure ~/.local/bin is in your PATH"
 
 # Run all tests
 test:
@@ -61,6 +68,7 @@ help:
 	@echo "Available targets:"
 	@echo "  make all           - Run checks, build, and test (default)"
 	@echo "  make build         - Build the wtf_cli binary with version info"
+	@echo "  make install       - Build and install binary to ~/.local/bin"
 	@echo "  make test          - Run all tests"
 	@echo "  make clean         - Remove build artifacts"
 	@echo "  make run           - Build and run the application"
