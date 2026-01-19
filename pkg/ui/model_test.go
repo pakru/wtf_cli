@@ -186,33 +186,23 @@ func TestModel_Update_WindowSize_Debounce(t *testing.T) {
 	}
 }
 
-func TestModel_Update_ResizeApply_SkipsInitial(t *testing.T) {
+func TestModel_Update_ResizeApply_SetsInitialResize(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	m.resizeDebounceID = 1
 
-	// First resize apply should be skipped (initial)
+	// First resize apply processes the resize (no longer skipped)
 	newModel, _ := m.Update(resizeApplyMsg{id: 1, width: 80, height: 24})
 	m = newModel.(Model)
 
-	if !m.initialResize {
-		t.Error("Expected initialResize to be true after first apply")
+	// Without ptyFile, initialResize stays false (only set in if m.ptyFile != nil block)
+	// The resize logic is still reached, just no PTY to resize
+	if m.initialResize {
+		t.Error("Expected initialResize to be false without ptyFile")
 	}
+
+	// resizeTime should be zero since no PTY
 	if !m.resizeTime.IsZero() {
-		t.Error("Expected resizeTime to be zero after skipped initial resize")
-	}
-
-	// Second resize apply would set resizeTime, but only if ptyFile is set
-	// Since we don't have a real PTY in tests, just verify initialResize remains true
-	m.resizeDebounceID = 2
-	m.width = 100
-	m.height = 30
-	newModel, _ = m.Update(resizeApplyMsg{id: 2, width: 100, height: 30})
-	m = newModel.(Model)
-
-	// Without ptyFile, resizeTime won't be set, but the logic path was taken
-	// The key invariant is that initialResize stays true after first apply
-	if !m.initialResize {
-		t.Error("Expected initialResize to remain true")
+		t.Error("Expected resizeTime to be zero without ptyFile")
 	}
 }
 

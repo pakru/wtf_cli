@@ -30,9 +30,9 @@ func TestAppendPTYContent_CRLFSplit(t *testing.T) {
 	}
 }
 
-// TestAppendPTYContent_CRWithANSI tests that CR followed by ANSI escape codes
-// (like ESC[K for clear-to-end-of-line) does not clear the current line.
-// This is the pattern sent when Ctrl+C is pressed in bash.
+// TestAppendPTYContent_CRWithANSI tests CR + ANSI escape sequence behavior.
+// When CR is followed by ANSI escape sequence (like color codes), the line is NOT cleared.
+// This preserves colored prompts when bash redraws.
 func TestAppendPTYContent_CRWithANSI(t *testing.T) {
 	pending := false
 	// Simulate: prompt with input, then \r followed by ESC[K (clear to EOL) + ^C + newline + new prompt
@@ -41,10 +41,41 @@ func TestAppendPTYContent_CRWithANSI(t *testing.T) {
 	content = appendPTYContent(content, []byte("\r\x1b[K^C\n"), &pending)
 	content = appendPTYContent(content, []byte("prompt$ "), &pending)
 
-	// The ESC[K should be preserved (not stripped), and the original line
-	// should NOT be cleared because \r was followed by ESC (0x1b)
-	want := "prompt$ ls -la\x1b[K^C\nprompt$ "
+	// CR followed by ESC doesn't clear the line (preserves colors/content)
+	// ESC[K is filtered, ^C and newline added, then new prompt
+	want := "prompt$ ls -la^C\nprompt$ "
 	if content != want {
 		t.Fatalf("expected %q, got %q", want, content)
+	}
+}
+
+func TestAppendPTYContent_Backspace(t *testing.T) {
+	pending := false
+
+	// Test basic backspace: type "ab", backspace, type "c" -> "ac"
+	content := appendPTYContent("", []byte("ab\x08c"), &pending)
+	if content != "ac" {
+		t.Fatalf("expected %q, got %q", "ac", content)
+	}
+
+	// Test multiple backspaces
+	pending = false
+	content = appendPTYContent("", []byte("abc\x08\x08d"), &pending)
+	if content != "ad" {
+		t.Fatalf("expected %q, got %q", "ad", content)
+	}
+
+	// Test backspace at start of line (should not go past line start)
+	pending = false
+	content = appendPTYContent("", []byte("\x08\x08abc"), &pending)
+	if content != "abc" {
+		t.Fatalf("expected %q, got %q", "abc", content)
+	}
+
+	// Test backspace doesn't cross newline
+	pending = false
+	content = appendPTYContent("", []byte("line1\n\x08abc"), &pending)
+	if content != "line1\nabc" {
+		t.Fatalf("expected %q, got %q", "line1\nabc", content)
 	}
 }

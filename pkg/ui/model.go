@@ -180,11 +180,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.id != m.resizeDebounceID {
 			return m, nil
 		}
-		// Skip PTY resize on initial startup - PTY already has correct size from spawn
-		if !m.initialResize {
-			m.initialResize = true
-			return m, nil
-		}
 		// Resize PTY so bash knows correct terminal dimensions for line wrapping
 		if m.ptyFile != nil {
 			if m.fullScreenMode {
@@ -199,7 +194,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				ResizePTY(m.ptyFile, viewportWidth, viewportHeight)
 				// Track resize time to suppress prompt reprint output
-				m.resizeTime = time.Now()
+				// Skip suppression on initial resize (first time we get correct size)
+				if m.initialResize {
+					m.resizeTime = time.Now()
+				}
+				m.initialResize = true
 			}
 		}
 		return m, nil

@@ -118,16 +118,20 @@ func TestPTYViewport_Scrolling(t *testing.T) {
 	// Just verify it doesn't panic
 }
 
-func TestPTYViewport_ANSIPreservation(t *testing.T) {
+func TestPTYViewport_ANSIPreserved(t *testing.T) {
 	vp := NewPTYViewport()
 	vp.SetSize(80, 24)
 
-	// ANSI colored output
+	// ANSI colored output - color/style codes (SGR) are preserved for proper display
 	ansiText := []byte("\033[1;31mRed Text\033[0m")
 	vp.AppendOutput(ansiText)
 
 	content := vp.GetContent()
+	// Both text and ANSI codes should be preserved
+	if !strings.Contains(content, "Red Text") {
+		t.Error("Expected text to be preserved")
+	}
 	if !strings.Contains(content, "\033[1;31m") {
-		t.Error("Expected ANSI codes to be preserved")
+		t.Error("Expected ANSI color codes to be preserved")
 	}
 }
