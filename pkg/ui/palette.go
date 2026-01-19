@@ -32,7 +32,6 @@ func NewCommandPalette() *CommandPalette {
 			{Name: "/fix", Description: "Suggest fix for last error"},
 			{Name: "/history", Description: "Show command history"},
 			{Name: "/settings", Description: "Open settings panel"},
-			{Name: "/close_sidebar", Description: "Close AI sidebar"},
 			{Name: "/help", Description: "Show help"},
 		},
 		selected: 0,

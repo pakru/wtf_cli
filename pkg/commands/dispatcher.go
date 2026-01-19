@@ -36,7 +36,6 @@ func NewDispatcher() *Dispatcher {
 	d.Register(&FixHandler{})
 	d.Register(&HistoryHandler{})
 	d.Register(&SettingsHandler{})
-	d.Register(&CloseSidebarHandler{})
 	d.Register(&HelpHandler{})
 
 	return d

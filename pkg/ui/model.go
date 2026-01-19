@@ -322,15 +322,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, listenToWtfStream(stream)
 		}
 
-		if result.Title == "__CLOSE_SIDEBAR__" {
-			if m.sidebar != nil {
-				m.sidebar.Hide()
-				slog.Info("sidebar_close", "reason", "command")
-				m.applyLayout()
-			}
-			return m, nil
-		}
-
 		// Show result in panel
 		m.resultPanel.Show(result.Title, result.Content)
 		m.wtfTitle = result.Title

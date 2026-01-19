@@ -482,12 +482,11 @@ type OpenRouterConfig struct {
   - `/explain` - Explain what the last command did
   - `/fix` - Suggest fix for last error
   - `/history` - Show command history
-  - `/close_sidebar` - Close AI suggestion sidebar
   - Arrow keys to navigate, Enter to select, Esc to cancel
 
 **Definition of Done:**
   - ✅ `pkg/ui/palette.go` implements command palette
-  - ✅ All commands registered in palette (including `/close_sidebar`)
+  - ✅ All commands registered in palette
   - ✅ Keyboard navigation works (↑↓, Enter, Esc)
   - ✅ Visual feedback for selected item
   - ✅ **Unit tests**: Command registration
@@ -679,7 +678,7 @@ type OpenRouterConfig struct {
   - Support markdown rendering if possible
   - Allow scrolling for long responses
   - Copy suggestion to clipboard option
-  - Close with Esc, q, or `/close_sidebar` command
+  - Close with Esc or q
 
 **Definition of Done:**
   - ✅ `pkg/ui/sidebar.go` implements sidebar viewer
@@ -688,7 +687,7 @@ type OpenRouterConfig struct {
   - ✅ Markdown rendering (basic: bold, code blocks)
   - ✅ Scroll sidebar with ↑↓ or PgUp/PgDn
   - ✅ Clipboard copy with `y` key
-  - ✅ Close with Esc, q, or `/close_sidebar` command
+  - ✅ Close with Esc or q
   - ✅ **Unit tests**: Markdown parsing
   - ✅ **Unit tests**: Scroll logic
   - ✅ **Unit tests**: Split layout rendering

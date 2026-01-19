@@ -85,7 +85,7 @@ Recommendation: use `openai-go` with OpenRouter base URL + headers.
 **Tasks:**
 - Add right-side split layout and a scrollable sidebar component.
 - Support basic markdown formatting (code blocks, bold).
-- Add keybinds for close (`Esc`, `q`, `/close_sidebar`) and copy (`y`).
+- Add keybinds for close (`Esc`, `q`) and copy (`y`).
 
 **Definition of Done:**
 - Sidebar opens/closes without affecting PTY interaction.

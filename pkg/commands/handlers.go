@@ -354,19 +354,6 @@ func (h *SettingsHandler) Execute(ctx *Context) *Result {
 	}
 }
 
-// CloseSidebarHandler handles the /close_sidebar command.
-type CloseSidebarHandler struct{}
-
-func (h *CloseSidebarHandler) Name() string        { return "/close_sidebar" }
-func (h *CloseSidebarHandler) Description() string { return "Close AI sidebar" }
-
-func (h *CloseSidebarHandler) Execute(ctx *Context) *Result {
-	return &Result{
-		Title:   "__CLOSE_SIDEBAR__",
-		Content: "",
-	}
-}
-
 // HelpHandler handles the /help command
 type HelpHandler struct{}
 
@@ -383,7 +370,6 @@ Available Commands:
   /explain  - Explain what the last command did
   /fix      - Suggest fix for last error
   /history  - Show command history
-  /close_sidebar - Close AI sidebar
   /help     - Show this help
 
 Shortcuts:
