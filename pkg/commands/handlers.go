@@ -12,13 +12,13 @@ import (
 	"wtf_cli/pkg/config"
 )
 
-// WtfHandler handles the /wtf command
-type WtfHandler struct{}
+// ExplainHandler handles the /explain command.
+type ExplainHandler struct{}
 
-func (h *WtfHandler) Name() string        { return "/wtf" }
-func (h *WtfHandler) Description() string { return "Analyze last output and suggest fixes" }
+func (h *ExplainHandler) Name() string        { return "/explain" }
+func (h *ExplainHandler) Description() string { return "Analyze last output and suggest fixes" }
 
-func (h *WtfHandler) Execute(ctx *Context) *Result {
+func (h *ExplainHandler) Execute(ctx *Context) *Result {
 	// Get last 100 lines of output for analysis
 	lines := ctx.GetLastNLines(ai.DefaultContextLines)
 	if len(lines) == 0 {
@@ -47,8 +47,8 @@ type StreamingHandler interface {
 	StartStream(ctx *Context) (<-chan WtfStreamEvent, error)
 }
 
-// StartStream streams the /wtf response using the OpenRouter provider.
-func (h *WtfHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error) {
+// StartStream streams the /explain response using the OpenRouter provider.
+func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error) {
 	lines := ctx.GetLastNLines(ai.DefaultContextLines)
 	if len(lines) == 0 {
 		slog.Info("wtf_stream_skip", "reason", "no_output")
@@ -275,37 +275,6 @@ func (p *logPreview) Truncated() bool {
 	return p.truncated
 }
 
-// ExplainHandler handles the /explain command
-type ExplainHandler struct{}
-
-func (h *ExplainHandler) Name() string        { return "/explain" }
-func (h *ExplainHandler) Description() string { return "Explain what the last command did" }
-
-func (h *ExplainHandler) Execute(ctx *Context) *Result {
-	return &Result{
-		Title: "Explain",
-		Content: "🔍 Explain command\n\n" +
-			"⚠️ AI integration coming in Phase 6!\n\n" +
-			"This command will explain what your last command did\n" +
-			"and break down the output.",
-	}
-}
-
-// FixHandler handles the /fix command
-type FixHandler struct{}
-
-func (h *FixHandler) Name() string        { return "/fix" }
-func (h *FixHandler) Description() string { return "Suggest fix for last error" }
-
-func (h *FixHandler) Execute(ctx *Context) *Result {
-	return &Result{
-		Title: "Fix Suggestion",
-		Content: "🔧 Fix command\n\n" +
-			"⚠️ AI integration coming in Phase 6!\n\n" +
-			"This command will analyze errors and suggest fixes.",
-	}
-}
-
 // HistoryHandler handles the /history command
 type HistoryHandler struct{}
 
@@ -366,9 +335,7 @@ func (h *HelpHandler) Execute(ctx *Context) *Result {
 		Content: `📚 WTF CLI Help
 
 Available Commands:
-  /wtf      - Analyze last output and suggest fixes
-  /explain  - Explain what the last command did
-  /fix      - Suggest fix for last error
+  /explain  - Analyze last output and suggest fixes
   /history  - Show command history
   /help     - Show this help
 

@@ -27,9 +27,7 @@ type CommandPalette struct {
 func NewCommandPalette() *CommandPalette {
 	return &CommandPalette{
 		commands: []Command{
-			{Name: "/wtf", Description: "Analyze last output and suggest fixes"},
-			{Name: "/explain", Description: "Explain what the last command did"},
-			{Name: "/fix", Description: "Suggest fix for last error"},
+			{Name: "/explain", Description: "Analyze last output and suggest fixes"},
 			{Name: "/history", Description: "Show command history"},
 			{Name: "/settings", Description: "Open settings panel"},
 			{Name: "/help", Description: "Show help"},

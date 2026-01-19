@@ -66,7 +66,7 @@ Inject a lightweight prompt hook into the spawned shell (bash/zsh) that emits an
 **Tasks:**
 - Unit test sentinel parsing (including partial reads).
 - Unit test hook composition to ensure existing hooks are preserved.
-- Manual test: run failing command and confirm `/wtf` sees non-zero exit code.
+- Manual test: run failing command and confirm `/explain` sees non-zero exit code.
 
 **Definition of Done:**
 - Tests pass and manual flow works as expected.

@@ -31,9 +31,7 @@ func NewDispatcher() *Dispatcher {
 	}
 
 	// Register default handlers
-	d.Register(&WtfHandler{})
 	d.Register(&ExplainHandler{})
-	d.Register(&FixHandler{})
 	d.Register(&HistoryHandler{})
 	d.Register(&SettingsHandler{})
 	d.Register(&HelpHandler{})

@@ -40,7 +40,7 @@ Recommendation: use `openai-go` with OpenRouter base URL + headers.
 **Definition of Done:**
 - OpenRouter uses the adapter with config-defined Base URL and headers.
 - Base URL and headers are configurable and tested.
-- Streaming works end-to-end for `/wtf`.
+- Streaming works end-to-end for `/explain`.
 
 ### Task 6.3: Dynamic model list and cache
 **Goal:** implement the `/models` command and cached model lists.
@@ -67,7 +67,7 @@ Recommendation: use `openai-go` with OpenRouter base URL + headers.
 - Context output is readable and stable for common terminal output.
 - Size limits are respected with tests.
 
-### Task 6.5: `/wtf` command handler
+### Task 6.5: `/explain` command handler
 **Goal:** dispatch a request to the LLM and render results.
 
 **Tasks:**
@@ -76,7 +76,7 @@ Recommendation: use `openai-go` with OpenRouter base URL + headers.
 - Map errors to user-facing messages and logs.
 
 **Definition of Done:**
-- `/wtf` sends a request and shows a streamed response.
+- `/explain` sends a request and shows a streamed response.
 - Failures display actionable messages without breaking the UI.
 
 ### Task 6.6: Response sidebar UI
@@ -117,4 +117,4 @@ Recommendation: use `openai-go` with OpenRouter base URL + headers.
 
 **Definition of Done:**
 - Test coverage matches existing project targets.
-- Manual test confirms `/wtf` works for OpenRouter.
+- Manual test confirms `/explain` works for OpenRouter.

@@ -76,9 +76,7 @@ cd ~/projects
 
 | Command | Description |
 |---------|-------------|
-| `/wtf` | Analyze last output and suggest fixes |
-| `/explain` | Explain what the last command did |
-| `/fix` | Suggest fix for last error |
+| `/explain` | Analyze last output and suggest fixes |
 | `/history` | Show command history |
 | `/help` | Show help |
 

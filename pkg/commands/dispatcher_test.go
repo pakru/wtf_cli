@@ -31,7 +31,7 @@ func TestNewDispatcher(t *testing.T) {
 	}
 
 	// Check all commands are registered
-	commands := []string{"/wtf", "/explain", "/fix", "/history", "/settings", "/help"}
+	commands := []string{"/explain", "/history", "/settings", "/help"}
 	for _, cmd := range commands {
 		if _, ok := d.GetHandler(cmd); !ok {
 			t.Errorf("Expected handler for %s to be registered", cmd)
@@ -53,15 +53,15 @@ func TestDispatcher_Dispatch_UnknownCommand(t *testing.T) {
 	}
 }
 
-func TestDispatcher_Dispatch_WtfCommand(t *testing.T) {
+func TestDispatcher_Dispatch_ExplainCommand(t *testing.T) {
 	d := NewDispatcher()
 	buf := buffer.New(100)
 	ctx := NewContext(buf, nil, "/tmp")
 
-	result := d.Dispatch("/wtf", ctx)
+	result := d.Dispatch("/explain", ctx)
 
 	if result == nil {
-		t.Fatal("Expected result for /wtf command")
+		t.Fatal("Expected result for /explain command")
 	}
 	if result.Title != "WTF Analysis" {
 		t.Errorf("Expected title 'WTF Analysis', got %q", result.Title)

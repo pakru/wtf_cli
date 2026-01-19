@@ -83,7 +83,7 @@ Enable running full-screen terminal applications (vim, nano, htop) inside wtf_cl
 
 **Definition of Done:**
 - After running vim and exiting, buffer contains no escape sequences
-- `/wtf` command receives clean context without vim garbage
+- `/explain` command receives clean context without vim garbage
 
 ---
 
@@ -93,7 +93,7 @@ Enable running full-screen terminal applications (vim, nano, htop) inside wtf_cl
 - [ ] Manual test with `htop`
 - [ ] Manual test with `less`
 - [ ] Manual test with `man`
-- [ ] Verify `/wtf` command still works after exiting full-screen app
+- [ ] Verify `/explain` command still works after exiting full-screen app
 - [ ] Verify status bar reappears after exit
 
 **Definition of Done:**

@@ -37,7 +37,7 @@ To create a transparent terminal wrapper (`wtf_cli`) that captures all input and
 ### 3.3. The AI Interface
 *   **Trigger**:
     *   **Slash command**: User types `/` which triggers a command palette overlay
-    *   Commands available: `/wtf`, `/explain`, `/fix`, `/suggest`, etc.
+    *   Commands available: `/explain`, `/suggest`, etc.
 *   **Context Payload**:
     *   **Last 1000 lines** of terminal output (configurable, but 1000 by default)
     *   Current command line (what the user is typing)
@@ -478,9 +478,7 @@ type OpenRouterConfig struct {
 #### Task 5.2: Command palette UI
 **Description:**
   - Show list of available commands
-  - `/wtf` - Analyze last output and suggest fixes
-  - `/explain` - Explain what the last command did
-  - `/fix` - Suggest fix for last error
+  - `/explain` - Analyze last output and suggest fixes
   - `/history` - Show command history
   - Arrow keys to navigate, Enter to select, Esc to cancel
 
@@ -654,7 +652,7 @@ type OpenRouterConfig struct {
   - ✅ **Unit tests**: Context size limits respected
   - ✅ **Unit tests**: Prompt generation
 
-#### Task 6.3: Implement `/wtf` command
+#### Task 6.3: Implement `/explain` command
 **Description:**
   - Send context to LLM
   - Request analysis and suggestions
@@ -662,13 +660,13 @@ type OpenRouterConfig struct {
   - Show loading indicator
 
 **Definition of Done:**
-  - ✅ `pkg/commands/wtf.go` implements `/wtf` handler
+  - ✅ `pkg/commands/wtf.go` implements `/explain` handler
   - ✅ Loading spinner while waiting for response
   - ✅ Response streaming (if API supports)
   - ✅ Error messages for API failures
   - ✅ **Unit tests**: Request building
   - ✅ **Integration tests**: Mock LLM responses
-  - ✅ Manual test: Run failing command, execute `/wtf`
+  - ✅ Manual test: Run failing command, execute `/explain`
 
 #### Task 6.4: Response sidebar
 **Description:**
@@ -693,7 +691,7 @@ type OpenRouterConfig struct {
   - ✅ **Unit tests**: Split layout rendering
   - ✅ Manual test: View long response, type commands while sidebar open, close with command
 
-**Phase Verification**: Run a failing command, type `/wtf`, get helpful AI suggestion.
+**Phase Verification**: Run a failing command, type `/explain`, get helpful AI suggestion.
 
 ---
 

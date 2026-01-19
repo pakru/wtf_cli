@@ -44,7 +44,7 @@ func BuildTerminalContext(lines [][]byte, meta TerminalMetadata) TerminalContext
 	return ctx
 }
 
-// BuildWtfMessages builds system/user messages for the /wtf command.
+// BuildWtfMessages builds system/user messages for the /explain command.
 func BuildWtfMessages(lines [][]byte, meta TerminalMetadata) ([]Message, TerminalContext) {
 	ctx := BuildTerminalContext(lines, meta)
 	messages := []Message{
