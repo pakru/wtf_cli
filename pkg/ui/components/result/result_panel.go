@@ -1,4 +1,4 @@
-package ui
+package result
 
 import (
 	"strings"
@@ -62,8 +62,8 @@ func (rp *ResultPanel) SetSize(width, height int) {
 	rp.height = height
 }
 
-// resultPanelCloseMsg is sent when the result panel is closed
-type resultPanelCloseMsg struct{}
+// ResultPanelCloseMsg is sent when the result panel is closed
+type ResultPanelCloseMsg struct{}
 
 // Update handles keyboard input for the result panel
 func (rp *ResultPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
@@ -78,7 +78,7 @@ func (rp *ResultPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 		// Close the panel
 		rp.Hide()
 		return func() tea.Msg {
-			return resultPanelCloseMsg{}
+			return ResultPanelCloseMsg{}
 		}
 
 	case "up":
@@ -112,7 +112,7 @@ func (rp *ResultPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 	if msg.String() == "q" {
 		rp.Hide()
 		return func() tea.Msg {
-			return resultPanelCloseMsg{}
+			return ResultPanelCloseMsg{}
 		}
 	}
 

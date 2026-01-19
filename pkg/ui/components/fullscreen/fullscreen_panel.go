@@ -1,4 +1,4 @@
-package ui
+package fullscreen
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ const fullScreenBorderSize = 1
 
 // NewFullScreenPanel creates a new full-screen panel with the given dimensions
 func NewFullScreenPanel(width, height int) *FullScreenPanel {
-	contentWidth, contentHeight := contentSize(width, height)
+	contentWidth, contentHeight := ContentSize(width, height)
 	vt := midterm.NewTerminal(contentHeight, contentWidth)
 	return &FullScreenPanel{
 		vterm:  vt,
@@ -45,7 +45,7 @@ func (p *FullScreenPanel) View() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	contentWidth, contentHeight := contentSize(p.width, p.height)
+	contentWidth, contentHeight := ContentSize(p.width, p.height)
 	if contentWidth == 0 || contentHeight == 0 {
 		return ""
 	}
@@ -84,7 +84,7 @@ func (p *FullScreenPanel) Resize(width, height int) {
 
 	p.width = width
 	p.height = height
-	contentWidth, contentHeight := contentSize(width, height)
+	contentWidth, contentHeight := ContentSize(width, height)
 	p.vterm.Resize(contentHeight, contentWidth)
 }
 
@@ -130,7 +130,7 @@ func (p *FullScreenPanel) Size() (width, height int) {
 	return p.width, p.height
 }
 
-func contentSize(width, height int) (contentWidth, contentHeight int) {
+func ContentSize(width, height int) (contentWidth, contentHeight int) {
 	contentWidth = width - fullScreenBorderSize*2
 	contentHeight = height - fullScreenBorderSize*2
 	if contentWidth < 1 {

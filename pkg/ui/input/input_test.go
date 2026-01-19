@@ -1,4 +1,4 @@
-package ui
+package input
 
 import (
 	"bytes"
@@ -61,8 +61,8 @@ func TestInputHandler_HandleKey_CtrlD(t *testing.T) {
 
 	if cmd != nil {
 		msg := cmd()
-		if _, ok := msg.(ctrlDPressedMsg); !ok {
-			t.Errorf("Expected ctrlDPressedMsg, got %T", msg)
+		if _, ok := msg.(CtrlDPressedMsg); !ok {
+			t.Errorf("Expected CtrlDPressedMsg, got %T", msg)
 		}
 	}
 }

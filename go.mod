@@ -9,6 +9,7 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1
 	github.com/charmbracelet/x/ansi v0.11.1
 	github.com/charmbracelet/x/cellbuf v0.0.14
+	github.com/charmbracelet/x/exp/golden v0.0.0-20250806222409-83e3a29d542f
 	github.com/creack/pty v1.1.24
 	github.com/mattn/go-runewidth v0.0.19
 	github.com/openai/openai-go/v3 v3.16.0
@@ -18,6 +19,7 @@ require (
 )
 
 require (
+	github.com/aymanbagabas/go-udiff v0.3.1 // indirect
 	github.com/charmbracelet/colorprofile v0.3.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20251116181749-377898bcce38 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect

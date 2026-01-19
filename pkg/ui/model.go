@@ -13,10 +13,16 @@ import (
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/commands"
 	"wtf_cli/pkg/config"
+	"wtf_cli/pkg/ui/components/fullscreen"
 	"wtf_cli/pkg/ui/components/palette"
 	"wtf_cli/pkg/ui/components/picker"
+	"wtf_cli/pkg/ui/components/result"
 	"wtf_cli/pkg/ui/components/settings"
 	"wtf_cli/pkg/ui/components/sidebar"
+	"wtf_cli/pkg/ui/components/statusbar"
+	"wtf_cli/pkg/ui/components/viewport"
+	"wtf_cli/pkg/ui/components/welcome"
+	"wtf_cli/pkg/ui/input"
 	"wtf_cli/pkg/ui/terminal"
 
 	tea "charm.land/bubbletea/v2"
@@ -32,12 +38,12 @@ type Model struct {
 	cwdFunc func() (string, error) // Function to get shell's cwd
 
 	// UI Components
-	viewport      PTYViewport             // Viewport for PTY output
-	statusBar     *StatusBarView          // Status bar at bottom
-	inputHandler  *InputHandler           // Input routing to PTY
-	palette       *palette.CommandPalette // Command palette overlay
-	resultPanel   *ResultPanel            // Result panel overlay
-	settingsPanel *settings.SettingsPanel // Settings panel overlay
+	viewport      viewport.PTYViewport     // Viewport for PTY output
+	statusBar     *statusbar.StatusBarView // Status bar at bottom
+	inputHandler  *input.InputHandler      // Input routing to PTY
+	palette       *palette.CommandPalette  // Command palette overlay
+	resultPanel   *result.ResultPanel      // Result panel overlay
+	settingsPanel *settings.SettingsPanel  // Settings panel overlay
 	modelPicker   *picker.ModelPickerPanel
 	optionPicker  *picker.OptionPickerPanel
 	sidebar       *sidebar.Sidebar // Sidebar for AI suggestions
@@ -72,7 +78,7 @@ type Model struct {
 
 	// Full-screen app support (vim, nano, htop)
 	fullScreenMode  bool
-	fullScreenPanel *FullScreenPanel
+	fullScreenPanel *fullscreen.FullScreenPanel
 	altScreenState  *terminal.AltScreenState
 }
 
@@ -87,10 +93,10 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 	}
 
 	// Create viewport and add welcome message at the start
-	viewport := NewPTYViewport()
-	viewport.AppendOutput([]byte(WelcomeMessage()))
+	viewport := viewport.NewPTYViewport()
+	viewport.AppendOutput([]byte(welcome.WelcomeMessage()))
 
-	statusBar := NewStatusBarView()
+	statusBar := statusbar.NewStatusBarView()
 	statusBar.SetModel(loadModelFromConfig())
 
 	return Model{
@@ -98,9 +104,9 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		cwdFunc:         cwdFunc,
 		viewport:        viewport,
 		statusBar:       statusBar,
-		inputHandler:    NewInputHandler(ptyFile),
+		inputHandler:    input.NewInputHandler(ptyFile),
 		palette:         palette.NewCommandPalette(),
-		resultPanel:     NewResultPanel(),
+		resultPanel:     result.NewResultPanel(),
 		settingsPanel:   settings.NewSettingsPanel(),
 		modelPicker:     picker.NewModelPickerPanel(),
 		optionPicker:    picker.NewOptionPickerPanel(),
@@ -109,7 +115,7 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		buffer:          buf,
 		session:         sess,
 		currentDir:      initialDir,
-		fullScreenPanel: NewFullScreenPanel(80, 24),
+		fullScreenPanel: fullscreen.NewFullScreenPanel(80, 24),
 		altScreenState:  terminal.NewAltScreenState(),
 	}
 }
@@ -188,8 +194,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Resize PTY so bash knows correct terminal dimensions for line wrapping
 		if m.ptyFile != nil {
 			if m.fullScreenMode {
-				contentWidth, contentHeight := contentSize(m.width, m.height)
-				ResizePTY(m.ptyFile, contentWidth, contentHeight)
+				contentWidth, contentHeight := fullscreen.ContentSize(m.width, m.height)
+				terminal.ResizePTY(m.ptyFile, contentWidth, contentHeight)
 			} else {
 				viewportHeight := m.height - 1
 				viewportWidth := m.width
@@ -197,7 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					left, _ := splitSidebarWidths(m.width)
 					viewportWidth = left
 				}
-				ResizePTY(m.ptyFile, viewportWidth, viewportHeight)
+				terminal.ResizePTY(m.ptyFile, viewportWidth, viewportHeight)
 				// Track resize time to suppress prompt reprint output
 				// Skip suppression on initial resize (first time we get correct size)
 				if m.initialResize {
@@ -269,7 +275,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If not handled by input handler, ignore
 		return m, nil
 
-	case showPaletteMsg:
+	case input.ShowPaletteMsg:
 		// Show the command palette
 		slog.Info("palette_open")
 		m.palette.Show()
@@ -366,7 +372,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusBar.SetModel(msg.Config.OpenRouter.Model)
 		return m, nil
 
-	case ctrlDPressedMsg:
+	case input.CtrlDPressedMsg:
 		if m.exitPending {
 			m.exitPending = false
 			m.statusBar.SetMessage("")
@@ -448,7 +454,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		slog.Info("model_picker_refresh_done", "models", len(msg.Cache.Models))
 		return m, nil
 
-	case resultPanelCloseMsg:
+	case result.ResultPanelCloseMsg:
 		// Result panel closed
 		return m, nil
 
@@ -564,18 +570,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the UI (Bubble Tea lifecycle method)
+// View renders the UI (Bubble Tea lifecycle method)
 func (m Model) View() tea.View {
 	var v tea.View
+	content, altScreen := m.Render()
+	v.SetContent(content)
+	v.AltScreen = altScreen
+	return v
+}
+
+// Render returns the string representation of the UI and whether altscreen is needed.
+// Only exposed for testing purposes.
+func (m Model) Render() (string, bool) {
 	if !m.ready {
-		v.SetContent("Initializing...")
-		return v
+		return "Initializing...", false
 	}
 
 	// Full-screen mode: render only the fullscreen panel (no status bar)
 	if m.fullScreenMode && m.fullScreenPanel != nil && m.fullScreenPanel.IsVisible() {
-		v.AltScreen = true
-		v.SetContent(m.fullScreenPanel.View())
-		return v
+		return m.fullScreenPanel.View(), true
 	}
 
 	// Update status bar width and directory
@@ -596,29 +609,24 @@ func (m Model) View() tea.View {
 	}
 
 	if m.optionPicker != nil && m.optionPicker.IsVisible() {
-		v.SetContent(m.overlayCenter(overlayView, m.optionPicker.View()))
-		return v
+		return m.overlayCenter(overlayView, m.optionPicker.View()), false
 	}
 
 	if m.modelPicker != nil && m.modelPicker.IsVisible() {
-		v.SetContent(m.overlayCenter(overlayView, m.modelPicker.View()))
-		return v
+		return m.overlayCenter(overlayView, m.modelPicker.View()), false
 	}
 
 	// Overlay result panel if visible
 	if m.resultPanel.IsVisible() {
-		v.SetContent(m.overlayCenter(overlayView, m.resultPanel.View()))
-		return v
+		return m.overlayCenter(overlayView, m.resultPanel.View()), false
 	}
 
 	// Overlay command palette if visible
 	if m.palette.IsVisible() {
-		v.SetContent(m.overlayCenter(overlayView, m.palette.View()))
-		return v
+		return m.overlayCenter(overlayView, m.palette.View()), false
 	}
 
-	v.SetContent(overlayView)
-	return v
+	return overlayView, false
 }
 
 // overlayCenter places a panel centered vertically over the base view
@@ -715,8 +723,8 @@ func (m *Model) applyLayout() {
 			m.fullScreenPanel.Resize(m.width, m.height)
 		}
 		if m.ptyFile != nil {
-			contentWidth, contentHeight := contentSize(m.width, m.height)
-			ResizePTY(m.ptyFile, contentWidth, contentHeight)
+			contentWidth, contentHeight := fullscreen.ContentSize(m.width, m.height)
+			terminal.ResizePTY(m.ptyFile, contentWidth, contentHeight)
 		}
 		return
 	}
@@ -933,7 +941,7 @@ func (m *Model) appendPTYOutput(data []byte) {
 				m.ptyLineBuffer = m.ptyLineBuffer[:0]
 			}
 		case '\t':
-			m.ptyLineBuffer = append(m.ptyLineBuffer, tabSpaces...)
+			m.ptyLineBuffer = append(m.ptyLineBuffer, terminal.TabSpaces...)
 		default:
 			m.ptyLineBuffer = append(m.ptyLineBuffer, b)
 		}

@@ -1,4 +1,4 @@
-package ui
+package terminal
 
 import (
 	"bytes"
@@ -7,9 +7,9 @@ import (
 
 const tabWidth = 4
 
-var tabSpaces = []byte(strings.Repeat(" ", tabWidth))
+var TabSpaces = []byte(strings.Repeat(" ", tabWidth))
 
-func appendPTYContent(content string, data []byte, pendingCR *bool) string {
+func AppendPTYContent(content string, data []byte, pendingCR *bool) string {
 	if len(data) == 0 {
 		return content
 	}
@@ -107,7 +107,7 @@ func appendPTYContent(content string, data []byte, pendingCR *bool) string {
 		case '\n':
 			buf = append(buf, '\n')
 		case '\t':
-			buf = append(buf, tabSpaces...)
+			buf = append(buf, TabSpaces...)
 		case 0x08: // Backspace - remove last character from current line
 			lineStart := bytes.LastIndexByte(buf, '\n')
 			if lineStart == -1 {

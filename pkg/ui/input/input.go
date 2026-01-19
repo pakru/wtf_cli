@@ -1,4 +1,4 @@
-package ui
+package input
 
 import (
 	"io"
@@ -37,10 +37,10 @@ func (ih *InputHandler) IsPaletteMode() bool {
 	return ih.paletteMode
 }
 
-// showPaletteMsg is sent when / is pressed at line start
-type showPaletteMsg struct{}
+// ShowPaletteMsg is sent when / is pressed at line start
+type ShowPaletteMsg struct{}
 
-type ctrlDPressedMsg struct{}
+type CtrlDPressedMsg struct{}
 
 // HandleKey processes a key message and returns whether it was handled
 func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cmd) {
@@ -68,7 +68,7 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 
 	case "ctrl+d":
 		return true, func() tea.Msg {
-			return ctrlDPressedMsg{}
+			return CtrlDPressedMsg{}
 		}
 
 	case "ctrl+z":
@@ -137,7 +137,7 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 	if keyStr == "/" && ih.atLineStart {
 		// Trigger command palette
 		return true, func() tea.Msg {
-			return showPaletteMsg{}
+			return ShowPaletteMsg{}
 		}
 	}
 

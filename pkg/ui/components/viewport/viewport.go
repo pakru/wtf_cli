@@ -1,9 +1,10 @@
-package ui
+package viewport
 
 import (
 	"strings"
 
 	"wtf_cli/pkg/ui/components/utils"
+	"wtf_cli/pkg/ui/terminal"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -12,9 +13,9 @@ import (
 
 // PTYViewport wraps Bubble Tea's viewport for displaying PTY output
 type PTYViewport struct {
-	viewport      viewport.Model
+	Viewport      viewport.Model
 	content       string
-	cursorTracker *CursorTracker
+	cursorTracker *terminal.CursorTracker
 	ready         bool
 	pendingCR     bool
 }
@@ -22,32 +23,32 @@ type PTYViewport struct {
 // NewPTYViewport creates a new PTY viewport
 func NewPTYViewport() PTYViewport {
 	return PTYViewport{
-		viewport:      viewport.New(),
+		Viewport:      viewport.New(),
 		content:       "",
-		cursorTracker: NewCursorTracker(),
+		cursorTracker: terminal.NewCursorTracker(),
 	}
 }
 
 // SetSize updates the viewport dimensions
 func (v *PTYViewport) SetSize(width, height int) {
-	v.viewport.SetWidth(width)
-	v.viewport.SetHeight(height)
+	v.Viewport.SetWidth(width)
+	v.Viewport.SetHeight(height)
 	v.ready = true
 }
 
 // AppendOutput adds new output to the viewport
 func (v *PTYViewport) AppendOutput(data []byte) {
-	v.content = appendPTYContent(v.content, data, &v.pendingCR)
+	v.content = terminal.AppendPTYContent(v.content, data, &v.pendingCR)
 
 	// Track cursor position from ANSI codes
 	v.cursorTracker.UpdateFromOutput(data)
 
 	// Set content with cursor overlay
 	contentWithCursor := v.cursorTracker.RenderCursorOverlay(v.content, "█")
-	v.viewport.SetContent(contentWithCursor)
+	v.Viewport.SetContent(contentWithCursor)
 
 	// Auto-scroll to bottom when new content arrives
-	v.viewport.GotoBottom()
+	v.Viewport.GotoBottom()
 }
 
 // GetContent returns the current viewport content
@@ -58,13 +59,13 @@ func (v *PTYViewport) GetContent() string {
 // Clear empties the viewport
 func (v *PTYViewport) Clear() {
 	v.content = ""
-	v.viewport.SetContent("")
+	v.Viewport.SetContent("")
 }
 
 // Update handles viewport updates (scrolling, etc)
 func (v *PTYViewport) Update(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
-	v.viewport, cmd = v.viewport.Update(msg)
+	v.Viewport, cmd = v.Viewport.Update(msg)
 	return cmd
 }
 
@@ -74,14 +75,14 @@ func (v *PTYViewport) View() string {
 		return "Loading..."
 	}
 
-	view := v.viewport.View()
-	if v.viewport.Width() <= 0 {
+	view := v.Viewport.View()
+	if v.Viewport.Width() <= 0 {
 		return view
 	}
 
 	lines := strings.Split(view, "\n")
 	for i := range lines {
-		lines[i] = utils.PadStyled(lines[i], v.viewport.Width())
+		lines[i] = utils.PadStyled(lines[i], v.Viewport.Width())
 	}
 	return strings.Join(lines, "\n")
 }
@@ -90,27 +91,27 @@ func (v *PTYViewport) View() string {
 
 // ScrollUp scrolls the viewport up
 func (v *PTYViewport) ScrollUp() {
-	v.viewport.ScrollUp(1)
+	v.Viewport.ScrollUp(1)
 }
 
 // ScrollDown scrolls the viewport down
 func (v *PTYViewport) ScrollDown() {
-	v.viewport.ScrollDown(1)
+	v.Viewport.ScrollDown(1)
 }
 
 // PageUp scrolls up one page
 func (v *PTYViewport) PageUp() {
-	v.viewport.PageUp()
+	v.Viewport.PageUp()
 }
 
 // PageDown scrolls down one page
 func (v *PTYViewport) PageDown() {
-	v.viewport.PageDown()
+	v.Viewport.PageDown()
 }
 
 // IsAtBottom returns true if scrolled to bottom
 func (v *PTYViewport) IsAtBottom() bool {
-	return v.viewport.AtBottom()
+	return v.Viewport.AtBottom()
 }
 
 // Stats returns viewport statistics
@@ -118,13 +119,13 @@ func (v *PTYViewport) Stats() (totalLines, visibleLines, scrollPercent int) {
 	// Count total lines
 	lines := strings.Split(v.content, "\n")
 	totalLines = len(lines)
-	visibleLines = v.viewport.Height()
+	visibleLines = v.Viewport.Height()
 
 	// Calculate scroll percentage
 	if totalLines <= visibleLines {
 		scrollPercent = 100
 	} else {
-		scrollPercent = int(v.viewport.ScrollPercent() * 100)
+		scrollPercent = int(v.Viewport.ScrollPercent() * 100)
 	}
 
 	return

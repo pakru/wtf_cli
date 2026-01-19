@@ -63,8 +63,8 @@ func TestModel_Update_WindowSize(t *testing.T) {
 	}
 
 	// Viewport should be sized (height - 1 for status bar)
-	if updated.viewport.viewport.Height() != 23 {
-		t.Errorf("Expected viewport height 23, got %d", updated.viewport.viewport.Height())
+	if updated.viewport.Viewport.Height() != 23 {
+		t.Errorf("Expected viewport height 23, got %d", updated.viewport.Viewport.Height())
 	}
 }
 
