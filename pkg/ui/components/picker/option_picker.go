@@ -1,23 +1,24 @@
-package ui
+package picker
 
 import (
 	"strings"
 
+	"wtf_cli/pkg/ui/components/utils"
 	"wtf_cli/pkg/ui/styles"
 
 	tea "charm.land/bubbletea/v2"
 )
 
-type openOptionPickerMsg struct {
-	fieldKey string
-	title    string
-	options  []string
-	current  string
+type OpenOptionPickerMsg struct {
+	FieldKey string
+	Title    string
+	Options  []string
+	Current  string
 }
 
-type optionPickerSelectMsg struct {
-	fieldKey string
-	value    string
+type OptionPickerSelectMsg struct {
+	FieldKey string
+	Value    string
 }
 
 // OptionPickerPanel provides a simple list picker for settings options.
@@ -137,7 +138,7 @@ func (p *OptionPickerPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 			value := p.options[p.selected]
 			p.Hide()
 			return func() tea.Msg {
-				return optionPickerSelectMsg{fieldKey: p.fieldKey, value: value}
+				return OptionPickerSelectMsg{FieldKey: p.fieldKey, Value: value}
 			}
 		}
 		return nil
@@ -184,7 +185,7 @@ func (p *OptionPickerPanel) View() string {
 			option := p.options[index]
 			line := "  " + option
 			if index == p.selected {
-				line = padPlain(line, contentWidth)
+				line = utils.PadPlain(line, contentWidth)
 				content.WriteString(selectedStyle.Render(line))
 			} else {
 				content.WriteString(normalStyle.Render(line))

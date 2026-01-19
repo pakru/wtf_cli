@@ -13,6 +13,11 @@ import (
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/commands"
 	"wtf_cli/pkg/config"
+	"wtf_cli/pkg/ui/components/palette"
+	"wtf_cli/pkg/ui/components/picker"
+	"wtf_cli/pkg/ui/components/settings"
+	"wtf_cli/pkg/ui/components/sidebar"
+	"wtf_cli/pkg/ui/terminal"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -27,15 +32,15 @@ type Model struct {
 	cwdFunc func() (string, error) // Function to get shell's cwd
 
 	// UI Components
-	viewport      PTYViewport     // Viewport for PTY output
-	statusBar     *StatusBarView  // Status bar at bottom
-	inputHandler  *InputHandler   // Input routing to PTY
-	palette       *CommandPalette // Command palette overlay
-	resultPanel   *ResultPanel    // Result panel overlay
-	settingsPanel *SettingsPanel  // Settings panel overlay
-	modelPicker   *ModelPickerPanel
-	optionPicker  *OptionPickerPanel
-	sidebar       *Sidebar // AI response sidebar
+	viewport      PTYViewport             // Viewport for PTY output
+	statusBar     *StatusBarView          // Status bar at bottom
+	inputHandler  *InputHandler           // Input routing to PTY
+	palette       *palette.CommandPalette // Command palette overlay
+	resultPanel   *ResultPanel            // Result panel overlay
+	settingsPanel *settings.SettingsPanel // Settings panel overlay
+	modelPicker   *picker.ModelPickerPanel
+	optionPicker  *picker.OptionPickerPanel
+	sidebar       *sidebar.Sidebar // Sidebar for AI suggestions
 
 	// Command system
 	dispatcher *commands.Dispatcher
@@ -68,7 +73,7 @@ type Model struct {
 	// Full-screen app support (vim, nano, htop)
 	fullScreenMode  bool
 	fullScreenPanel *FullScreenPanel
-	altScreenState  *AltScreenState
+	altScreenState  *terminal.AltScreenState
 }
 
 // NewModel creates a new Bubble Tea model
@@ -94,18 +99,18 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		viewport:        viewport,
 		statusBar:       statusBar,
 		inputHandler:    NewInputHandler(ptyFile),
-		palette:         NewCommandPalette(),
+		palette:         palette.NewCommandPalette(),
 		resultPanel:     NewResultPanel(),
-		settingsPanel:   NewSettingsPanel(),
-		modelPicker:     NewModelPickerPanel(),
-		optionPicker:    NewOptionPickerPanel(),
-		sidebar:         NewSidebar(),
+		settingsPanel:   settings.NewSettingsPanel(),
+		modelPicker:     picker.NewModelPickerPanel(),
+		optionPicker:    picker.NewOptionPickerPanel(),
+		sidebar:         sidebar.NewSidebar(),
 		dispatcher:      commands.NewDispatcher(),
 		buffer:          buf,
 		session:         sess,
 		currentDir:      initialDir,
 		fullScreenPanel: NewFullScreenPanel(80, 24),
-		altScreenState:  NewAltScreenState(),
+		altScreenState:  terminal.NewAltScreenState(),
 	}
 }
 
@@ -271,16 +276,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inputHandler.SetPaletteMode(true)
 		return m, nil
 
-	case paletteSelectMsg:
+	case palette.PaletteSelectMsg:
 		// Command selected from palette
-		slog.Info("palette_select", "command", msg.command)
+		slog.Info("palette_select", "command", msg.Command)
 		m.inputHandler.SetPaletteMode(false)
 
 		// Execute the command
 		ctx := commands.NewContext(m.buffer, m.session, m.currentDir)
-		handler, ok := m.dispatcher.GetHandler(msg.command)
+		handler, ok := m.dispatcher.GetHandler(msg.Command)
 		if !ok {
-			m.resultPanel.Show("Error", "Unknown command: "+msg.command)
+			m.resultPanel.Show("Error", "Unknown command: "+msg.Command)
 			return m, nil
 		}
 		result := handler.Execute(ctx)
@@ -329,13 +334,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, nil
 
-	case paletteCancelMsg:
+	case palette.PaletteCancelMsg:
 		// Palette cancelled
 		slog.Info("palette_cancel")
 		m.inputHandler.SetPaletteMode(false)
 		return m, nil
 
-	case settingsCloseMsg:
+	case settings.SettingsCloseMsg:
 		// Settings panel closed
 		slog.Info("settings_close")
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
@@ -346,19 +351,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case settingsSaveMsg:
+	case settings.SettingsSaveMsg:
 		// Save settings to file
-		if err := config.Save(msg.configPath, msg.config); err != nil {
+		if err := config.Save(msg.ConfigPath, msg.Config); err != nil {
 			slog.Error("settings_save_error", "error", err)
 		} else {
 			slog.Info("settings_save",
-				"model", msg.config.OpenRouter.Model,
-				"log_level", msg.config.LogLevel,
-				"log_format", msg.config.LogFormat,
-				"log_file", msg.config.LogFile,
+				"model", msg.Config.OpenRouter.Model,
+				"log_level", msg.Config.LogLevel,
+				"log_format", msg.Config.LogFormat,
+				"log_file", msg.Config.LogFile,
 			)
 		}
-		m.statusBar.SetModel(msg.config.OpenRouter.Model)
+		m.statusBar.SetModel(msg.Config.OpenRouter.Model)
 		return m, nil
 
 	case ctrlDPressedMsg:
@@ -387,60 +392,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case openModelPickerMsg:
-		slog.Info("model_picker_open", "current", msg.current, "cached_models", len(msg.options))
+	case picker.OpenModelPickerMsg:
+		slog.Info("model_picker_open", "current", msg.Current, "cached_models", len(msg.Options))
 		if m.modelPicker != nil {
 			m.modelPicker.SetSize(m.width, m.height)
-			m.modelPicker.Show(msg.options, msg.current)
+			m.modelPicker.Show(msg.Options, msg.Current)
 		}
-		cmd := refreshModelCacheCmd(msg.apiURL)
+		cmd := refreshModelCacheCmd(msg.APIURL)
 		return m, cmd
 
-	case modelPickerSelectMsg:
-		slog.Info("model_picker_select", "model", msg.modelID)
+	case picker.ModelPickerSelectMsg:
+		slog.Info("model_picker_select", "model", msg.ModelID)
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
 			m.modelPicker.Hide()
 		}
 		if m.settingsPanel != nil {
-			m.settingsPanel.SetModelValue(msg.modelID)
+			m.settingsPanel.SetModelValue(msg.ModelID)
 		}
 		return m, nil
 
-	case openOptionPickerMsg:
-		slog.Info("option_picker_open", "field", msg.fieldKey, "current", msg.current)
+	case picker.OpenOptionPickerMsg:
+		slog.Info("option_picker_open", "field", msg.FieldKey, "current", msg.Current)
 		if m.optionPicker != nil {
 			m.optionPicker.SetSize(m.width, m.height)
-			m.optionPicker.Show(msg.title, msg.fieldKey, msg.options, msg.current)
+			m.optionPicker.Show(msg.Title, msg.FieldKey, msg.Options, msg.Current)
 		}
 		return m, nil
 
-	case optionPickerSelectMsg:
-		slog.Info("option_picker_select", "field", msg.fieldKey, "value", msg.value)
+	case picker.OptionPickerSelectMsg:
+		slog.Info("option_picker_select", "field", msg.FieldKey, "value", msg.Value)
 		if m.optionPicker != nil && m.optionPicker.IsVisible() {
 			m.optionPicker.Hide()
 		}
 		if m.settingsPanel != nil {
-			switch msg.fieldKey {
+			switch msg.FieldKey {
 			case "log_level":
-				m.settingsPanel.SetLogLevelValue(msg.value)
+				m.settingsPanel.SetLogLevelValue(msg.Value)
 			case "log_format":
-				m.settingsPanel.SetLogFormatValue(msg.value)
+				m.settingsPanel.SetLogFormatValue(msg.Value)
 			}
 		}
 		return m, nil
 
-	case modelPickerRefreshMsg:
-		if msg.err != nil {
-			slog.Error("model_picker_refresh_error", "error", msg.err)
+	case picker.ModelPickerRefreshMsg:
+		if msg.Err != nil {
+			slog.Error("model_picker_refresh_error", "error", msg.Err)
 			return m, nil
 		}
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
-			m.modelPicker.UpdateOptions(msg.cache.Models)
+			m.modelPicker.UpdateOptions(msg.Cache.Models)
 		}
 		if m.settingsPanel != nil {
-			m.settingsPanel.SetModelCache(msg.cache)
+			m.settingsPanel.SetModelCache(msg.Cache)
 		}
-		slog.Info("model_picker_refresh_done", "models", len(msg.cache.Models))
+		slog.Info("model_picker_refresh_done", "models", len(msg.Cache.Models))
 		return m, nil
 
 	case resultPanelCloseMsg:
@@ -487,52 +492,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		chunks := m.altScreenState.SplitTransitions(msg.data)
 		for i, chunk := range chunks {
 			if m.inputHandler != nil {
-				m.inputHandler.UpdateTerminalModes(chunk.data)
+				m.inputHandler.UpdateTerminalModes(chunk.Data)
 			}
 
-			if chunk.entering {
+			if chunk.Entering {
 				if !m.fullScreenMode {
-					m.enterFullScreen(len(chunk.data))
+					m.enterFullScreen(len(chunk.Data))
 				}
-				if m.fullScreenPanel != nil && len(chunk.data) > 0 {
-					m.fullScreenPanel.Write(chunk.data)
+				if m.fullScreenPanel != nil && len(chunk.Data) > 0 {
+					m.fullScreenPanel.Write(chunk.Data)
 				}
 				continue
 			}
 
-			if chunk.exiting {
+			if chunk.Exiting {
 				if m.fullScreenMode && hasFutureEnter(chunks[i+1:]) {
-					if m.fullScreenPanel != nil && len(chunk.data) > 0 {
-						m.fullScreenPanel.Write(chunk.data)
+					if m.fullScreenPanel != nil && len(chunk.Data) > 0 {
+						m.fullScreenPanel.Write(chunk.Data)
 					}
 					continue
 				}
 
-				if m.fullScreenMode && m.fullScreenPanel != nil && len(chunk.data) > 0 {
-					m.fullScreenPanel.Write(chunk.data)
+				if m.fullScreenMode && m.fullScreenPanel != nil && len(chunk.Data) > 0 {
+					m.fullScreenPanel.Write(chunk.Data)
 				}
 				if m.fullScreenMode {
 					m.exitFullScreen()
-				} else if len(chunk.data) > 0 {
-					m.appendPTYOutput(chunk.data)
-					m.viewport.AppendOutput(chunk.data)
+				} else if len(chunk.Data) > 0 {
+					m.appendPTYOutput(chunk.Data)
+					m.viewport.AppendOutput(chunk.Data)
 				}
 				continue
 			}
 
-			if len(chunk.data) == 0 {
+			if len(chunk.Data) == 0 {
 				continue
 			}
 
 			if m.fullScreenMode {
 				// Full-screen mode: send to panel, NOT to buffer (buffer isolation)
 				if m.fullScreenPanel != nil {
-					m.fullScreenPanel.Write(chunk.data)
+					m.fullScreenPanel.Write(chunk.Data)
 				}
 			} else {
 				// Normal mode: append to viewport AND buffer
-				m.appendPTYOutput(chunk.data)
-				m.viewport.AppendOutput(chunk.data)
+				m.appendPTYOutput(chunk.Data)
+				m.viewport.AppendOutput(chunk.Data)
 			}
 		}
 
@@ -670,9 +675,9 @@ func (m Model) overlayCenter(base, panel string) string {
 
 // Helper functions
 
-func hasFutureEnter(chunks []altScreenChunk) bool {
+func hasFutureEnter(chunks []terminal.AltScreenChunk) bool {
 	for _, chunk := range chunks {
-		if chunk.entering {
+		if chunk.Entering {
 			return true
 		}
 	}
@@ -820,7 +825,7 @@ func refreshModelCacheCmd(apiURL string) tea.Cmd {
 		defer cancel()
 
 		cache, err := ai.RefreshOpenRouterModelCache(ctx, trimmed, ai.DefaultModelCachePath())
-		return modelPickerRefreshMsg{cache: cache, err: err}
+		return picker.ModelPickerRefreshMsg{Cache: cache, Err: err}
 	}
 }
 

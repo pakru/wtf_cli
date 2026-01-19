@@ -1,10 +1,11 @@
-package ui
+package picker
 
 import (
 	"fmt"
 	"testing"
 
 	"wtf_cli/pkg/ai"
+	"wtf_cli/pkg/ui/components/testutils"
 )
 
 func TestModelPicker_ShowSelectCurrent(t *testing.T) {
@@ -38,8 +39,8 @@ func TestModelPicker_FilterAndSelect(t *testing.T) {
 	}
 	picker.Show(options, "model-a")
 
-	picker.Update(newTextKeyPressMsg("b"))
-	picker.Update(newTextKeyPressMsg("e"))
+	picker.Update(testutils.NewTextKeyPressMsg("b"))
+	picker.Update(testutils.NewTextKeyPressMsg("e"))
 	if picker.filter != "be" {
 		t.Fatalf("Expected filter 'be', got %q", picker.filter)
 	}
@@ -52,22 +53,22 @@ func TestModelPicker_FilterAndSelect(t *testing.T) {
 		t.Fatalf("Expected filtered model-b, got %+v", filtered)
 	}
 
-	picker.Update(testKeyBackspace)
+	picker.Update(testutils.TestKeyBackspace)
 	if picker.filter != "b" {
 		t.Fatalf("Expected filter 'b' after backspace, got %q", picker.filter)
 	}
 
-	cmd := picker.Update(testKeyEnter)
+	cmd := picker.Update(testutils.TestKeyEnter)
 	if cmd == nil {
 		t.Fatal("Expected modelPickerSelectMsg command")
 	}
 	msg := cmd()
-	selectMsg, ok := msg.(modelPickerSelectMsg)
+	selectMsg, ok := msg.(ModelPickerSelectMsg)
 	if !ok {
 		t.Fatalf("Expected modelPickerSelectMsg, got %T", msg)
 	}
-	if selectMsg.modelID != "model-b" {
-		t.Fatalf("Expected model-b, got %q", selectMsg.modelID)
+	if selectMsg.ModelID != "model-b" {
+		t.Fatalf("Expected model-b, got %q", selectMsg.ModelID)
 	}
 	if picker.visible {
 		t.Fatal("Expected picker to close after selection")
@@ -95,7 +96,7 @@ func TestModelPicker_ScrollsWithNavigation(t *testing.T) {
 	}
 
 	for i := 1; i < len(options); i++ {
-		picker.Update(testKeyDown)
+		picker.Update(testutils.TestKeyDown)
 		if picker.selected != i {
 			t.Fatalf("Expected selected=%d, got %d", i, picker.selected)
 		}
@@ -114,7 +115,7 @@ func TestModelPicker_EscCloses(t *testing.T) {
 	}
 	picker.Show(options, "model-a")
 
-	cmd := picker.Update(testKeyEsc)
+	cmd := picker.Update(testutils.TestKeyEsc)
 	if cmd != nil {
 		t.Fatal("Expected nil command on Esc")
 	}

@@ -1,4 +1,4 @@
-package ui
+package settings
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/config"
+	"wtf_cli/pkg/ui/components/picker"
 	"wtf_cli/pkg/ui/styles"
 
 	tea "charm.land/bubbletea/v2"
@@ -64,10 +65,10 @@ func (sp *SettingsPanel) buildFields() {
 		{Label: "API URL", Key: "api_url", Value: sp.config.OpenRouter.APIURL, Type: "string"},
 		{Label: "Model", Key: "model", Value: sp.config.OpenRouter.Model, Type: "string"},
 		{Label: "Temperature", Key: "temperature", Value: fmt.Sprintf("%.1f", sp.config.OpenRouter.Temperature), Type: "float"},
-		{Label: "Max Tokens", Key: "max_tokens", Value: strconv.Itoa(sp.config.OpenRouter.MaxTokens), Type: "int"},
-		{Label: "API Timeout (sec)", Key: "api_timeout", Value: strconv.Itoa(sp.config.OpenRouter.APITimeoutSeconds), Type: "int"},
-		{Label: "Buffer Size", Key: "buffer_size", Value: strconv.Itoa(sp.config.BufferSize), Type: "int"},
-		{Label: "Context Window", Key: "context_window", Value: strconv.Itoa(sp.config.ContextWindow), Type: "int"},
+		{Label: "Max Tokens", Key: "max_tokens", Value: fmt.Sprintf("%d", sp.config.OpenRouter.MaxTokens), Type: "int"},
+		{Label: "API Timeout (sec)", Key: "api_timeout", Value: fmt.Sprintf("%d", sp.config.OpenRouter.APITimeoutSeconds), Type: "int"},
+		{Label: "Buffer Size", Key: "buffer_size", Value: fmt.Sprintf("%d", sp.config.BufferSize), Type: "int"},
+		{Label: "Context Window", Key: "context_window", Value: fmt.Sprintf("%d", sp.config.ContextWindow), Type: "int"},
 		{Label: "Log Level", Key: "log_level", Value: normalizeLogLevel(sp.config.LogLevel), Type: "string"},
 		{Label: "Log Format", Key: "log_format", Value: strings.ToLower(strings.TrimSpace(sp.config.LogFormat)), Type: "string"},
 		{Label: "Log File", Key: "log_file", Value: sp.config.LogFile, Type: "string"},
@@ -96,14 +97,14 @@ func (sp *SettingsPanel) HasChanges() bool {
 	return sp.changed
 }
 
-// settingsSaveMsg is sent when settings should be saved
-type settingsSaveMsg struct {
-	config     config.Config
-	configPath string
+// SettingsSaveMsg is sent when settings should be saved
+type SettingsSaveMsg struct {
+	Config     config.Config
+	ConfigPath string
 }
 
-// settingsCloseMsg is sent when settings panel closes
-type settingsCloseMsg struct{}
+// SettingsCloseMsg is sent when settings panel closes
+type SettingsCloseMsg struct{}
 
 // Update handles keyboard input for the settings panel
 func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
@@ -137,29 +138,33 @@ func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 		if field.Key == "model" {
 			options := make([]ai.ModelInfo, len(sp.modelCache.Models))
 			copy(options, sp.modelCache.Models)
-			current := sp.config.OpenRouter.Model
-			apiURL := sp.config.OpenRouter.APIURL
 			return func() tea.Msg {
-				return openModelPickerMsg{options: options, current: current, apiURL: apiURL}
+				return picker.OpenModelPickerMsg{
+					Options: options,
+					Current: sp.config.OpenRouter.Model,
+					APIURL:  sp.config.OpenRouter.APIURL,
+				}
 			}
 		}
 		if field.Key == "log_level" {
+			options := logLevelOptions()
 			return func() tea.Msg {
-				return openOptionPickerMsg{
-					fieldKey: "log_level",
-					title:    "Log Level",
-					options:  logLevelOptions(),
-					current:  normalizeLogLevel(sp.config.LogLevel),
+				return picker.OpenOptionPickerMsg{
+					Title:    "Log Level",
+					FieldKey: "log_level",
+					Options:  options,
+					Current:  sp.config.LogLevel,
 				}
 			}
 		}
 		if field.Key == "log_format" {
+			options := []string{"json", "text"}
 			return func() tea.Msg {
-				return openOptionPickerMsg{
-					fieldKey: "log_format",
-					title:    "Log Format",
-					options:  []string{"json", "text"},
-					current:  strings.ToLower(strings.TrimSpace(sp.config.LogFormat)),
+				return picker.OpenOptionPickerMsg{
+					Title:    "Log Format",
+					FieldKey: "log_format",
+					Options:  options,
+					Current:  sp.config.LogFormat,
 				}
 			}
 		}
@@ -187,7 +192,7 @@ func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		sp.Hide()
 		return func() tea.Msg {
-			return settingsCloseMsg{}
+			return SettingsCloseMsg{}
 		}
 
 	case "s":
@@ -365,7 +370,7 @@ func (sp *SettingsPanel) saveAndClose() tea.Cmd {
 	path := sp.configPath
 	sp.Hide()
 	return func() tea.Msg {
-		return settingsSaveMsg{config: cfg, configPath: path}
+		return SettingsSaveMsg{Config: cfg, ConfigPath: path}
 	}
 }
 

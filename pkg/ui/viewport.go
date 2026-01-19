@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 
+	"wtf_cli/pkg/ui/components/utils"
+
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -79,7 +81,7 @@ func (v *PTYViewport) View() string {
 
 	lines := strings.Split(view, "\n")
 	for i := range lines {
-		lines[i] = padStyled(lines[i], v.viewport.Width())
+		lines[i] = utils.PadStyled(lines[i], v.viewport.Width())
 	}
 	return strings.Join(lines, "\n")
 }

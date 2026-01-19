@@ -1,4 +1,4 @@
-package ui
+package palette
 
 import (
 	"strings"
@@ -79,13 +79,13 @@ func (p *CommandPalette) filteredCommands() []Command {
 	return filtered
 }
 
-// paletteSelectMsg is sent when a command is selected
-type paletteSelectMsg struct {
-	command string
+// PaletteSelectMsg is sent when a command is selected
+type PaletteSelectMsg struct {
+	Command string
 }
 
-// paletteCancelMsg is sent when palette is cancelled
-type paletteCancelMsg struct{}
+// PaletteCancelMsg is sent when palette is cancelled
+type PaletteCancelMsg struct{}
 
 // Update handles keyboard input for the palette
 func (p *CommandPalette) Update(msg tea.KeyPressMsg) tea.Cmd {
@@ -111,7 +111,7 @@ func (p *CommandPalette) Update(msg tea.KeyPressMsg) tea.Cmd {
 			cmd := filtered[p.selected]
 			p.Hide()
 			return func() tea.Msg {
-				return paletteSelectMsg{command: cmd.Name}
+				return PaletteSelectMsg{Command: cmd.Name}
 			}
 		}
 		return nil
@@ -120,7 +120,7 @@ func (p *CommandPalette) Update(msg tea.KeyPressMsg) tea.Cmd {
 		// Cancel palette
 		p.Hide()
 		return func() tea.Msg {
-			return paletteCancelMsg{}
+			return PaletteCancelMsg{}
 		}
 
 	case "backspace":

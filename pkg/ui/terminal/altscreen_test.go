@@ -1,4 +1,4 @@
-package ui
+package terminal
 
 import "testing"
 
@@ -121,20 +121,20 @@ func TestAltScreenState_SplitTransitions_EnterExitSameChunk(t *testing.T) {
 		t.Fatalf("Expected 5 chunks, got %d", len(chunks))
 	}
 
-	if string(chunks[0].data) != "before" {
-		t.Errorf("Expected chunk 0 to be 'before', got %q", chunks[0].data)
+	if string(chunks[0].Data) != "before" {
+		t.Errorf("Expected chunk 0 to be 'before', got %q", chunks[0].Data)
 	}
-	if !chunks[1].entering || chunks[1].exiting {
+	if !chunks[1].Entering || chunks[1].Exiting {
 		t.Errorf("Expected chunk 1 to be entering sequence")
 	}
-	if string(chunks[2].data) != "inside" {
-		t.Errorf("Expected chunk 2 to be 'inside', got %q", chunks[2].data)
+	if string(chunks[2].Data) != "inside" {
+		t.Errorf("Expected chunk 2 to be 'inside', got %q", chunks[2].Data)
 	}
-	if !chunks[3].exiting || chunks[3].entering {
+	if !chunks[3].Exiting || chunks[3].Entering {
 		t.Errorf("Expected chunk 3 to be exiting sequence")
 	}
-	if string(chunks[4].data) != "after" {
-		t.Errorf("Expected chunk 4 to be 'after', got %q", chunks[4].data)
+	if string(chunks[4].Data) != "after" {
+		t.Errorf("Expected chunk 4 to be 'after', got %q", chunks[4].Data)
 	}
 }
 
@@ -145,8 +145,8 @@ func TestAltScreenState_SplitTransitions_PendingPrefix(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("Expected 1 chunk, got %d", len(chunks))
 	}
-	if string(chunks[0].data) != "text" {
-		t.Errorf("Expected chunk data 'text', got %q", chunks[0].data)
+	if string(chunks[0].Data) != "text" {
+		t.Errorf("Expected chunk data 'text', got %q", chunks[0].Data)
 	}
 	if string(state.pending) != "\x1b[?104" {
 		t.Errorf("Expected pending to contain partial sequence, got %q", state.pending)
@@ -156,11 +156,11 @@ func TestAltScreenState_SplitTransitions_PendingPrefix(t *testing.T) {
 	if len(chunks) < 2 {
 		t.Fatalf("Expected at least 2 chunks, got %d", len(chunks))
 	}
-	if !chunks[0].entering {
+	if !chunks[0].Entering {
 		t.Error("Expected first chunk to be entering sequence")
 	}
-	if string(chunks[1].data) != "more" {
-		t.Errorf("Expected trailing chunk 'more', got %q", chunks[1].data)
+	if string(chunks[1].Data) != "more" {
+		t.Errorf("Expected trailing chunk 'more', got %q", chunks[1].Data)
 	}
 }
 

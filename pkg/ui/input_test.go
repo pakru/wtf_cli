@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"testing"
 
+	"wtf_cli/pkg/ui/components/testutils"
+
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -24,7 +26,7 @@ func TestInputHandler_HandleKey_CtrlC(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)
 
-	msg := testKeyCtrlC
+	msg := testutils.TestKeyCtrlC
 	handled, _ := ih.HandleKey(msg)
 
 	if !handled {
@@ -41,7 +43,7 @@ func TestInputHandler_HandleKey_CtrlD(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)
 
-	msg := testKeyCtrlD
+	msg := testutils.TestKeyCtrlD
 	handled, cmd := ih.HandleKey(msg)
 
 	if !handled {
@@ -69,7 +71,7 @@ func TestInputHandler_HandleKey_CtrlW(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)
 
-	msg := testKeyCtrlW
+	msg := testutils.TestKeyCtrlW
 	handled, cmd := ih.HandleKey(msg)
 
 	if !handled {
@@ -89,8 +91,8 @@ func TestInputHandler_HandleKey_Enter(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)
 
-	msg := testKeyEnter
-	handled, _ := ih.HandleKey(msg)
+	input := testutils.TestKeyEnter
+	handled, _ := ih.HandleKey(input)
 
 	if !handled {
 		t.Error("Expected Enter to be handled")
@@ -106,7 +108,7 @@ func TestInputHandler_HandleKey_Tab(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)
 
-	msg := testKeyTab
+	msg := testutils.TestKeyTab
 	handled, _ := ih.HandleKey(msg)
 
 	if !handled {
@@ -123,7 +125,7 @@ func TestInputHandler_HandleKey_Backspace(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)
 
-	msg := testKeyBackspace
+	msg := testutils.TestKeyBackspace
 	handled, _ := ih.HandleKey(msg)
 
 	if !handled {
@@ -142,10 +144,10 @@ func TestInputHandler_HandleKey_ArrowKeys(t *testing.T) {
 		msg      tea.KeyPressMsg
 		expected string
 	}{
-		{"Up", testKeyUp, "\x1b[A"},
-		{"Down", testKeyDown, "\x1b[B"},
-		{"Right", testKeyRight, "\x1b[C"},
-		{"Left", testKeyLeft, "\x1b[D"},
+		{"Up", testutils.TestKeyUp, "\x1b[A"},
+		{"Down", testutils.TestKeyDown, "\x1b[B"},
+		{"Right", testutils.TestKeyRight, "\x1b[C"},
+		{"Left", testutils.TestKeyLeft, "\x1b[D"},
 	}
 
 	for _, tt := range tests {
@@ -170,8 +172,8 @@ func TestInputHandler_HandleKey_NormalTyping(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)
 
-	msg := newTextKeyPressMsg("a")
-	handled, _ := ih.HandleKey(msg)
+	input := testutils.NewTextKeyPressMsg("a")
+	handled, _ := ih.HandleKey(input)
 
 	if !handled {
 		t.Error("Expected normal key to be handled")
@@ -204,7 +206,7 @@ func TestInputHandler_HandleKey_SlashAtLineStart(t *testing.T) {
 	ih := NewInputHandler(buf)
 
 	// At line start (initial state), / should trigger palette
-	msg := newTextKeyPressMsg("/")
+	msg := testutils.NewTextKeyPressMsg("/")
 	handled, cmd := ih.HandleKey(msg)
 
 	if !handled {
@@ -227,12 +229,12 @@ func TestInputHandler_HandleKey_SlashMidLine(t *testing.T) {
 	ih := NewInputHandler(buf)
 
 	// Type something first to not be at line start
-	typingMsg := newTextKeyPressMsg("echo ")
+	typingMsg := testutils.NewTextKeyPressMsg("echo ")
 	ih.HandleKey(typingMsg)
 	buf.Reset() // Clear the typed chars
 
 	// Now / should be sent to PTY (not at line start)
-	slashMsg := newTextKeyPressMsg("/")
+	slashMsg := testutils.NewTextKeyPressMsg("/")
 	handled, cmd := ih.HandleKey(slashMsg)
 
 	if !handled {
@@ -258,7 +260,8 @@ func TestInputHandler_FullScreenMode_BypassesSlashPalette(t *testing.T) {
 	ih.SetFullScreenMode(true)
 
 	// At line start (initial state), / should go to PTY, not palette
-	msg := newTextKeyPressMsg("/")
+	// Test Up Arrow
+	msg := testutils.NewTextKeyPressMsg("/")
 	handled, cmd := ih.HandleKey(msg)
 
 	if !handled {
@@ -284,7 +287,7 @@ func TestInputHandler_FullScreenMode_BypassesCtrlD(t *testing.T) {
 	ih.SetFullScreenMode(true)
 
 	// Ctrl+D should go to PTY, not trigger exit confirmation
-	msg := testKeyCtrlD
+	msg := testutils.TestKeyCtrlD
 	handled, cmd := ih.HandleKey(msg)
 
 	if !handled {
@@ -308,7 +311,7 @@ func TestInputHandler_FullScreenMode_CtrlX(t *testing.T) {
 
 	ih.SetFullScreenMode(true)
 
-	msg := testKeyCtrlX
+	msg := testutils.TestKeyCtrlX
 	handled, _ := ih.HandleKey(msg)
 
 	if !handled {
@@ -345,10 +348,10 @@ func TestInputHandler_FullScreenMode_ArrowKeys(t *testing.T) {
 		msg      tea.KeyPressMsg
 		expected string
 	}{
-		{"Up", testKeyUp, "\x1b[A"},
-		{"Down", testKeyDown, "\x1b[B"},
-		{"Right", testKeyRight, "\x1b[C"},
-		{"Left", testKeyLeft, "\x1b[D"},
+		{"Up", testutils.TestKeyUp, "\x1b[A"},
+		{"Down", testutils.TestKeyDown, "\x1b[B"},
+		{"Right", testutils.TestKeyRight, "\x1b[C"},
+		{"Left", testutils.TestKeyLeft, "\x1b[D"},
 	}
 
 	for _, tt := range tests {
@@ -391,10 +394,10 @@ func TestInputHandler_FullScreenMode_ArrowKeys_AppMode(t *testing.T) {
 		msg      tea.KeyPressMsg
 		expected string
 	}{
-		{"Up", testKeyUp, "\x1bOA"},
-		{"Down", testKeyDown, "\x1bOB"},
-		{"Right", testKeyRight, "\x1bOC"},
-		{"Left", testKeyLeft, "\x1bOD"},
+		{"Up", testutils.TestKeyUp, "\x1bOA"},
+		{"Down", testutils.TestKeyDown, "\x1bOB"},
+		{"Right", testutils.TestKeyRight, "\x1bOC"},
+		{"Left", testutils.TestKeyLeft, "\x1bOD"},
 	}
 
 	for _, tt := range tests {

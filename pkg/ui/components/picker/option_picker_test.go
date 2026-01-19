@@ -1,7 +1,9 @@
-package ui
+package picker
 
 import (
 	"testing"
+
+	"wtf_cli/pkg/ui/components/testutils"
 )
 
 func TestOptionPicker_ShowSelectCurrent(t *testing.T) {
@@ -32,21 +34,21 @@ func TestOptionPicker_SelectEmitsMsg(t *testing.T) {
 	options := []string{"json", "text"}
 	picker.Show("Log Format", "log_format", options, "json")
 
-	picker.Update(testKeyDown)
-	cmd := picker.Update(testKeyEnter)
+	picker.Update(testutils.TestKeyDown)
+	cmd := picker.Update(testutils.TestKeyEnter)
 	if cmd == nil {
 		t.Fatal("Expected optionPickerSelectMsg command")
 	}
 	msg := cmd()
-	selectMsg, ok := msg.(optionPickerSelectMsg)
+	selectMsg, ok := msg.(OptionPickerSelectMsg)
 	if !ok {
 		t.Fatalf("Expected optionPickerSelectMsg, got %T", msg)
 	}
-	if selectMsg.fieldKey != "log_format" {
-		t.Fatalf("Expected fieldKey log_format, got %q", selectMsg.fieldKey)
+	if selectMsg.FieldKey != "log_format" {
+		t.Fatalf("Expected fieldKey log_format, got %q", selectMsg.FieldKey)
 	}
-	if selectMsg.value != "text" {
-		t.Fatalf("Expected value text, got %q", selectMsg.value)
+	if selectMsg.Value != "text" {
+		t.Fatalf("Expected value text, got %q", selectMsg.Value)
 	}
 	if picker.visible {
 		t.Fatal("Expected picker to close after selection")
@@ -60,7 +62,7 @@ func TestOptionPicker_EscCloses(t *testing.T) {
 	options := []string{"debug", "info"}
 	picker.Show("Log Level", "log_level", options, "debug")
 
-	cmd := picker.Update(testKeyEsc)
+	cmd := picker.Update(testutils.TestKeyEsc)
 	if cmd != nil {
 		t.Fatal("Expected nil command on Esc")
 	}

@@ -1,28 +1,29 @@
-package ui
+package picker
 
 import (
 	"strings"
 
 	"wtf_cli/pkg/ai"
+	"wtf_cli/pkg/ui/components/utils"
 	"wtf_cli/pkg/ui/styles"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
-type openModelPickerMsg struct {
-	options []ai.ModelInfo
-	current string
-	apiURL  string
+type OpenModelPickerMsg struct {
+	Options []ai.ModelInfo
+	Current string
+	APIURL  string
 }
 
-type modelPickerSelectMsg struct {
-	modelID string
+type ModelPickerSelectMsg struct {
+	ModelID string
 }
 
-type modelPickerRefreshMsg struct {
-	cache ai.ModelCache
-	err   error
+type ModelPickerRefreshMsg struct {
+	Cache ai.ModelCache
+	Err   error
 }
 
 // ModelPickerPanel provides a searchable list of models.
@@ -169,7 +170,7 @@ func (p *ModelPickerPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 			modelID := filtered[p.selected].ID
 			p.Hide()
 			return func() tea.Msg {
-				return modelPickerSelectMsg{modelID: modelID}
+				return ModelPickerSelectMsg{ModelID: modelID}
 			}
 		}
 		return nil
@@ -249,7 +250,7 @@ func (p *ModelPickerPanel) View() string {
 				continue
 			}
 			option := filtered[index]
-			label := truncateToWidth(modelOptionLabel(option), maxLabelWidth)
+			label := utils.TruncateToWidth(modelOptionLabel(option), maxLabelWidth)
 			labelPadding := maxLabelWidth - lipgloss.Width(label)
 			if labelPadding < 0 {
 				labelPadding = 0
@@ -258,7 +259,7 @@ func (p *ModelPickerPanel) View() string {
 
 			desc := ""
 			if descWidth > 0 {
-				desc = truncateToWidth(modelOptionDesc(option), descWidth)
+				desc = utils.TruncateToWidth(modelOptionDesc(option), descWidth)
 			}
 
 			if index == p.selected {
@@ -266,7 +267,7 @@ func (p *ModelPickerPanel) View() string {
 				if desc != "" {
 					line += " " + desc
 				}
-				line = padPlain(line, contentWidth)
+				line = utils.PadPlain(line, contentWidth)
 				content.WriteString(selectedStyle.Render(line))
 			} else {
 				line := normalStyle.Render("  " + labelText)
@@ -420,3 +421,18 @@ func modelOptionDesc(option ai.ModelInfo) string {
 	}
 	return option.ID
 }
+
+// Helpers for truncation/padding would be duplicated or need a shared utils package.
+// For now, I'll duplicate them since they are small - wait, they are not small.
+// I should use runewidth and strings.
+// Let me verify if I included truncateToWidth and friends.
+// Oops, I didn't include them in the content above. I need to include them.
+// They were in sidebar.go but they are likely duplicated in model_picker.go or I need to find where they are.
+// Ah, `truncateToWidth` is used in `model_picker.go` line 252.
+// It seems `truncateToWidth` was defined in `model_picker.go` or `sidebar.go`.
+// Let me check `model_picker.go` again for helper functions.
+// I scrolled down but maybe missed them.
+// If they are not in `model_picker.go`, they might be in `util.go`? I haven't seen `util.go`.
+// Wait, `sidebar.go` had them. `model_picker.go` might have its own copy or use them if they were exported? No they were unexported.
+// So `model_picker.go` must have them if it uses them.
+// Let me check `model_picker.go` fully.

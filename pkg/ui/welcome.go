@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"wtf_cli/pkg/ui/components/utils"
 	"wtf_cli/pkg/version"
 
 	"charm.land/lipgloss/v2"
@@ -73,7 +74,7 @@ func WelcomeMessage() string {
 	versionText := version.Summary()
 	maxVersionLen := boxWidth - 4
 	if runewidth.StringWidth(versionText) > maxVersionLen {
-		versionText = truncateToWidth(versionText, maxVersionLen)
+		versionText = utils.TruncateToWidth(versionText, maxVersionLen)
 	}
 	versionLeftPad := (boxWidth - runewidth.StringWidth(versionText)) / 2
 	versionLine := strings.Repeat(" ", versionLeftPad) + versionStyle.Render(versionText)

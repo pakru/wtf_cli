@@ -1,4 +1,4 @@
-package ui
+package settings
 
 import (
 	"os"
@@ -9,6 +9,8 @@ import (
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/config"
+	"wtf_cli/pkg/ui/components/picker"
+	"wtf_cli/pkg/ui/components/testutils"
 )
 
 func TestNewSettingsPanel(t *testing.T) {
@@ -70,26 +72,26 @@ func TestSettingsPanel_Navigation(t *testing.T) {
 	sp.Show(cfg, "/tmp/test_config.json")
 
 	// Move down
-	sp.Update(testKeyDown)
+	sp.Update(testutils.TestKeyDown)
 	if sp.selected != 1 {
 		t.Errorf("Expected selected=1, got %d", sp.selected)
 	}
 
 	// Move down again
-	sp.Update(testKeyDown)
+	sp.Update(testutils.TestKeyDown)
 	if sp.selected != 2 {
 		t.Errorf("Expected selected=2, got %d", sp.selected)
 	}
 
 	// Move up
-	sp.Update(testKeyUp)
+	sp.Update(testutils.TestKeyUp)
 	if sp.selected != 1 {
 		t.Errorf("Expected selected=1, got %d", sp.selected)
 	}
 
 	// Can't go above 0
-	sp.Update(testKeyUp)
-	sp.Update(testKeyUp)
+	sp.Update(testutils.TestKeyUp)
+	sp.Update(testutils.TestKeyUp)
 	if sp.selected != 0 {
 		t.Errorf("Expected selected=0, got %d", sp.selected)
 	}
@@ -103,32 +105,32 @@ func TestSettingsPanel_EditMode(t *testing.T) {
 	sp.Show(cfg, "/tmp/test_config.json")
 
 	// Move to Model field (index 2)
-	sp.Update(testKeyDown)
-	sp.Update(testKeyDown)
+	sp.Update(testutils.TestKeyDown)
+	sp.Update(testutils.TestKeyDown)
 
 	// Enter edit mode using 'e' key
-	sp.Update(newTextKeyPressMsg("e"))
+	sp.Update(testutils.NewTextKeyPressMsg("e"))
 
 	if !sp.editing {
 		t.Error("Should be in editing mode after 'e'")
 	}
 
 	// Type something
-	sp.Update(newTextKeyPressMsg("test"))
+	sp.Update(testutils.NewTextKeyPressMsg("test"))
 
 	if sp.editValue != cfg.OpenRouter.Model+"test" {
 		t.Errorf("Expected edit value to contain 'test', got %q", sp.editValue)
 	}
 
 	// Backspace
-	sp.Update(testKeyBackspace)
+	sp.Update(testutils.TestKeyBackspace)
 	expected := cfg.OpenRouter.Model + "tes"
 	if sp.editValue != expected {
 		t.Errorf("Expected %q, got %q", expected, sp.editValue)
 	}
 
 	// Cancel edit
-	sp.Update(testKeyEsc)
+	sp.Update(testutils.TestKeyEsc)
 
 	if sp.editing {
 		t.Error("Should exit editing mode after Esc")
@@ -142,37 +144,37 @@ func TestSettingsPanel_EditModeCursorNavigation(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	sp.Update(testKeyEnter)
+	sp.Update(testutils.TestKeyEnter)
 	if !sp.editing {
 		t.Fatal("Should be in editing mode after Enter")
 	}
 
-	sp.Update(newTextKeyPressMsg("abcd"))
+	sp.Update(testutils.NewTextKeyPressMsg("abcd"))
 	if sp.editValue != "abcd" {
 		t.Fatalf("Expected edit value %q, got %q", "abcd", sp.editValue)
 	}
 
-	sp.Update(testKeyLeft)
-	sp.Update(testKeyLeft)
-	sp.Update(newTextKeyPressMsg("X"))
+	sp.Update(testutils.TestKeyLeft)
+	sp.Update(testutils.TestKeyLeft)
+	sp.Update(testutils.NewTextKeyPressMsg("X"))
 	if sp.editValue != "abXcd" {
 		t.Fatalf("Expected edit value %q, got %q", "abXcd", sp.editValue)
 	}
 
-	sp.Update(testKeyHome)
-	sp.Update(newTextKeyPressMsg("Z"))
+	sp.Update(testutils.TestKeyHome)
+	sp.Update(testutils.NewTextKeyPressMsg("Z"))
 	if sp.editValue != "ZabXcd" {
 		t.Fatalf("Expected edit value %q, got %q", "ZabXcd", sp.editValue)
 	}
 
-	sp.Update(testKeyEnd)
-	sp.Update(testKeyBackspace)
+	sp.Update(testutils.TestKeyEnd)
+	sp.Update(testutils.TestKeyBackspace)
 	if sp.editValue != "ZabXc" {
 		t.Fatalf("Expected edit value %q, got %q", "ZabXc", sp.editValue)
 	}
 
-	sp.Update(testKeyLeft)
-	sp.Update(testKeyDelete)
+	sp.Update(testutils.TestKeyLeft)
+	sp.Update(testutils.TestKeyDelete)
 	if sp.editValue != "ZabX" {
 		t.Fatalf("Expected edit value %q, got %q", "ZabX", sp.editValue)
 	}
@@ -185,13 +187,13 @@ func TestSettingsPanel_EditModePasteUsesText(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	sp.Update(testKeyEnter)
+	sp.Update(testutils.TestKeyEnter)
 	if !sp.editing {
 		t.Fatal("Should be in editing mode after Enter")
 	}
 
 	// Simulate paste by sending text (newlines should be filtered)
-	sp.Update(newTextKeyPressMsg("sk-or-v1-123"))
+	sp.Update(testutils.NewTextKeyPressMsg("sk-or-v1-123"))
 
 	if sp.editValue != "sk-or-v1-123" {
 		t.Fatalf("Expected edit value %q, got %q", "sk-or-v1-123", sp.editValue)
@@ -323,49 +325,46 @@ func TestSettingsPanel_ModelPicker(t *testing.T) {
 	sp.Show(cfg, "/tmp/test_config.json")
 
 	// Move to Model field (index 2)
-	sp.Update(testKeyDown)
-	sp.Update(testKeyDown)
+	sp.Update(testutils.TestKeyDown)
+	sp.Update(testutils.TestKeyDown)
 
 	// Open model picker
-	cmd := sp.Update(testKeyEnter)
+	cmd := sp.Update(testutils.TestKeyEnter)
 	if cmd == nil {
 		t.Fatal("Expected openModelPickerMsg command")
 	}
 	msg := cmd()
-	openMsg, ok := msg.(openModelPickerMsg)
-	if !ok {
-		t.Fatalf("Expected openModelPickerMsg, got %T", msg)
+	openMsg := msg.(picker.OpenModelPickerMsg)
+	if openMsg.Current != "google/gemini-3.0-flash" {
+		t.Errorf("Expected current 'google/gemini-3.0-flash', got %q", openMsg.Current)
 	}
-	if len(openMsg.options) != 2 {
-		t.Fatalf("Expected 2 model options, got %d", len(openMsg.options))
+	if len(openMsg.Options) != 2 {
+		t.Errorf("Expected 2 options, got %d", len(openMsg.Options))
 	}
-	if openMsg.current != cfg.OpenRouter.Model {
-		t.Fatalf("Expected current model %q, got %q", cfg.OpenRouter.Model, openMsg.current)
-	}
-	if openMsg.apiURL != cfg.OpenRouter.APIURL {
-		t.Fatalf("Expected apiURL %q, got %q", cfg.OpenRouter.APIURL, openMsg.apiURL)
+	if openMsg.APIURL != cfg.OpenRouter.APIURL {
+		t.Fatalf("Expected apiURL %q, got %q", cfg.OpenRouter.APIURL, openMsg.APIURL)
 	}
 
-	picker := NewModelPickerPanel()
-	picker.SetSize(80, 24)
-	picker.Show(openMsg.options, openMsg.current)
+	modelPicker := picker.NewModelPickerPanel()
+	modelPicker.SetSize(80, 24)
+	modelPicker.Show(openMsg.Options, openMsg.Current)
 
 	// Select second model
-	picker.Update(testKeyDown)
-	cmd = picker.Update(testKeyEnter)
+	modelPicker.Update(testutils.TestKeyDown)
+	cmd = modelPicker.Update(testutils.TestKeyEnter)
 	if cmd == nil {
 		t.Fatal("Expected modelPickerSelectMsg command")
 	}
 	msg = cmd()
-	selectMsg, ok := msg.(modelPickerSelectMsg)
-	if !ok {
-		t.Fatalf("Expected modelPickerSelectMsg, got %T", msg)
+	selectMsg := cmd().(picker.ModelPickerSelectMsg)
+	if selectMsg.ModelID != "model-b" {
+		t.Errorf("Expected model-b, got %q", selectMsg.ModelID)
 	}
-	if picker.IsVisible() {
+	if modelPicker.IsVisible() {
 		t.Fatal("Expected model picker to close after selection")
 	}
 
-	sp.SetModelValue(selectMsg.modelID)
+	sp.SetModelValue(selectMsg.ModelID)
 	if sp.config.OpenRouter.Model != "model-b" {
 		t.Errorf("Expected model 'model-b', got %q", sp.config.OpenRouter.Model)
 	}
@@ -380,23 +379,20 @@ func TestSettingsPanel_OpenLogLevelPicker(t *testing.T) {
 
 	// Move to Log Level field (index 8)
 	for i := 0; i < 8; i++ {
-		sp.Update(testKeyDown)
+		sp.Update(testutils.TestKeyDown)
 	}
 
-	cmd := sp.Update(testKeyEnter)
+	cmd := sp.Update(testutils.TestKeyEnter)
 	if cmd == nil {
 		t.Fatal("Expected openOptionPickerMsg command")
 	}
 	msg := cmd()
-	openMsg, ok := msg.(openOptionPickerMsg)
-	if !ok {
-		t.Fatalf("Expected openOptionPickerMsg, got %T", msg)
+	openMsg := msg.(picker.OpenOptionPickerMsg)
+	if openMsg.FieldKey != "log_level" {
+		t.Fatalf("Expected fieldKey log_level, got %q", openMsg.FieldKey)
 	}
-	if openMsg.fieldKey != "log_level" {
-		t.Fatalf("Expected fieldKey log_level, got %q", openMsg.fieldKey)
-	}
-	if openMsg.current != normalizeLogLevel(cfg.LogLevel) {
-		t.Fatalf("Expected current log level %q, got %q", normalizeLogLevel(cfg.LogLevel), openMsg.current)
+	if openMsg.Current != normalizeLogLevel(cfg.LogLevel) {
+		t.Fatalf("Expected current log level %q, got %q", normalizeLogLevel(cfg.LogLevel), openMsg.Current)
 	}
 }
 
@@ -409,23 +405,20 @@ func TestSettingsPanel_OpenLogFormatPicker(t *testing.T) {
 
 	// Move to Log Format field (index 9)
 	for i := 0; i < 9; i++ {
-		sp.Update(testKeyDown)
+		sp.Update(testutils.TestKeyDown)
 	}
 
-	cmd := sp.Update(testKeyEnter)
+	cmd := sp.Update(testutils.TestKeyEnter)
 	if cmd == nil {
 		t.Fatal("Expected openOptionPickerMsg command")
 	}
 	msg := cmd()
-	openMsg, ok := msg.(openOptionPickerMsg)
-	if !ok {
-		t.Fatalf("Expected openOptionPickerMsg, got %T", msg)
+	openMsg := msg.(picker.OpenOptionPickerMsg)
+	if openMsg.FieldKey != "log_format" {
+		t.Fatalf("Expected fieldKey log_format, got %q", openMsg.FieldKey)
 	}
-	if openMsg.fieldKey != "log_format" {
-		t.Fatalf("Expected fieldKey log_format, got %q", openMsg.fieldKey)
-	}
-	if openMsg.current != strings.ToLower(strings.TrimSpace(cfg.LogFormat)) {
-		t.Fatalf("Expected current log format %q, got %q", cfg.LogFormat, openMsg.current)
+	if openMsg.Current != strings.ToLower(strings.TrimSpace(cfg.LogFormat)) {
+		t.Fatalf("Expected current log format %q, got %q", cfg.LogFormat, openMsg.Current)
 	}
 }
 

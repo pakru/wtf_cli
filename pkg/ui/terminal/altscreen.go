@@ -1,4 +1,7 @@
-package ui
+// Package terminal provides terminal escape sequence handling.
+// This includes detection of alternate screen buffer enter/exit sequences
+// used by full-screen applications like vim, nano, htop, and less.
+package terminal
 
 import "bytes"
 
@@ -27,10 +30,11 @@ var (
 
 var maxAltScreenSeqLen = maxAltScreenSequenceLength()
 
-type altScreenChunk struct {
-	data     []byte
-	entering bool
-	exiting  bool
+// AltScreenChunk represents a chunk of PTY data with transition info
+type AltScreenChunk struct {
+	Data     []byte
+	Entering bool
+	Exiting  bool
 }
 
 // AltScreenState tracks the alternate screen buffer detection state
@@ -94,7 +98,7 @@ func (s *AltScreenState) DetectAltScreen(data []byte) (entering bool, exiting bo
 // SplitTransitions returns data chunks split by alternate screen enter/exit sequences.
 // Sequence chunks are returned with entering/exiting flags and should be handled
 // with the transition-aware routing logic.
-func (s *AltScreenState) SplitTransitions(data []byte) []altScreenChunk {
+func (s *AltScreenState) SplitTransitions(data []byte) []AltScreenChunk {
 	combined := data
 	if len(s.pending) > 0 {
 		combined = append(s.pending, data...)
@@ -111,25 +115,25 @@ func (s *AltScreenState) SplitTransitions(data []byte) []altScreenChunk {
 		return nil
 	}
 
-	chunks := make([]altScreenChunk, 0, 4)
+	chunks := make([]AltScreenChunk, 0, 4)
 	offset := 0
 	for offset < len(combined) {
 		match, found := findNextAltScreenMatch(combined[offset:])
 		if !found {
-			chunks = append(chunks, altScreenChunk{data: combined[offset:]})
+			chunks = append(chunks, AltScreenChunk{Data: combined[offset:]})
 			break
 		}
 
 		if match.idx > 0 {
-			chunks = append(chunks, altScreenChunk{data: combined[offset : offset+match.idx]})
+			chunks = append(chunks, AltScreenChunk{Data: combined[offset : offset+match.idx]})
 		}
 
 		seqStart := offset + match.idx
 		seqEnd := seqStart + len(match.seq)
-		chunks = append(chunks, altScreenChunk{
-			data:     combined[seqStart:seqEnd],
-			entering: match.entering,
-			exiting:  match.exiting,
+		chunks = append(chunks, AltScreenChunk{
+			Data:     combined[seqStart:seqEnd],
+			Entering: match.entering,
+			Exiting:  match.exiting,
 		})
 		offset = seqEnd
 	}
