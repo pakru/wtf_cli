@@ -17,6 +17,7 @@ type PTYViewport struct {
 	cursorTracker *terminal.CursorTracker
 	ready         bool
 	pendingCR     bool
+	dirty         bool // True if content changed since last View()
 }
 
 // NewPTYViewport creates a new PTY viewport
@@ -37,7 +38,12 @@ func (v *PTYViewport) SetSize(width, height int) {
 
 // AppendOutput adds new output to the viewport
 func (v *PTYViewport) AppendOutput(data []byte) {
+	if len(data) == 0 {
+		return
+	}
+
 	v.content = terminal.AppendPTYContent(v.content, data, &v.pendingCR)
+	v.dirty = true // Mark content as changed
 
 	// Track cursor position from ANSI codes
 	v.cursorTracker.UpdateFromOutput(data)
@@ -59,6 +65,7 @@ func (v *PTYViewport) GetContent() string {
 func (v *PTYViewport) Clear() {
 	v.content = ""
 	v.Viewport.SetContent("")
+	v.dirty = true // Mark as changed
 }
 
 // Update handles viewport updates (scrolling, etc)
@@ -70,6 +77,8 @@ func (v *PTYViewport) Update(msg tea.Msg) tea.Cmd {
 
 // View renders the viewport
 func (v *PTYViewport) View() string {
+	v.dirty = false // Clear dirty flag on render
+
 	if !v.ready {
 		return "Loading..."
 	}

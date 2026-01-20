@@ -75,6 +75,16 @@ type Model struct {
 	ptyLineBuffer []byte
 	ptyPendingCR  bool
 
+	// PTY output batching
+	ptyBatchBuffer  []byte        // Accumulated PTY data
+	ptyBatchTimer   bool          // Whether flush timer is pending
+	ptyBatchMaxSize int           // Max bytes before forced flush (default: 16KB)
+	ptyBatchMaxWait time.Duration // Max time before flush (default: 16ms)
+
+	// Stream update throttling
+	streamThrottlePending bool
+	streamThrottleDelay   time.Duration // Default: 50ms
+
 	// Full-screen app support (vim, nano, htop)
 	fullScreenMode  bool
 	fullScreenPanel *fullscreen.FullScreenPanel
@@ -99,23 +109,26 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 	statusBar.SetModel(loadModelFromConfig())
 
 	return Model{
-		ptyFile:         ptyFile,
-		cwdFunc:         cwdFunc,
-		viewport:        viewport,
-		statusBar:       statusBar,
-		inputHandler:    input.NewInputHandler(ptyFile),
-		palette:         palette.NewCommandPalette(),
-		resultPanel:     result.NewResultPanel(),
-		settingsPanel:   settings.NewSettingsPanel(),
-		modelPicker:     picker.NewModelPickerPanel(),
-		optionPicker:    picker.NewOptionPickerPanel(),
-		sidebar:         sidebar.NewSidebar(),
-		dispatcher:      commands.NewDispatcher(),
-		buffer:          buf,
-		session:         sess,
-		currentDir:      initialDir,
-		fullScreenPanel: fullscreen.NewFullScreenPanel(80, 24),
-		altScreenState:  terminal.NewAltScreenState(),
+		ptyFile:             ptyFile,
+		cwdFunc:             cwdFunc,
+		viewport:            viewport,
+		statusBar:           statusBar,
+		inputHandler:        input.NewInputHandler(ptyFile),
+		palette:             palette.NewCommandPalette(),
+		resultPanel:         result.NewResultPanel(),
+		settingsPanel:       settings.NewSettingsPanel(),
+		modelPicker:         picker.NewModelPickerPanel(),
+		optionPicker:        picker.NewOptionPickerPanel(),
+		sidebar:             sidebar.NewSidebar(),
+		dispatcher:          commands.NewDispatcher(),
+		buffer:              buf,
+		session:             sess,
+		currentDir:          initialDir,
+		fullScreenPanel:     fullscreen.NewFullScreenPanel(80, 24),
+		altScreenState:      terminal.NewAltScreenState(),
+		ptyBatchMaxSize:     16384,                 // 16KB
+		ptyBatchMaxWait:     16 * time.Millisecond, // ~60fps
+		streamThrottleDelay: 50 * time.Millisecond, // Throttle stream updates
 	}
 }
 
@@ -465,25 +478,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sidebar.SetContent(m.wtfContent)
 			}
 			m.wtfStream = nil
+			m.streamThrottlePending = false
 			return m, nil
 		}
 		if msg.Delta != "" {
+			// Accumulate content
 			if m.wtfContent == "" {
 				m.wtfContent = msg.Delta
 			} else {
 				m.wtfContent += msg.Delta
 			}
-			if m.sidebar != nil && m.sidebar.IsVisible() {
-				m.sidebar.SetContent(m.wtfContent)
+
+			// Throttle sidebar updates
+			if !m.streamThrottlePending {
+				m.streamThrottlePending = true
+				// Immediately update on first chunk
+				if m.sidebar != nil && m.sidebar.IsVisible() {
+					m.sidebar.SetContent(m.wtfContent)
+				}
+				return m, tea.Batch(
+					tea.Tick(m.streamThrottleDelay, func(time.Time) tea.Msg {
+						return streamThrottleFlushMsg{}
+					}),
+					listenToWtfStream(m.wtfStream),
+				)
 			}
+			// Subsequent chunks: just listen, don't update sidebar yet
+			return m, listenToWtfStream(m.wtfStream)
 		}
 		if msg.Done {
 			slog.Info("wtf_stream_done")
 			m.wtfStream = nil
+			// Final update to sidebar with all content
+			if m.sidebar != nil && m.sidebar.IsVisible() {
+				m.sidebar.SetContent(m.wtfContent)
+			}
+			m.streamThrottlePending = false
 			return m, nil
 		}
 		if m.wtfStream != nil {
 			return m, listenToWtfStream(m.wtfStream)
+		}
+		return m, nil
+
+	case streamThrottleFlushMsg:
+		m.streamThrottlePending = false
+		// Update sidebar with accumulated content
+		if m.sidebar != nil && m.sidebar.IsVisible() {
+			m.sidebar.SetContent(m.wtfContent)
 		}
 		return m, nil
 
@@ -494,60 +536,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, listenToPTY(m.ptyFile)
 		}
 
-		chunks := m.altScreenState.SplitTransitions(msg.data)
-		for i, chunk := range chunks {
-			if m.inputHandler != nil {
-				m.inputHandler.UpdateTerminalModes(chunk.Data)
-			}
+		// Append to batch buffer
+		m.ptyBatchBuffer = append(m.ptyBatchBuffer, msg.data...)
 
-			if chunk.Entering {
-				if !m.fullScreenMode {
-					m.enterFullScreen(len(chunk.Data))
-				}
-				if m.fullScreenPanel != nil && len(chunk.Data) > 0 {
-					m.fullScreenPanel.Write(chunk.Data)
-				}
-				continue
-			}
-
-			if chunk.Exiting {
-				if m.fullScreenMode && hasFutureEnter(chunks[i+1:]) {
-					if m.fullScreenPanel != nil && len(chunk.Data) > 0 {
-						m.fullScreenPanel.Write(chunk.Data)
-					}
-					continue
-				}
-
-				if m.fullScreenMode && m.fullScreenPanel != nil && len(chunk.Data) > 0 {
-					m.fullScreenPanel.Write(chunk.Data)
-				}
-				if m.fullScreenMode {
-					m.exitFullScreen()
-				} else if len(chunk.Data) > 0 {
-					m.appendPTYOutput(chunk.Data)
-					m.viewport.AppendOutput(chunk.Data)
-				}
-				continue
-			}
-
-			if len(chunk.Data) == 0 {
-				continue
-			}
-
-			if m.fullScreenMode {
-				// Full-screen mode: send to panel, NOT to buffer (buffer isolation)
-				if m.fullScreenPanel != nil {
-					m.fullScreenPanel.Write(chunk.Data)
-				}
-			} else {
-				// Normal mode: append to viewport AND buffer
-				m.appendPTYOutput(chunk.Data)
-				m.viewport.AppendOutput(chunk.Data)
-			}
+		// Force flush if buffer exceeds threshold
+		if len(m.ptyBatchBuffer) >= m.ptyBatchMaxSize {
+			m.flushPTYBatch()
+			return m, listenToPTY(m.ptyFile)
 		}
 
-		// Schedule next read
-		return m, listenToPTY(m.ptyFile)
+		// Start flush timer if not already pending
+		var flushCmd tea.Cmd
+		if !m.ptyBatchTimer {
+			m.ptyBatchTimer = true
+			flushCmd = tea.Tick(m.ptyBatchMaxWait, func(time.Time) tea.Msg {
+				return ptyBatchFlushMsg{}
+			})
+		}
+
+		return m, tea.Batch(flushCmd, listenToPTY(m.ptyFile))
+
+	case ptyBatchFlushMsg:
+		m.ptyBatchTimer = false
+		if len(m.ptyBatchBuffer) > 0 {
+			m.flushPTYBatch()
+		}
+		return m, nil
 
 	case ptyErrorMsg:
 		// PTY error - probably shell exited
@@ -847,6 +861,10 @@ func addOverlayLayer(layers []*lipgloss.Layer, view string, screenW, screenH, z 
 type ptyOutputMsg struct {
 	data []byte
 }
+
+type ptyBatchFlushMsg struct{}
+
+type streamThrottleFlushMsg struct{}
 
 type ptyErrorMsg struct {
 	err error

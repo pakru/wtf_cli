@@ -75,6 +75,8 @@ func TestModel_Update_PTYOutput(t *testing.T) {
 
 	testData := []byte("test output")
 	newModel, _ := m.Update(ptyOutputMsg{data: testData})
+	// Trigger batch flush
+	newModel, _ = newModel.Update(ptyBatchFlushMsg{})
 
 	updated := newModel.(Model)
 
@@ -92,13 +94,19 @@ func TestModel_Update_PTYOutput_BufferIsolation(t *testing.T) {
 	m = newModel.(Model)
 
 	newModel, _ = m.Update(ptyOutputMsg{data: []byte("before\n")})
+	// Trigger batch flush
+	newModel, _ = newModel.Update(ptyBatchFlushMsg{})
 	m = newModel.(Model)
 
 	altScreenData := []byte("\x1b[?1049hFULL\nSCREEN\n\x1b[?1049l")
 	newModel, _ = m.Update(ptyOutputMsg{data: altScreenData})
+	// Trigger batch flush
+	newModel, _ = newModel.Update(ptyBatchFlushMsg{})
 	m = newModel.(Model)
 
 	newModel, _ = m.Update(ptyOutputMsg{data: []byte("after\n")})
+	// Trigger batch flush
+	newModel, _ = newModel.Update(ptyBatchFlushMsg{})
 	m = newModel.(Model)
 
 	text := buf.ExportAsText()
@@ -117,6 +125,8 @@ func TestModel_Update_PTYOutput_ExitSuppressedWithFutureEnter(t *testing.T) {
 	m = newModel.(Model)
 
 	newModel, _ = m.Update(ptyOutputMsg{data: []byte("\x1b[?1049h")})
+	// Trigger batch flush
+	newModel, _ = newModel.Update(ptyBatchFlushMsg{})
 	m = newModel.(Model)
 
 	if !m.fullScreenMode {
@@ -241,6 +251,8 @@ func TestModel_Update_PTYOutput_NotSuppressedAfterDelay(t *testing.T) {
 	// PTY output should NOT be suppressed
 	testData := []byte("normal output")
 	newModel, _ := m.Update(ptyOutputMsg{data: testData})
+	// Trigger batch flush
+	newModel, _ = newModel.Update(ptyBatchFlushMsg{})
 	m = newModel.(Model)
 
 	content := m.viewport.GetContent()
