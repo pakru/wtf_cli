@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -19,17 +18,20 @@ func TestOpenRouterProvider_CreateChatCompletion(t *testing.T) {
 	var gotTitle string
 	var gotPayload map[string]any
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotAuth = r.Header.Get("Authorization")
-		gotReferer = r.Header.Get("HTTP-Referer")
-		gotTitle = r.Header.Get("X-Title")
+	client := newTestClient(func(req *http.Request) (*http.Response, error) {
+		gotPath = req.URL.Path
+		gotAuth = req.Header.Get("Authorization")
+		gotReferer = req.Header.Get("HTTP-Referer")
+		gotTitle = req.Header.Get("X-Title")
 
-		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
-			t.Errorf("failed to decode request body: %v", err)
+		if req.Body == nil {
+			t.Fatalf("expected request body")
 		}
+		if err := json.NewDecoder(req.Body).Decode(&gotPayload); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		_ = req.Body.Close()
 
-		w.Header().Set("Content-Type", "application/json")
 		resp := map[string]any{
 			"id":      "chatcmpl-1",
 			"object":  "chat.completion",
@@ -46,15 +48,12 @@ func TestOpenRouterProvider_CreateChatCompletion(t *testing.T) {
 				},
 			},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			t.Errorf("failed to encode response: %v", err)
-		}
-	}))
-	defer server.Close()
+		return newJSONResponse(t, req, http.StatusOK, resp), nil
+	})
 
 	cfg := config.OpenRouterConfig{
 		APIKey:            "test-key",
-		APIURL:            server.URL,
+		APIURL:            "https://openrouter.test",
 		HTTPReferer:       "https://example.com",
 		XTitle:            "wtf-cli",
 		Model:             "test-model",
@@ -63,7 +62,7 @@ func TestOpenRouterProvider_CreateChatCompletion(t *testing.T) {
 		APITimeoutSeconds: 5,
 	}
 
-	provider, err := NewOpenRouterProvider(cfg)
+	provider, err := newOpenRouterProviderWithHTTPClient(cfg, client)
 	if err != nil {
 		t.Fatalf("NewOpenRouterProvider() error: %v", err)
 	}
@@ -126,13 +125,14 @@ func TestOpenRouterProvider_CreateChatCompletion(t *testing.T) {
 func TestOpenRouterProvider_CreateChatCompletionStream(t *testing.T) {
 	var gotPayload map[string]any
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
-			t.Errorf("failed to decode request body: %v", err)
+	client := newTestClient(func(req *http.Request) (*http.Response, error) {
+		if req.Body == nil {
+			t.Fatalf("expected request body")
 		}
-
-		w.Header().Set("Content-Type", "text/event-stream")
-		flusher, _ := w.(http.Flusher)
+		if err := json.NewDecoder(req.Body).Decode(&gotPayload); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		_ = req.Body.Close()
 
 		chunk1 := map[string]any{
 			"id":      "stream-1",
@@ -165,40 +165,37 @@ func TestOpenRouterProvider_CreateChatCompletionStream(t *testing.T) {
 			},
 		}
 
-		writeChunk := func(payload map[string]any) {
-			data, err := json.Marshal(payload)
-			if err != nil {
-				t.Errorf("failed to marshal chunk: %v", err)
-				return
-			}
-			_, _ = w.Write([]byte("data: "))
-			_, _ = w.Write(data)
-			_, _ = w.Write([]byte("\n\n"))
-			if flusher != nil {
-				flusher.Flush()
-			}
+		chunk1Data, err := json.Marshal(chunk1)
+		if err != nil {
+			t.Fatalf("failed to marshal chunk: %v", err)
+		}
+		chunk2Data, err := json.Marshal(chunk2)
+		if err != nil {
+			t.Fatalf("failed to marshal chunk: %v", err)
 		}
 
-		writeChunk(chunk1)
-		writeChunk(chunk2)
+		var stream strings.Builder
+		stream.WriteString("data: ")
+		_, _ = stream.Write(chunk1Data)
+		stream.WriteString("\n\n")
+		stream.WriteString("data: ")
+		_, _ = stream.Write(chunk2Data)
+		stream.WriteString("\n\n")
+		stream.WriteString("data: [DONE]\n\n")
 
-		_, _ = w.Write([]byte("data: [DONE]\n\n"))
-		if flusher != nil {
-			flusher.Flush()
-		}
-	}))
-	defer server.Close()
+		return newHTTPResponse(req, http.StatusOK, "text/event-stream", []byte(stream.String())), nil
+	})
 
 	cfg := config.OpenRouterConfig{
 		APIKey:            "test-key",
-		APIURL:            server.URL,
+		APIURL:            "https://openrouter.test",
 		Model:             "default-model",
 		Temperature:       0.7,
 		MaxTokens:         100,
 		APITimeoutSeconds: 5,
 	}
 
-	provider, err := NewOpenRouterProvider(cfg)
+	provider, err := newOpenRouterProviderWithHTTPClient(cfg, client)
 	if err != nil {
 		t.Fatalf("NewOpenRouterProvider() error: %v", err)
 	}

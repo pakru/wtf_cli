@@ -2,21 +2,19 @@ package ai
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestFetchOpenRouterModels(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/models" {
-			t.Fatalf("Expected path /api/v1/models, got %q", r.URL.Path)
+	var gotPath string
+	client := newTestClient(func(req *http.Request) (*http.Response, error) {
+		if req.Body != nil {
+			_ = req.Body.Close()
 		}
-
-		w.Header().Set("Content-Type", "application/json")
+		gotPath = req.URL.Path
 		payload := map[string]any{
 			"data": []any{
 				map[string]any{
@@ -39,15 +37,15 @@ func TestFetchOpenRouterModels(t *testing.T) {
 				},
 			},
 		}
-		if err := json.NewEncoder(w).Encode(payload); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
+		return newJSONResponse(t, req, http.StatusOK, payload), nil
+	})
 
-	models, err := FetchOpenRouterModels(context.Background(), server.URL+"/api/v1")
+	models, err := fetchOpenRouterModels(context.Background(), "https://openrouter.test/api/v1", client)
 	if err != nil {
 		t.Fatalf("FetchOpenRouterModels() error: %v", err)
+	}
+	if gotPath != "/api/v1/models" {
+		t.Fatalf("Expected path /api/v1/models, got %q", gotPath)
 	}
 	if len(models) != 2 {
 		t.Fatalf("Expected 2 models, got %d", len(models))

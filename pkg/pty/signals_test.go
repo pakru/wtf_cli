@@ -5,10 +5,7 @@ import (
 )
 
 func TestHandleResize_NoError(t *testing.T) {
-	wrapper, err := SpawnShell()
-	if err != nil {
-		t.Fatalf("SpawnShell() failed: %v", err)
-	}
+	wrapper := requirePTY(t)
 	defer wrapper.Close()
 
 	// HandleResize should not panic
@@ -19,14 +16,11 @@ func TestHandleResize_NoError(t *testing.T) {
 }
 
 func TestResize_Method(t *testing.T) {
-	wrapper, err := SpawnShell()
-	if err != nil {
-		t.Fatalf("SpawnShell() failed: %v", err)
-	}
+	wrapper := requirePTY(t)
 	defer wrapper.Close()
 
 	// resize() might fail in headless/CI environment, but shouldn't panic
-	err = wrapper.resize()
+	err := wrapper.resize()
 
 	// In headless environment, this will error - that's OK
 	// The important thing is it doesn't panic

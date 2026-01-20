@@ -7,10 +7,7 @@ import (
 
 func TestSpawnShell(t *testing.T) {
 	// Test that SpawnShell creates a valid wrapper
-	wrapper, err := SpawnShell()
-	if err != nil {
-		t.Fatalf("SpawnShell() failed: %v", err)
-	}
+	wrapper := requirePTY(t)
 	defer wrapper.Close()
 
 	if wrapper.ptmx == nil {
@@ -34,10 +31,7 @@ func TestSpawnShell_InheritsEnvironment(t *testing.T) {
 	os.Setenv(testKey, testValue)
 	defer os.Unsetenv(testKey)
 
-	wrapper, err := SpawnShell()
-	if err != nil {
-		t.Fatalf("SpawnShell() failed: %v", err)
-	}
+	wrapper := requirePTY(t)
 	defer wrapper.Close()
 
 	// Verify environment was inherited
@@ -55,10 +49,7 @@ func TestSpawnShell_InheritsEnvironment(t *testing.T) {
 }
 
 func TestWrapper_Close(t *testing.T) {
-	wrapper, err := SpawnShell()
-	if err != nil {
-		t.Fatalf("SpawnShell() failed: %v", err)
-	}
+	wrapper := requirePTY(t)
 
 	// Close should not error
 	if err := wrapper.Close(); err != nil {

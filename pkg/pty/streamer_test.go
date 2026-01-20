@@ -7,10 +7,7 @@ import (
 )
 
 func TestSpawnShellWithBuffer(t *testing.T) {
-	bw, err := SpawnShellWithBuffer(100)
-	if err != nil {
-		t.Fatalf("SpawnShellWithBuffer() failed: %v", err)
-	}
+	bw := requireBufferedPTY(t, 100)
 	defer bw.Close()
 
 	if bw.buffer == nil {
@@ -23,10 +20,7 @@ func TestSpawnShellWithBuffer(t *testing.T) {
 }
 
 func TestGetBuffer(t *testing.T) {
-	bw, err := SpawnShellWithBuffer(50)
-	if err != nil {
-		t.Fatalf("SpawnShellWithBuffer() failed: %v", err)
-	}
+	bw := requireBufferedPTY(t, 50)
 	defer bw.Close()
 
 	buf := bw.GetBuffer()
@@ -40,10 +34,7 @@ func TestGetBuffer(t *testing.T) {
 }
 
 func TestProxyIOWithBuffer_Capture(t *testing.T) {
-	bw, err := SpawnShellWithBuffer(100)
-	if err != nil {
-		t.Fatalf("SpawnShellWithBuffer() failed: %v", err)
-	}
+	bw := requireBufferedPTY(t, 100)
 	defer bw.Close()
 
 	// This test verifies the buffer is accessible and starts empty
@@ -55,10 +46,7 @@ func TestProxyIOWithBuffer_Capture(t *testing.T) {
 }
 
 func TestBufferWriteAsync(t *testing.T) {
-	bw, err := SpawnShellWithBuffer(100)
-	if err != nil {
-		t.Fatalf("SpawnShellWithBuffer() failed: %v", err)
-	}
+	bw := requireBufferedPTY(t, 100)
 	defer bw.Close()
 
 	// Simulate buffer writes (as would happen during I/O)
@@ -88,10 +76,7 @@ func TestBufferWriteAsync(t *testing.T) {
 }
 
 func TestBufferPreservesANSI(t *testing.T) {
-	bw, err := SpawnShellWithBuffer(10)
-	if err != nil {
-		t.Fatalf("SpawnShellWithBuffer() failed: %v", err)
-	}
+	bw := requireBufferedPTY(t, 10)
 	defer bw.Close()
 
 	// Test ANSI preservation through buffer

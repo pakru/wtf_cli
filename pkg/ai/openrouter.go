@@ -24,6 +24,11 @@ type OpenRouterProvider struct {
 
 // NewOpenRouterProvider creates a new OpenRouter provider from config.
 func NewOpenRouterProvider(cfg config.OpenRouterConfig) (*OpenRouterProvider, error) {
+	httpClient := &http.Client{Timeout: time.Duration(cfg.APITimeoutSeconds) * time.Second}
+	return newOpenRouterProviderWithHTTPClient(cfg, httpClient)
+}
+
+func newOpenRouterProviderWithHTTPClient(cfg config.OpenRouterConfig, httpClient *http.Client) (*OpenRouterProvider, error) {
 	if strings.TrimSpace(cfg.APIKey) == "" {
 		return nil, fmt.Errorf("openrouter api_key is required")
 	}
@@ -49,7 +54,9 @@ func NewOpenRouterProvider(cfg config.OpenRouterConfig) (*OpenRouterProvider, er
 		opts = append(opts, option.WithHeader("X-Title", cfg.XTitle))
 	}
 
-	httpClient := &http.Client{Timeout: time.Duration(cfg.APITimeoutSeconds) * time.Second}
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: time.Duration(cfg.APITimeoutSeconds) * time.Second}
+	}
 	opts = append(opts, option.WithHTTPClient(httpClient))
 
 	client := openai.NewClient(opts...)

@@ -16,6 +16,10 @@ import (
 
 const modelCacheFilename = "models_cache.json"
 
+type httpDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
 // ModelInfo captures the fields needed for model selection and display.
 type ModelInfo struct {
 	ID            string            `json:"id"`
@@ -46,6 +50,15 @@ func DefaultModelCachePath() string {
 
 // FetchOpenRouterModels retrieves the OpenRouter model list from the API.
 func FetchOpenRouterModels(ctx context.Context, apiURL string) ([]ModelInfo, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	return fetchOpenRouterModels(ctx, apiURL, client)
+}
+
+func fetchOpenRouterModels(ctx context.Context, apiURL string, client httpDoer) ([]ModelInfo, error) {
+	if client == nil {
+		return nil, fmt.Errorf("http client is required")
+	}
+
 	modelsURL, err := buildModelsURL(apiURL)
 	if err != nil {
 		return nil, err
@@ -56,8 +69,6 @@ func FetchOpenRouterModels(ctx context.Context, apiURL string) ([]ModelInfo, err
 		return nil, fmt.Errorf("create models request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-
-	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch models: %w", err)
