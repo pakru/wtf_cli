@@ -15,8 +15,8 @@ import (
 // Replaces absolute paths with a placeholder for consistent golden file comparison
 func normalizePath(output string) string {
 	// Replace any absolute path to wtf_cli with a normalized placeholder
-	// Matches both local dev path and CI path
-	re := regexp.MustCompile(`/home/[^/]+/(project/)?work/wtf_cli/wtf_cli`)
+	// Matches both: /home/dev/project/wtf_cli/wtf_cli and /home/runner/work/wtf_cli/wtf_cli
+	re := regexp.MustCompile(`/home/[^/]+/(project|work)/wtf_cli/wtf_cli`)
 	return re.ReplaceAllString(output, "/path/to/wtf_cli")
 }
 
