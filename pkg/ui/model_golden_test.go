@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"regexp"
 	"testing"
 	"time"
 
@@ -9,6 +10,15 @@ import (
 
 	"github.com/charmbracelet/x/exp/golden"
 )
+
+// normalizePath removes environment-specific paths to make tests portable
+// Replaces absolute paths with a placeholder for consistent golden file comparison
+func normalizePath(output string) string {
+	// Replace any absolute path to wtf_cli with a normalized placeholder
+	// Matches both local dev path and CI path
+	re := regexp.MustCompile(`/home/[^/]+/(project/)?work/wtf_cli/wtf_cli`)
+	return re.ReplaceAllString(output, "/path/to/wtf_cli")
+}
 
 func TestModelViewGolden(t *testing.T) {
 	// Setup a model in a deterministic state
@@ -25,9 +35,9 @@ func TestModelViewGolden(t *testing.T) {
 	m.resizeTime = time.Time{}
 
 	// Verify standard view
-	// Verify standard view
 	view, _ := m.Render()
-	golden.RequireEqual(t, []byte(view))
+	normalizedView := normalizePath(view)
+	golden.RequireEqual(t, []byte(normalizedView))
 }
 
 func TestModelViewGolden_Palette(t *testing.T) {
@@ -41,6 +51,7 @@ func TestModelViewGolden_Palette(t *testing.T) {
 	m.palette.Show()
 
 	view, _ := m.Render()
+	normalizedView := normalizePath(view)
 	// Use a specific golden file name for palette state
-	golden.RequireEqual(t, []byte(view))
+	golden.RequireEqual(t, []byte(normalizedView))
 }
