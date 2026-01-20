@@ -13,11 +13,21 @@ import (
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/commands"
 	"wtf_cli/pkg/config"
+	"wtf_cli/pkg/ui/components/fullscreen"
+	"wtf_cli/pkg/ui/components/palette"
+	"wtf_cli/pkg/ui/components/picker"
+	"wtf_cli/pkg/ui/components/result"
+	"wtf_cli/pkg/ui/components/settings"
+	"wtf_cli/pkg/ui/components/sidebar"
+	"wtf_cli/pkg/ui/components/statusbar"
+	"wtf_cli/pkg/ui/components/viewport"
+	"wtf_cli/pkg/ui/components/welcome"
+	"wtf_cli/pkg/ui/input"
+	"wtf_cli/pkg/ui/render"
+	"wtf_cli/pkg/ui/terminal"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/cellbuf"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Model represents the Bubble Tea application state
@@ -27,15 +37,15 @@ type Model struct {
 	cwdFunc func() (string, error) // Function to get shell's cwd
 
 	// UI Components
-	viewport      PTYViewport     // Viewport for PTY output
-	statusBar     *StatusBarView  // Status bar at bottom
-	inputHandler  *InputHandler   // Input routing to PTY
-	palette       *CommandPalette // Command palette overlay
-	resultPanel   *ResultPanel    // Result panel overlay
-	settingsPanel *SettingsPanel  // Settings panel overlay
-	modelPicker   *ModelPickerPanel
-	optionPicker  *OptionPickerPanel
-	sidebar       *Sidebar // AI response sidebar
+	viewport      viewport.PTYViewport     // Viewport for PTY output
+	statusBar     *statusbar.StatusBarView // Status bar at bottom
+	inputHandler  *input.InputHandler      // Input routing to PTY
+	palette       *palette.CommandPalette  // Command palette overlay
+	resultPanel   *result.ResultPanel      // Result panel overlay
+	settingsPanel *settings.SettingsPanel  // Settings panel overlay
+	modelPicker   *picker.ModelPickerPanel
+	optionPicker  *picker.OptionPickerPanel
+	sidebar       *sidebar.Sidebar // Sidebar for AI suggestions
 
 	// Command system
 	dispatcher *commands.Dispatcher
@@ -65,10 +75,20 @@ type Model struct {
 	ptyLineBuffer []byte
 	ptyPendingCR  bool
 
+	// PTY output batching
+	ptyBatchBuffer  []byte        // Accumulated PTY data
+	ptyBatchTimer   bool          // Whether flush timer is pending
+	ptyBatchMaxSize int           // Max bytes before forced flush (default: 16KB)
+	ptyBatchMaxWait time.Duration // Max time before flush (default: 16ms)
+
+	// Stream update throttling
+	streamThrottlePending bool
+	streamThrottleDelay   time.Duration // Default: 50ms
+
 	// Full-screen app support (vim, nano, htop)
 	fullScreenMode  bool
-	fullScreenPanel *FullScreenPanel
-	altScreenState  *AltScreenState
+	fullScreenPanel *fullscreen.FullScreenPanel
+	altScreenState  *terminal.AltScreenState
 }
 
 // NewModel creates a new Bubble Tea model
@@ -82,30 +102,33 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 	}
 
 	// Create viewport and add welcome message at the start
-	viewport := NewPTYViewport()
-	viewport.AppendOutput([]byte(WelcomeMessage()))
+	viewport := viewport.NewPTYViewport()
+	viewport.AppendOutput([]byte(welcome.WelcomeMessage()))
 
-	statusBar := NewStatusBarView()
+	statusBar := statusbar.NewStatusBarView()
 	statusBar.SetModel(loadModelFromConfig())
 
 	return Model{
-		ptyFile:         ptyFile,
-		cwdFunc:         cwdFunc,
-		viewport:        viewport,
-		statusBar:       statusBar,
-		inputHandler:    NewInputHandler(ptyFile),
-		palette:         NewCommandPalette(),
-		resultPanel:     NewResultPanel(),
-		settingsPanel:   NewSettingsPanel(),
-		modelPicker:     NewModelPickerPanel(),
-		optionPicker:    NewOptionPickerPanel(),
-		sidebar:         NewSidebar(),
-		dispatcher:      commands.NewDispatcher(),
-		buffer:          buf,
-		session:         sess,
-		currentDir:      initialDir,
-		fullScreenPanel: NewFullScreenPanel(80, 24),
-		altScreenState:  NewAltScreenState(),
+		ptyFile:             ptyFile,
+		cwdFunc:             cwdFunc,
+		viewport:            viewport,
+		statusBar:           statusBar,
+		inputHandler:        input.NewInputHandler(ptyFile),
+		palette:             palette.NewCommandPalette(),
+		resultPanel:         result.NewResultPanel(),
+		settingsPanel:       settings.NewSettingsPanel(),
+		modelPicker:         picker.NewModelPickerPanel(),
+		optionPicker:        picker.NewOptionPickerPanel(),
+		sidebar:             sidebar.NewSidebar(),
+		dispatcher:          commands.NewDispatcher(),
+		buffer:              buf,
+		session:             sess,
+		currentDir:          initialDir,
+		fullScreenPanel:     fullscreen.NewFullScreenPanel(80, 24),
+		altScreenState:      terminal.NewAltScreenState(),
+		ptyBatchMaxSize:     16384,                 // 16KB
+		ptyBatchMaxWait:     16 * time.Millisecond, // ~60fps
+		streamThrottleDelay: 50 * time.Millisecond, // Throttle stream updates
 	}
 }
 
@@ -183,8 +206,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Resize PTY so bash knows correct terminal dimensions for line wrapping
 		if m.ptyFile != nil {
 			if m.fullScreenMode {
-				contentWidth, contentHeight := contentSize(m.width, m.height)
-				ResizePTY(m.ptyFile, contentWidth, contentHeight)
+				contentWidth, contentHeight := fullscreen.ContentSize(m.width, m.height)
+				terminal.ResizePTY(m.ptyFile, contentWidth, contentHeight)
 			} else {
 				viewportHeight := m.height - 1
 				viewportWidth := m.width
@@ -192,7 +215,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					left, _ := splitSidebarWidths(m.width)
 					viewportWidth = left
 				}
-				ResizePTY(m.ptyFile, viewportWidth, viewportHeight)
+				terminal.ResizePTY(m.ptyFile, viewportWidth, viewportHeight)
 				// Track resize time to suppress prompt reprint output
 				// Skip suppression on initial resize (first time we get correct size)
 				if m.initialResize {
@@ -203,7 +226,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.fullScreenMode {
 			handled, cmd := m.inputHandler.HandleKey(msg)
 			if handled {
@@ -212,7 +235,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if m.exitPending && msg.Type != tea.KeyCtrlD {
+		if m.exitPending && msg.String() != "ctrl+d" {
 			m.exitPending = false
 			m.statusBar.SetMessage("")
 		}
@@ -264,23 +287,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If not handled by input handler, ignore
 		return m, nil
 
-	case showPaletteMsg:
+	case input.ShowPaletteMsg:
 		// Show the command palette
 		slog.Info("palette_open")
 		m.palette.Show()
 		m.inputHandler.SetPaletteMode(true)
 		return m, nil
 
-	case paletteSelectMsg:
+	case palette.PaletteSelectMsg:
 		// Command selected from palette
-		slog.Info("palette_select", "command", msg.command)
+		slog.Info("palette_select", "command", msg.Command)
 		m.inputHandler.SetPaletteMode(false)
 
 		// Execute the command
 		ctx := commands.NewContext(m.buffer, m.session, m.currentDir)
-		handler, ok := m.dispatcher.GetHandler(msg.command)
+		handler, ok := m.dispatcher.GetHandler(msg.Command)
 		if !ok {
-			m.resultPanel.Show("Error", "Unknown command: "+msg.command)
+			m.resultPanel.Show("Error", "Unknown command: "+msg.Command)
 			return m, nil
 		}
 		result := handler.Execute(ctx)
@@ -329,13 +352,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, nil
 
-	case paletteCancelMsg:
+	case palette.PaletteCancelMsg:
 		// Palette cancelled
 		slog.Info("palette_cancel")
 		m.inputHandler.SetPaletteMode(false)
 		return m, nil
 
-	case settingsCloseMsg:
+	case settings.SettingsCloseMsg:
 		// Settings panel closed
 		slog.Info("settings_close")
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
@@ -346,22 +369,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case settingsSaveMsg:
+	case settings.SettingsSaveMsg:
 		// Save settings to file
-		if err := config.Save(msg.configPath, msg.config); err != nil {
+		if err := config.Save(msg.ConfigPath, msg.Config); err != nil {
 			slog.Error("settings_save_error", "error", err)
 		} else {
 			slog.Info("settings_save",
-				"model", msg.config.OpenRouter.Model,
-				"log_level", msg.config.LogLevel,
-				"log_format", msg.config.LogFormat,
-				"log_file", msg.config.LogFile,
+				"model", msg.Config.OpenRouter.Model,
+				"log_level", msg.Config.LogLevel,
+				"log_format", msg.Config.LogFormat,
+				"log_file", msg.Config.LogFile,
 			)
 		}
-		m.statusBar.SetModel(msg.config.OpenRouter.Model)
+		m.statusBar.SetModel(msg.Config.OpenRouter.Model)
 		return m, nil
 
-	case ctrlDPressedMsg:
+	case input.CtrlDPressedMsg:
 		if m.exitPending {
 			m.exitPending = false
 			m.statusBar.SetMessage("")
@@ -387,63 +410,63 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case openModelPickerMsg:
-		slog.Info("model_picker_open", "current", msg.current, "cached_models", len(msg.options))
+	case picker.OpenModelPickerMsg:
+		slog.Info("model_picker_open", "current", msg.Current, "cached_models", len(msg.Options))
 		if m.modelPicker != nil {
 			m.modelPicker.SetSize(m.width, m.height)
-			m.modelPicker.Show(msg.options, msg.current)
+			m.modelPicker.Show(msg.Options, msg.Current)
 		}
-		cmd := refreshModelCacheCmd(msg.apiURL)
+		cmd := refreshModelCacheCmd(msg.APIURL)
 		return m, cmd
 
-	case modelPickerSelectMsg:
-		slog.Info("model_picker_select", "model", msg.modelID)
+	case picker.ModelPickerSelectMsg:
+		slog.Info("model_picker_select", "model", msg.ModelID)
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
 			m.modelPicker.Hide()
 		}
 		if m.settingsPanel != nil {
-			m.settingsPanel.SetModelValue(msg.modelID)
+			m.settingsPanel.SetModelValue(msg.ModelID)
 		}
 		return m, nil
 
-	case openOptionPickerMsg:
-		slog.Info("option_picker_open", "field", msg.fieldKey, "current", msg.current)
+	case picker.OpenOptionPickerMsg:
+		slog.Info("option_picker_open", "field", msg.FieldKey, "current", msg.Current)
 		if m.optionPicker != nil {
 			m.optionPicker.SetSize(m.width, m.height)
-			m.optionPicker.Show(msg.title, msg.fieldKey, msg.options, msg.current)
+			m.optionPicker.Show(msg.Title, msg.FieldKey, msg.Options, msg.Current)
 		}
 		return m, nil
 
-	case optionPickerSelectMsg:
-		slog.Info("option_picker_select", "field", msg.fieldKey, "value", msg.value)
+	case picker.OptionPickerSelectMsg:
+		slog.Info("option_picker_select", "field", msg.FieldKey, "value", msg.Value)
 		if m.optionPicker != nil && m.optionPicker.IsVisible() {
 			m.optionPicker.Hide()
 		}
 		if m.settingsPanel != nil {
-			switch msg.fieldKey {
+			switch msg.FieldKey {
 			case "log_level":
-				m.settingsPanel.SetLogLevelValue(msg.value)
+				m.settingsPanel.SetLogLevelValue(msg.Value)
 			case "log_format":
-				m.settingsPanel.SetLogFormatValue(msg.value)
+				m.settingsPanel.SetLogFormatValue(msg.Value)
 			}
 		}
 		return m, nil
 
-	case modelPickerRefreshMsg:
-		if msg.err != nil {
-			slog.Error("model_picker_refresh_error", "error", msg.err)
+	case picker.ModelPickerRefreshMsg:
+		if msg.Err != nil {
+			slog.Error("model_picker_refresh_error", "error", msg.Err)
 			return m, nil
 		}
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
-			m.modelPicker.UpdateOptions(msg.cache.Models)
+			m.modelPicker.UpdateOptions(msg.Cache.Models)
 		}
 		if m.settingsPanel != nil {
-			m.settingsPanel.SetModelCache(msg.cache)
+			m.settingsPanel.SetModelCache(msg.Cache)
 		}
-		slog.Info("model_picker_refresh_done", "models", len(msg.cache.Models))
+		slog.Info("model_picker_refresh_done", "models", len(msg.Cache.Models))
 		return m, nil
 
-	case resultPanelCloseMsg:
+	case result.ResultPanelCloseMsg:
 		// Result panel closed
 		return m, nil
 
@@ -455,25 +478,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sidebar.SetContent(m.wtfContent)
 			}
 			m.wtfStream = nil
+			m.streamThrottlePending = false
 			return m, nil
 		}
 		if msg.Delta != "" {
+			// Accumulate content
 			if m.wtfContent == "" {
 				m.wtfContent = msg.Delta
 			} else {
 				m.wtfContent += msg.Delta
 			}
-			if m.sidebar != nil && m.sidebar.IsVisible() {
-				m.sidebar.SetContent(m.wtfContent)
+
+			// Throttle sidebar updates
+			if !m.streamThrottlePending {
+				m.streamThrottlePending = true
+				// Immediately update on first chunk
+				if m.sidebar != nil && m.sidebar.IsVisible() {
+					m.sidebar.SetContent(m.wtfContent)
+				}
+				return m, tea.Batch(
+					tea.Tick(m.streamThrottleDelay, func(time.Time) tea.Msg {
+						return streamThrottleFlushMsg{}
+					}),
+					listenToWtfStream(m.wtfStream),
+				)
 			}
+			// Subsequent chunks: just listen, don't update sidebar yet
+			return m, listenToWtfStream(m.wtfStream)
 		}
 		if msg.Done {
 			slog.Info("wtf_stream_done")
 			m.wtfStream = nil
+			// Final update to sidebar with all content
+			if m.sidebar != nil && m.sidebar.IsVisible() {
+				m.sidebar.SetContent(m.wtfContent)
+			}
+			m.streamThrottlePending = false
 			return m, nil
 		}
 		if m.wtfStream != nil {
 			return m, listenToWtfStream(m.wtfStream)
+		}
+		return m, nil
+
+	case streamThrottleFlushMsg:
+		m.streamThrottlePending = false
+		// Update sidebar with accumulated content
+		if m.sidebar != nil && m.sidebar.IsVisible() {
+			m.sidebar.SetContent(m.wtfContent)
 		}
 		return m, nil
 
@@ -484,60 +536,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, listenToPTY(m.ptyFile)
 		}
 
-		chunks := m.altScreenState.SplitTransitions(msg.data)
-		for i, chunk := range chunks {
-			if m.inputHandler != nil {
-				m.inputHandler.UpdateTerminalModes(chunk.data)
-			}
+		// Append to batch buffer
+		m.ptyBatchBuffer = append(m.ptyBatchBuffer, msg.data...)
 
-			if chunk.entering {
-				if !m.fullScreenMode {
-					m.enterFullScreen(len(chunk.data))
-				}
-				if m.fullScreenPanel != nil && len(chunk.data) > 0 {
-					m.fullScreenPanel.Write(chunk.data)
-				}
-				continue
-			}
-
-			if chunk.exiting {
-				if m.fullScreenMode && hasFutureEnter(chunks[i+1:]) {
-					if m.fullScreenPanel != nil && len(chunk.data) > 0 {
-						m.fullScreenPanel.Write(chunk.data)
-					}
-					continue
-				}
-
-				if m.fullScreenMode && m.fullScreenPanel != nil && len(chunk.data) > 0 {
-					m.fullScreenPanel.Write(chunk.data)
-				}
-				if m.fullScreenMode {
-					m.exitFullScreen()
-				} else if len(chunk.data) > 0 {
-					m.appendPTYOutput(chunk.data)
-					m.viewport.AppendOutput(chunk.data)
-				}
-				continue
-			}
-
-			if len(chunk.data) == 0 {
-				continue
-			}
-
-			if m.fullScreenMode {
-				// Full-screen mode: send to panel, NOT to buffer (buffer isolation)
-				if m.fullScreenPanel != nil {
-					m.fullScreenPanel.Write(chunk.data)
-				}
-			} else {
-				// Normal mode: append to viewport AND buffer
-				m.appendPTYOutput(chunk.data)
-				m.viewport.AppendOutput(chunk.data)
-			}
+		// Force flush if buffer exceeds threshold
+		if len(m.ptyBatchBuffer) >= m.ptyBatchMaxSize {
+			m.flushPTYBatch()
+			return m, listenToPTY(m.ptyFile)
 		}
 
-		// Schedule next read
-		return m, listenToPTY(m.ptyFile)
+		// Start flush timer if not already pending
+		var flushCmd tea.Cmd
+		if !m.ptyBatchTimer {
+			m.ptyBatchTimer = true
+			flushCmd = tea.Tick(m.ptyBatchMaxWait, func(time.Time) tea.Msg {
+				return ptyBatchFlushMsg{}
+			})
+		}
+
+		return m, tea.Batch(flushCmd, listenToPTY(m.ptyFile))
+
+	case ptyBatchFlushMsg:
+		m.ptyBatchTimer = false
+		if len(m.ptyBatchBuffer) > 0 {
+			m.flushPTYBatch()
+		}
+		return m, nil
 
 	case ptyErrorMsg:
 		// PTY error - probably shell exited
@@ -559,111 +583,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the UI (Bubble Tea lifecycle method)
-func (m Model) View() string {
+// View renders the UI (Bubble Tea lifecycle method)
+func (m Model) View() tea.View {
+	var v tea.View
 	if !m.ready {
-		return "Initializing..."
+		v.SetContent("Initializing...")
+		return v
 	}
 
 	// Full-screen mode: render only the fullscreen panel (no status bar)
 	if m.fullScreenMode && m.fullScreenPanel != nil && m.fullScreenPanel.IsVisible() {
-		return m.fullScreenPanel.View()
+		v.AltScreen = true
+		v.SetContent(m.fullScreenPanel.View())
+		return v
 	}
 
-	// Update status bar width and directory
-	m.statusBar.SetWidth(m.width)
-	m.statusBar.SetDirectory(m.currentDir)
-
-	// Base view: viewport + status bar
-	topView := m.viewport.View()
-	if m.sidebar != nil && m.sidebar.IsVisible() {
-		topView = lipgloss.JoinHorizontal(lipgloss.Top, topView, m.sidebar.View())
-	}
-
-	baseView := lipgloss.JoinVertical(lipgloss.Left, topView, m.statusBar.Render())
-
-	overlayView := baseView
-	if m.settingsPanel.IsVisible() {
-		overlayView = m.overlayCenter(overlayView, m.settingsPanel.View())
-	}
-
-	if m.optionPicker != nil && m.optionPicker.IsVisible() {
-		return m.overlayCenter(overlayView, m.optionPicker.View())
-	}
-
-	if m.modelPicker != nil && m.modelPicker.IsVisible() {
-		return m.overlayCenter(overlayView, m.modelPicker.View())
-	}
-
-	// Overlay result panel if visible
-	if m.resultPanel.IsVisible() {
-		return m.overlayCenter(overlayView, m.resultPanel.View())
-	}
-
-	// Overlay command palette if visible
-	if m.palette.IsVisible() {
-		return m.overlayCenter(overlayView, m.palette.View())
-	}
-
-	return overlayView
+	v.SetContent(m.renderCanvas())
+	return v
 }
 
-// overlayCenter places a panel centered vertically over the base view
-func (m Model) overlayCenter(base, panel string) string {
-	baseLines := strings.Split(base, "\n")
-	panelLines := strings.Split(panel, "\n")
-
-	// Calculate vertical position (center)
-	panelHeight := len(panelLines)
-	if panelHeight > m.height {
-		panelLines = panelLines[:m.height]
-		panelHeight = len(panelLines)
-	}
-	startRow := (m.height - panelHeight) / 2
-	if startRow < 0 {
-		startRow = 0
+// Render returns the string representation of the UI and whether altscreen is needed.
+// Only exposed for testing purposes.
+func (m Model) Render() (string, bool) {
+	if !m.ready {
+		return "Initializing...", false
 	}
 
-	panelWidth := 0
-	for _, line := range panelLines {
-		width := ansi.StringWidth(line)
-		if width > panelWidth {
-			panelWidth = width
-		}
-	}
-	if panelWidth > m.width {
-		panelWidth = m.width
-	}
-	startCol := (m.width - panelWidth) / 2
-	if startCol < 0 {
-		startCol = 0
+	// Full-screen mode: render only the fullscreen panel (no status bar)
+	if m.fullScreenMode && m.fullScreenPanel != nil && m.fullScreenPanel.IsVisible() {
+		return m.fullScreenPanel.View(), true
 	}
 
-	// Build result with overlay to preserve background text outside the panel.
-	result := make([]string, m.height)
-	for i := 0; i < m.height; i++ {
-		if i < len(baseLines) {
-			result[i] = baseLines[i]
-		} else {
-			result[i] = ""
-		}
-	}
-
-	// Overlay panel lines while keeping the base view visible outside the panel area.
-	for i, panelLine := range panelLines {
-		row := startRow + i
-		if row >= 0 && row < m.height {
-			result[row] = overlayLine(result[row], panelLine, startCol, panelWidth, m.width)
-		}
-	}
-
-	return strings.Join(result, "\n")
+	canvas := m.renderCanvas()
+	return canvas.Render(), false
 }
 
 // Helper functions
 
-func hasFutureEnter(chunks []altScreenChunk) bool {
+func hasFutureEnter(chunks []terminal.AltScreenChunk) bool {
 	for _, chunk := range chunks {
-		if chunk.entering {
+		if chunk.Entering {
 			return true
 		}
 	}
@@ -701,8 +660,8 @@ func (m *Model) applyLayout() {
 			m.fullScreenPanel.Resize(m.width, m.height)
 		}
 		if m.ptyFile != nil {
-			contentWidth, contentHeight := contentSize(m.width, m.height)
-			ResizePTY(m.ptyFile, contentWidth, contentHeight)
+			contentWidth, contentHeight := fullscreen.ContentSize(m.width, m.height)
+			terminal.ResizePTY(m.ptyFile, contentWidth, contentHeight)
 		}
 		return
 	}
@@ -811,49 +770,90 @@ func refreshModelCacheCmd(apiURL string) tea.Cmd {
 		defer cancel()
 
 		cache, err := ai.RefreshOpenRouterModelCache(ctx, trimmed, ai.DefaultModelCachePath())
-		return modelPickerRefreshMsg{cache: cache, err: err}
+		return picker.ModelPickerRefreshMsg{Cache: cache, Err: err}
 	}
 }
 
-func overlayLine(baseLine, panelLine string, startCol, panelWidth, totalWidth int) string {
-	if totalWidth <= 0 {
-		return ""
-	}
-	if startCol < 0 {
-		startCol = 0
-	}
-	if startCol > totalWidth {
-		startCol = totalWidth
-	}
-	if panelWidth < 0 {
-		panelWidth = 0
-	}
-	if startCol+panelWidth > totalWidth {
-		panelWidth = totalWidth - startCol
+func (m Model) renderCanvas() *lipgloss.Canvas {
+	const (
+		baseLayerZ     = 0
+		settingsLayerZ = 1
+		overlayLayerZ  = 2
+	)
+
+	if m.width <= 0 || m.height <= 0 {
+		return lipgloss.NewCanvas()
 	}
 
-	baseBuf := cellbuf.NewBuffer(totalWidth, 1)
-	cellbuf.SetContent(baseBuf, baseLine)
+	// Update status bar width and directory for this frame.
+	m.statusBar.SetWidth(m.width)
+	m.statusBar.SetDirectory(m.currentDir)
 
-	if panelWidth > 0 && panelLine != "" {
-		panelBuf := cellbuf.NewBuffer(panelWidth, 1)
-		cellbuf.SetContent(panelBuf, panelLine)
-
-		for x := 0; x < panelWidth; x++ {
-			panelCell := panelBuf.Cell(x, 0)
-			if panelCell == nil || panelCell.Width == 0 {
-				continue
-			}
-			baseBuf.SetCell(startCol+x, 0, panelCell)
-		}
+	viewportHeight := render.ViewportHeight(m.height)
+	viewportWidth := m.width
+	sidebarWidth := 0
+	if m.sidebar != nil && m.sidebar.IsVisible() {
+		left, right := splitSidebarWidths(m.width)
+		viewportWidth = left
+		sidebarWidth = right
 	}
 
-	_, line := cellbuf.RenderLine(baseBuf, 0)
-	lineWidth := ansi.StringWidth(line)
-	if lineWidth < totalWidth {
-		line += ansi.ResetStyle + strings.Repeat(" ", totalWidth-lineWidth)
+	layers := make([]*lipgloss.Layer, 0, 5)
+
+	if viewportWidth > 0 && viewportHeight > 0 {
+		viewportLayer := lipgloss.NewLayer(m.viewport.View()).
+			X(0).Y(0).
+			Width(viewportWidth).Height(viewportHeight).
+			Z(baseLayerZ)
+		layers = append(layers, viewportLayer)
 	}
-	return line
+
+	if sidebarWidth > 0 && viewportHeight > 0 && m.sidebar != nil && m.sidebar.IsVisible() {
+		sidebarLayer := lipgloss.NewLayer(m.sidebar.View()).
+			X(viewportWidth).Y(0).
+			Width(sidebarWidth).Height(viewportHeight).
+			Z(baseLayerZ)
+		layers = append(layers, sidebarLayer)
+	}
+
+	statusLayer := lipgloss.NewLayer(m.statusBar.Render()).
+		X(0).Y(viewportHeight).
+		Width(m.width).Height(1).
+		Z(baseLayerZ)
+	layers = append(layers, statusLayer)
+
+	if m.settingsPanel.IsVisible() {
+		layers = addOverlayLayer(layers, m.settingsPanel.View(), m.width, m.height, settingsLayerZ)
+	}
+
+	if m.optionPicker != nil && m.optionPicker.IsVisible() {
+		layers = addOverlayLayer(layers, m.optionPicker.View(), m.width, m.height, overlayLayerZ)
+	} else if m.modelPicker != nil && m.modelPicker.IsVisible() {
+		layers = addOverlayLayer(layers, m.modelPicker.View(), m.width, m.height, overlayLayerZ)
+	} else if m.resultPanel.IsVisible() {
+		layers = addOverlayLayer(layers, m.resultPanel.View(), m.width, m.height, overlayLayerZ)
+	} else if m.palette.IsVisible() {
+		layers = addOverlayLayer(layers, m.palette.View(), m.width, m.height, overlayLayerZ)
+	}
+
+	return lipgloss.NewCanvas(layers...)
+}
+
+func addOverlayLayer(layers []*lipgloss.Layer, view string, screenW, screenH, z int) []*lipgloss.Layer {
+	if view == "" || screenW <= 0 || screenH <= 0 {
+		return layers
+	}
+	panelW := lipgloss.Width(view)
+	panelH := lipgloss.Height(view)
+	x, y, w, h := render.CenterRect(panelW, panelH, screenW, screenH)
+	if w <= 0 || h <= 0 {
+		return layers
+	}
+	layer := lipgloss.NewLayer(view).
+		X(x).Y(y).
+		Width(w).Height(h).
+		Z(z)
+	return append(layers, layer)
 }
 
 // PTY message types
@@ -861,6 +861,10 @@ func overlayLine(baseLine, panelLine string, startCol, panelWidth, totalWidth in
 type ptyOutputMsg struct {
 	data []byte
 }
+
+type ptyBatchFlushMsg struct{}
+
+type streamThrottleFlushMsg struct{}
 
 type ptyErrorMsg struct {
 	err error
@@ -919,7 +923,7 @@ func (m *Model) appendPTYOutput(data []byte) {
 				m.ptyLineBuffer = m.ptyLineBuffer[:0]
 			}
 		case '\t':
-			m.ptyLineBuffer = append(m.ptyLineBuffer, tabSpaces...)
+			m.ptyLineBuffer = append(m.ptyLineBuffer, terminal.TabSpaces...)
 		default:
 			m.ptyLineBuffer = append(m.ptyLineBuffer, b)
 		}

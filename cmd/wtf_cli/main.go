@@ -11,7 +11,7 @@ import (
 	"wtf_cli/pkg/pty"
 	"wtf_cli/pkg/ui"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func main() {
@@ -55,11 +55,9 @@ func main() {
 	model := ui.NewModel(wrapper.GetPTY(), wrapper.GetBuffer(), session, wrapper.GetCwd)
 
 	// Create Bubble Tea program
-	p := tea.NewProgram(
-		model,
-		tea.WithAltScreen(), // Use alternate screen buffer
-		// Note: Not using WithMouseCellMotion() to allow normal text selection
-	)
+	// Note: In v2, AltScreen is set via View.AltScreen in the Model's View() method
+	// Note: Not using mouse motion to allow normal text selection
+	p := tea.NewProgram(model)
 
 	// Run the program
 	if _, err := p.Run(); err != nil {
