@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // StatusBarView handles the status bar rendering with Lipgloss
@@ -58,22 +59,21 @@ func (s *StatusBarView) Render() string {
 		content = fmt.Sprintf("[wtf_cli] %s | [llm]: %s | Press / for commands", s.currentDir, modelLabel)
 	}
 
-	// Truncate if too long (use plain string length for truncation)
+	// Truncate if too long (ANSI-aware width).
 	maxWidth := s.width - 4
 	if maxWidth < 10 {
 		maxWidth = 10
 	}
 
-	if len(content) > maxWidth {
-		content = content[:maxWidth-3] + "..."
+	if ansi.StringWidth(content) > maxWidth {
+		content = ansi.Truncate(content, maxWidth, "...")
 	}
 
 	// Style first, then pad to fill width
 	styled := statusStyle.Render(content)
 
 	// Calculate how much padding we need
-	// Use len(content) not lipgloss.Width(styled) which includes ANSI codes
-	contentWidth := len(content)
+	contentWidth := ansi.StringWidth(content)
 	if contentWidth < s.width {
 		padding := s.width - contentWidth
 		styled += strings.Repeat(" ", padding)

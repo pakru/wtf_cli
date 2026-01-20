@@ -6,6 +6,8 @@ import (
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/ui/components/testutils"
+
+	"charm.land/lipgloss/v2"
 )
 
 func TestModelPicker_ShowSelectCurrent(t *testing.T) {
@@ -121,5 +123,24 @@ func TestModelPicker_EscCloses(t *testing.T) {
 	}
 	if picker.visible {
 		t.Fatal("Expected picker to be hidden after Esc")
+	}
+}
+
+func TestModelPicker_ClampsToSmallWidth(t *testing.T) {
+	picker := NewModelPickerPanel()
+	picker.SetSize(30, 10)
+
+	options := []ai.ModelInfo{
+		{ID: "model-a", Name: "Alpha"},
+		{ID: "model-b", Name: "Beta"},
+	}
+	picker.Show(options, "model-a")
+
+	view := picker.View()
+	if view == "" {
+		t.Fatal("expected non-empty view")
+	}
+	if got := lipgloss.Width(view); got > 30 {
+		t.Fatalf("expected width <= 30, got %d", got)
 	}
 }

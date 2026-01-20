@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 )
 
@@ -68,18 +69,18 @@ func (sb *StatusBar) Render() string {
 		content = fmt.Sprintf("[wtf_cli] %s | [llm]: %s | Press / for commands", sb.currentDir, modelLabel)
 	}
 
-	// Truncate if too long
+	// Truncate if too long (ANSI-aware width).
 	maxWidth := sb.termWidth - 2
 	if maxWidth < 10 {
 		maxWidth = 10 // Minimum width
 	}
 
-	if len(content) > maxWidth {
-		content = content[:maxWidth-3] + "..."
+	if ansi.StringWidth(content) > maxWidth {
+		content = ansi.Truncate(content, maxWidth, "...")
 	}
 
 	// Pad to full width
-	padding := strings.Repeat(" ", sb.termWidth-len(content))
+	padding := strings.Repeat(" ", sb.termWidth-ansi.StringWidth(content))
 
 	// Build ANSI escape sequence for bottom bar
 	// Save cursor, move to bottom, print with inverse colors, restore cursor

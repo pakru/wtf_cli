@@ -3,7 +3,6 @@ package viewport
 import (
 	"strings"
 
-	"wtf_cli/pkg/ui/components/utils"
 	"wtf_cli/pkg/ui/terminal"
 
 	"charm.land/bubbles/v2/viewport"
@@ -75,16 +74,7 @@ func (v *PTYViewport) View() string {
 		return "Loading..."
 	}
 
-	view := v.Viewport.View()
-	if v.Viewport.Width() <= 0 {
-		return view
-	}
-
-	lines := strings.Split(view, "\n")
-	for i := range lines {
-		lines[i] = utils.PadStyled(lines[i], v.Viewport.Width())
-	}
-	return strings.Join(lines, "\n")
+	return v.Viewport.View()
 }
 
 // Scrolling helpers

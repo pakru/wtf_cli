@@ -23,12 +23,11 @@ import (
 	"wtf_cli/pkg/ui/components/viewport"
 	"wtf_cli/pkg/ui/components/welcome"
 	"wtf_cli/pkg/ui/input"
+	"wtf_cli/pkg/ui/render"
 	"wtf_cli/pkg/ui/terminal"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/cellbuf"
 )
 
 // Model represents the Bubble Tea application state
@@ -573,9 +572,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the UI (Bubble Tea lifecycle method)
 func (m Model) View() tea.View {
 	var v tea.View
-	content, altScreen := m.Render()
-	v.SetContent(content)
-	v.AltScreen = altScreen
+	if !m.ready {
+		v.SetContent("Initializing...")
+		return v
+	}
+
+	// Full-screen mode: render only the fullscreen panel (no status bar)
+	if m.fullScreenMode && m.fullScreenPanel != nil && m.fullScreenPanel.IsVisible() {
+		v.AltScreen = true
+		v.SetContent(m.fullScreenPanel.View())
+		return v
+	}
+
+	v.SetContent(m.renderCanvas())
 	return v
 }
 
@@ -591,94 +600,8 @@ func (m Model) Render() (string, bool) {
 		return m.fullScreenPanel.View(), true
 	}
 
-	// Update status bar width and directory
-	m.statusBar.SetWidth(m.width)
-	m.statusBar.SetDirectory(m.currentDir)
-
-	// Base view: viewport + status bar
-	topView := m.viewport.View()
-	if m.sidebar != nil && m.sidebar.IsVisible() {
-		topView = lipgloss.JoinHorizontal(lipgloss.Top, topView, m.sidebar.View())
-	}
-
-	baseView := lipgloss.JoinVertical(lipgloss.Left, topView, m.statusBar.Render())
-
-	overlayView := baseView
-	if m.settingsPanel.IsVisible() {
-		overlayView = m.overlayCenter(overlayView, m.settingsPanel.View())
-	}
-
-	if m.optionPicker != nil && m.optionPicker.IsVisible() {
-		return m.overlayCenter(overlayView, m.optionPicker.View()), false
-	}
-
-	if m.modelPicker != nil && m.modelPicker.IsVisible() {
-		return m.overlayCenter(overlayView, m.modelPicker.View()), false
-	}
-
-	// Overlay result panel if visible
-	if m.resultPanel.IsVisible() {
-		return m.overlayCenter(overlayView, m.resultPanel.View()), false
-	}
-
-	// Overlay command palette if visible
-	if m.palette.IsVisible() {
-		return m.overlayCenter(overlayView, m.palette.View()), false
-	}
-
-	return overlayView, false
-}
-
-// overlayCenter places a panel centered vertically over the base view
-func (m Model) overlayCenter(base, panel string) string {
-	baseLines := strings.Split(base, "\n")
-	panelLines := strings.Split(panel, "\n")
-
-	// Calculate vertical position (center)
-	panelHeight := len(panelLines)
-	if panelHeight > m.height {
-		panelLines = panelLines[:m.height]
-		panelHeight = len(panelLines)
-	}
-	startRow := (m.height - panelHeight) / 2
-	if startRow < 0 {
-		startRow = 0
-	}
-
-	panelWidth := 0
-	for _, line := range panelLines {
-		width := ansi.StringWidth(line)
-		if width > panelWidth {
-			panelWidth = width
-		}
-	}
-	if panelWidth > m.width {
-		panelWidth = m.width
-	}
-	startCol := (m.width - panelWidth) / 2
-	if startCol < 0 {
-		startCol = 0
-	}
-
-	// Build result with overlay to preserve background text outside the panel.
-	result := make([]string, m.height)
-	for i := 0; i < m.height; i++ {
-		if i < len(baseLines) {
-			result[i] = baseLines[i]
-		} else {
-			result[i] = ""
-		}
-	}
-
-	// Overlay panel lines while keeping the base view visible outside the panel area.
-	for i, panelLine := range panelLines {
-		row := startRow + i
-		if row >= 0 && row < m.height {
-			result[row] = overlayLine(result[row], panelLine, startCol, panelWidth, m.width)
-		}
-	}
-
-	return strings.Join(result, "\n")
+	canvas := m.renderCanvas()
+	return canvas.Render(), false
 }
 
 // Helper functions
@@ -837,45 +760,86 @@ func refreshModelCacheCmd(apiURL string) tea.Cmd {
 	}
 }
 
-func overlayLine(baseLine, panelLine string, startCol, panelWidth, totalWidth int) string {
-	if totalWidth <= 0 {
-		return ""
-	}
-	if startCol < 0 {
-		startCol = 0
-	}
-	if startCol > totalWidth {
-		startCol = totalWidth
-	}
-	if panelWidth < 0 {
-		panelWidth = 0
-	}
-	if startCol+panelWidth > totalWidth {
-		panelWidth = totalWidth - startCol
+func (m Model) renderCanvas() *lipgloss.Canvas {
+	const (
+		baseLayerZ     = 0
+		settingsLayerZ = 1
+		overlayLayerZ  = 2
+	)
+
+	if m.width <= 0 || m.height <= 0 {
+		return lipgloss.NewCanvas()
 	}
 
-	baseBuf := cellbuf.NewBuffer(totalWidth, 1)
-	cellbuf.SetContent(baseBuf, baseLine)
+	// Update status bar width and directory for this frame.
+	m.statusBar.SetWidth(m.width)
+	m.statusBar.SetDirectory(m.currentDir)
 
-	if panelWidth > 0 && panelLine != "" {
-		panelBuf := cellbuf.NewBuffer(panelWidth, 1)
-		cellbuf.SetContent(panelBuf, panelLine)
-
-		for x := 0; x < panelWidth; x++ {
-			panelCell := panelBuf.Cell(x, 0)
-			if panelCell == nil || panelCell.Width == 0 {
-				continue
-			}
-			baseBuf.SetCell(startCol+x, 0, panelCell)
-		}
+	viewportHeight := render.ViewportHeight(m.height)
+	viewportWidth := m.width
+	sidebarWidth := 0
+	if m.sidebar != nil && m.sidebar.IsVisible() {
+		left, right := splitSidebarWidths(m.width)
+		viewportWidth = left
+		sidebarWidth = right
 	}
 
-	_, line := cellbuf.RenderLine(baseBuf, 0)
-	lineWidth := ansi.StringWidth(line)
-	if lineWidth < totalWidth {
-		line += ansi.ResetStyle + strings.Repeat(" ", totalWidth-lineWidth)
+	layers := make([]*lipgloss.Layer, 0, 5)
+
+	if viewportWidth > 0 && viewportHeight > 0 {
+		viewportLayer := lipgloss.NewLayer(m.viewport.View()).
+			X(0).Y(0).
+			Width(viewportWidth).Height(viewportHeight).
+			Z(baseLayerZ)
+		layers = append(layers, viewportLayer)
 	}
-	return line
+
+	if sidebarWidth > 0 && viewportHeight > 0 && m.sidebar != nil && m.sidebar.IsVisible() {
+		sidebarLayer := lipgloss.NewLayer(m.sidebar.View()).
+			X(viewportWidth).Y(0).
+			Width(sidebarWidth).Height(viewportHeight).
+			Z(baseLayerZ)
+		layers = append(layers, sidebarLayer)
+	}
+
+	statusLayer := lipgloss.NewLayer(m.statusBar.Render()).
+		X(0).Y(viewportHeight).
+		Width(m.width).Height(1).
+		Z(baseLayerZ)
+	layers = append(layers, statusLayer)
+
+	if m.settingsPanel.IsVisible() {
+		layers = addOverlayLayer(layers, m.settingsPanel.View(), m.width, m.height, settingsLayerZ)
+	}
+
+	if m.optionPicker != nil && m.optionPicker.IsVisible() {
+		layers = addOverlayLayer(layers, m.optionPicker.View(), m.width, m.height, overlayLayerZ)
+	} else if m.modelPicker != nil && m.modelPicker.IsVisible() {
+		layers = addOverlayLayer(layers, m.modelPicker.View(), m.width, m.height, overlayLayerZ)
+	} else if m.resultPanel.IsVisible() {
+		layers = addOverlayLayer(layers, m.resultPanel.View(), m.width, m.height, overlayLayerZ)
+	} else if m.palette.IsVisible() {
+		layers = addOverlayLayer(layers, m.palette.View(), m.width, m.height, overlayLayerZ)
+	}
+
+	return lipgloss.NewCanvas(layers...)
+}
+
+func addOverlayLayer(layers []*lipgloss.Layer, view string, screenW, screenH, z int) []*lipgloss.Layer {
+	if view == "" || screenW <= 0 || screenH <= 0 {
+		return layers
+	}
+	panelW := lipgloss.Width(view)
+	panelH := lipgloss.Height(view)
+	x, y, w, h := render.CenterRect(panelW, panelH, screenW, screenH)
+	if w <= 0 || h <= 0 {
+		return layers
+	}
+	layer := lipgloss.NewLayer(view).
+		X(x).Y(y).
+		Width(w).Height(h).
+		Z(z)
+	return append(layers, layer)
 }
 
 // PTY message types

@@ -11,6 +11,8 @@ import (
 	"wtf_cli/pkg/config"
 	"wtf_cli/pkg/ui/components/picker"
 	"wtf_cli/pkg/ui/components/testutils"
+
+	"charm.land/lipgloss/v2"
 )
 
 func TestNewSettingsPanel(t *testing.T) {
@@ -61,6 +63,23 @@ func TestSettingsPanel_Hide(t *testing.T) {
 
 	if sp.visible {
 		t.Error("Panel should not be visible after Hide()")
+	}
+}
+
+func TestSettingsPanel_ClampsToSmallWidth(t *testing.T) {
+	withTempHome(t, nil)
+
+	sp := NewSettingsPanel()
+	cfg := config.Default()
+	sp.Show(cfg, "/tmp/test_config.json")
+	sp.SetSize(30, 8)
+
+	view := sp.View()
+	if view == "" {
+		t.Fatal("expected non-empty view")
+	}
+	if got := lipgloss.Width(view); got > 30 {
+		t.Fatalf("expected width <= 30, got %d", got)
 	}
 }
 

@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"wtf_cli/pkg/ui/components/testutils"
+
+	"charm.land/lipgloss/v2"
 )
 
 func TestOptionPicker_ShowSelectCurrent(t *testing.T) {
@@ -68,5 +70,21 @@ func TestOptionPicker_EscCloses(t *testing.T) {
 	}
 	if picker.visible {
 		t.Fatal("Expected picker to be hidden after Esc")
+	}
+}
+
+func TestOptionPicker_ClampsToSmallWidth(t *testing.T) {
+	picker := NewOptionPickerPanel()
+	picker.SetSize(28, 8)
+
+	options := []string{"debug", "info", "warn"}
+	picker.Show("Log Level", "log_level", options, "debug")
+
+	view := picker.View()
+	if view == "" {
+		t.Fatal("expected non-empty view")
+	}
+	if got := lipgloss.Width(view); got > 28 {
+		t.Fatalf("expected width <= 28, got %d", got)
 	}
 }

@@ -346,22 +346,31 @@ func (p *ModelPickerPanel) dimensions() (int, int, int) {
 		height = 24
 	}
 
-	boxWidth := width - 2
+	available := width - 2
+	if available < 1 {
+		available = 1
+	}
+
+	boxWidth := available
 	if boxWidth > 90 {
 		boxWidth = 90
 	}
-	if boxWidth < 60 {
-		boxWidth = 60
+	minWidth := 60
+	if minWidth > available {
+		minWidth = available
+	}
+	if boxWidth < minWidth {
+		boxWidth = minWidth
 	}
 
 	contentWidth := boxWidth - 4
-	if contentWidth < 10 {
-		contentWidth = 10
+	if contentWidth < 1 {
+		contentWidth = 1
 	}
 
 	maxContentHeight := height - 4
-	if maxContentHeight < 6 {
-		maxContentHeight = 6
+	if maxContentHeight < 1 {
+		maxContentHeight = 1
 	}
 
 	const fixedLines = 5

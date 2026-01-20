@@ -148,13 +148,26 @@ func (p *CommandPalette) View() string {
 		return ""
 	}
 
-	// Use a capped width for readability
-	boxWidth := p.width - 2 // Leave room for border
+	// Use a capped width for readability, clamped to screen width.
+	width := p.width
+	if width <= 0 {
+		width = 80
+	}
+	available := width - 2 // Leave room for border
+	if available < 1 {
+		available = 1
+	}
+
+	boxWidth := available
 	if boxWidth > 80 {
 		boxWidth = 80
 	}
-	if boxWidth < 40 {
-		boxWidth = 40
+	minWidth := 40
+	if minWidth > available {
+		minWidth = available
+	}
+	if boxWidth < minWidth {
+		boxWidth = minWidth
 	}
 
 	// Styles - full width bar

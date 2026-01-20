@@ -390,12 +390,25 @@ func (sp *SettingsPanel) View() string {
 		return ""
 	}
 
-	boxWidth := sp.width - 2
+	width := sp.width
+	if width <= 0 {
+		width = 80
+	}
+	available := width - 2
+	if available < 1 {
+		available = 1
+	}
+
+	boxWidth := available
 	if boxWidth > 90 {
 		boxWidth = 90
 	}
-	if boxWidth < 60 {
-		boxWidth = 60
+	minWidth := 60
+	if minWidth > available {
+		minWidth = available
+	}
+	if boxWidth < minWidth {
+		boxWidth = minWidth
 	}
 
 	// Styles
