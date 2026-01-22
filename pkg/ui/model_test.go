@@ -1,12 +1,20 @@
 package ui
 
 import (
+	"bytes"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
+	"wtf_cli/pkg/ui/components/historypicker"
+	"wtf_cli/pkg/ui/components/palette"
+	"wtf_cli/pkg/ui/components/testutils"
+	"wtf_cli/pkg/ui/input"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -237,6 +245,102 @@ func TestModel_Update_PTYOutput_SuppressedAfterResize(t *testing.T) {
 	// But cmd should schedule next read
 	if cmd == nil {
 		t.Error("Expected cmd to schedule next PTY read")
+	}
+}
+
+func TestModel_HistoryPickerFlow_FromCommand(t *testing.T) {
+	tmpDir := t.TempDir()
+	histFile := filepath.Join(tmpDir, ".bash_history")
+	historyContent := "echo one\necho two\n"
+	if err := os.WriteFile(histFile, []byte(historyContent), 0o600); err != nil {
+		t.Fatalf("Failed to create history file: %v", err)
+	}
+
+	originalHistFile := os.Getenv("HISTFILE")
+	if err := os.Setenv("HISTFILE", histFile); err != nil {
+		t.Fatalf("Failed to set HISTFILE: %v", err)
+	}
+	defer os.Setenv("HISTFILE", originalHistFile)
+
+	ptyFile, err := os.CreateTemp(tmpDir, "pty")
+	if err != nil {
+		t.Fatalf("Failed to create temp PTY file: %v", err)
+	}
+	defer ptyFile.Close()
+
+	m := NewModel(ptyFile, buffer.New(100), capture.NewSessionContext(), nil)
+	m.inputHandler.SetLineBuffer("git status")
+
+	newModel, cmd := m.Update(palette.PaletteSelectMsg{Command: "/history"})
+	if cmd == nil {
+		t.Fatal("Expected command to show history picker")
+	}
+	m = newModel.(Model)
+
+	msg := cmd()
+	showMsg, ok := msg.(input.ShowHistoryPickerMsg)
+	if !ok {
+		t.Fatalf("Expected ShowHistoryPickerMsg, got %T", msg)
+	}
+	if showMsg.InitialFilter != "" {
+		t.Errorf("Expected empty initial filter, got %q", showMsg.InitialFilter)
+	}
+
+	newModel, _ = m.Update(showMsg)
+	m = newModel.(Model)
+
+	if m.historyPicker == nil || !m.historyPicker.IsVisible() {
+		t.Fatal("Expected history picker to be visible")
+	}
+	if !m.inputHandler.IsHistoryPickerMode() {
+		t.Error("Expected history picker mode to be active")
+	}
+
+	newModel, selectCmd := m.Update(testutils.TestKeyEnter)
+	if selectCmd == nil {
+		t.Fatal("Expected selection command after Enter")
+	}
+	m = newModel.(Model)
+
+	selectMsg := selectCmd()
+	selected, ok := selectMsg.(historypicker.HistoryPickerSelectMsg)
+	if !ok {
+		t.Fatalf("Expected HistoryPickerSelectMsg, got %T", selectMsg)
+	}
+	if selected.Command != "echo two" {
+		t.Errorf("Expected selected command %q, got %q", "echo two", selected.Command)
+	}
+
+	newModel, _ = m.Update(selected)
+	m = newModel.(Model)
+
+	if m.inputHandler.IsHistoryPickerMode() {
+		t.Error("Expected history picker mode to be disabled after selection")
+	}
+
+	handled, cmd := m.inputHandler.HandleKey(testutils.NewCtrlKeyPressMsg('r'))
+	if !handled || cmd == nil {
+		t.Fatal("Expected Ctrl+R to return ShowHistoryPickerMsg")
+	}
+	msg = cmd()
+	showMsg, ok = msg.(input.ShowHistoryPickerMsg)
+	if !ok {
+		t.Fatalf("Expected ShowHistoryPickerMsg, got %T", msg)
+	}
+	if showMsg.InitialFilter != "echo two" {
+		t.Errorf("Expected initial filter %q, got %q", "echo two", showMsg.InitialFilter)
+	}
+
+	if _, err := ptyFile.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("Failed to seek PTY file: %v", err)
+	}
+	data, err := io.ReadAll(ptyFile)
+	if err != nil {
+		t.Fatalf("Failed to read PTY output: %v", err)
+	}
+	expected := append([]byte{21}, []byte("echo two")...)
+	if !bytes.Equal(data, expected) {
+		t.Errorf("Expected PTY output %q, got %q", expected, data)
 	}
 }
 

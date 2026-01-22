@@ -57,6 +57,9 @@ cd ~/projects
 
 # Press / at an empty prompt to open command palette
 # Select a command with arrow keys and Enter
+
+# Press Ctrl+R to search command history
+# Type to filter, use Up/Down/Tab to select
 ```
 
 ## ✨ Features
@@ -70,6 +73,7 @@ cd ~/projects
 - **Modern TUI**: Built with Charm's Bubble Tea and Lipgloss
 - **Status Bar**: Shows current directory and helpful hints
 - **Command Palette**: Press `/` to access AI commands
+- **History Search**: Press `Ctrl+R` to search command history
 - **Welcome Banner**: Helpful shortcut reference on startup
 
 ### Commands (Available)
@@ -87,6 +91,7 @@ cd ~/projects
 | `Ctrl+D` | Exit terminal |
 | `Ctrl+C` | Cancel current command |
 | `Ctrl+Z` | Suspend process |
+| `Ctrl+R` | Search command history |
 | `/` | Open command palette (at empty prompt) |
 | `Esc` | Close palette/panel |
 

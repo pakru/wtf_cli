@@ -14,6 +14,7 @@ import (
 	"wtf_cli/pkg/commands"
 	"wtf_cli/pkg/config"
 	"wtf_cli/pkg/ui/components/fullscreen"
+	"wtf_cli/pkg/ui/components/historypicker"
 	"wtf_cli/pkg/ui/components/palette"
 	"wtf_cli/pkg/ui/components/picker"
 	"wtf_cli/pkg/ui/components/result"
@@ -37,12 +38,13 @@ type Model struct {
 	cwdFunc func() (string, error) // Function to get shell's cwd
 
 	// UI Components
-	viewport      viewport.PTYViewport     // Viewport for PTY output
-	statusBar     *statusbar.StatusBarView // Status bar at bottom
-	inputHandler  *input.InputHandler      // Input routing to PTY
-	palette       *palette.CommandPalette  // Command palette overlay
-	resultPanel   *result.ResultPanel      // Result panel overlay
-	settingsPanel *settings.SettingsPanel  // Settings panel overlay
+	viewport      viewport.PTYViewport              // Viewport for PTY output
+	statusBar     *statusbar.StatusBarView          // Status bar at bottom
+	inputHandler  *input.InputHandler               // Input routing to PTY
+	palette       *palette.CommandPalette           // Command palette overlay
+	historyPicker *historypicker.HistoryPickerPanel // History search picker
+	resultPanel   *result.ResultPanel               // Result panel overlay
+	settingsPanel *settings.SettingsPanel           // Settings panel overlay
 	modelPicker   *picker.ModelPickerPanel
 	optionPicker  *picker.OptionPickerPanel
 	sidebar       *sidebar.Sidebar // Sidebar for AI suggestions
@@ -115,6 +117,7 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		statusBar:           statusBar,
 		inputHandler:        input.NewInputHandler(ptyFile),
 		palette:             palette.NewCommandPalette(),
+		historyPicker:       historypicker.NewHistoryPickerPanel(),
 		resultPanel:         result.NewResultPanel(),
 		settingsPanel:       settings.NewSettingsPanel(),
 		modelPicker:         picker.NewModelPickerPanel(),
@@ -186,6 +189,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.optionPicker != nil {
 			m.optionPicker.SetSize(m.width, m.height)
+		}
+		if m.historyPicker != nil {
+			m.historyPicker.SetSize(m.width, m.height)
 		}
 		if m.fullScreenMode && m.fullScreenPanel != nil {
 			m.fullScreenPanel.Resize(m.width, m.height)
@@ -268,6 +274,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// If history picker is visible, handle its keys first
+		if m.historyPicker != nil && m.historyPicker.IsVisible() {
+			cmd := m.historyPicker.Update(msg)
+			return m, cmd
+		}
+
 		if m.sidebar != nil && m.sidebar.IsVisible() && m.sidebar.ShouldHandleKey(msg) {
 			wasVisible := m.sidebar.IsVisible()
 			cmd := m.sidebar.Update(msg)
@@ -308,14 +320,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		result := handler.Execute(ctx)
 
-		// Special case: /settings opens settings panel
-		if result.Title == "__OPEN_SETTINGS__" {
+		switch result.Action {
+		case commands.ResultActionOpenSettings:
 			slog.Info("settings_open")
 			cfg, _ := config.Load(config.GetConfigPath())
 			m.settingsPanel.SetSize(m.width, m.height)
 			m.settingsPanel.Show(cfg, config.GetConfigPath())
 			m.statusBar.SetModel(cfg.OpenRouter.Model)
 			return m, nil
+		case commands.ResultActionOpenHistoryPicker:
+			slog.Info("history_picker_from_command")
+			// Emit ShowHistoryPickerMsg with empty initial filter
+			return m, func() tea.Msg {
+				return input.ShowHistoryPickerMsg{InitialFilter: ""}
+			}
 		}
 
 		if streamHandler, ok := handler.(commands.StreamingHandler); ok {
@@ -356,6 +374,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Palette cancelled
 		slog.Info("palette_cancel")
 		m.inputHandler.SetPaletteMode(false)
+		return m, nil
+
+	case input.ShowHistoryPickerMsg:
+		// Show the history picker
+		slog.Info("history_picker_open", "initial_filter", msg.InitialFilter)
+		// Load bash history + session history
+		bashHistory, err := capture.ReadBashHistory(500)
+		if err != nil {
+			slog.Error("history_picker_load_error", "error", err)
+			bashHistory = []string{}
+		}
+		sessionHistory := []capture.CommandRecord{}
+		if m.session != nil {
+			sessionHistory = m.session.GetHistory()
+		}
+		commands := capture.MergeHistory(bashHistory, sessionHistory)
+
+		if m.historyPicker != nil {
+			m.historyPicker.SetSize(m.width, m.height)
+			m.historyPicker.Show(msg.InitialFilter, commands)
+		}
+		m.inputHandler.SetHistoryPickerMode(true)
+		return m, nil
+
+	case historypicker.HistoryPickerSelectMsg:
+		// Command selected from history picker
+		slog.Info("history_picker_select", "command", msg.Command)
+		m.inputHandler.SetHistoryPickerMode(false)
+		// Replace current prompt content with the selected command (bash-like behavior).
+		if m.inputHandler != nil {
+			m.inputHandler.SendToPTY([]byte{21}) // Ctrl+U clears the line
+			m.inputHandler.SendToPTY([]byte(msg.Command))
+			m.inputHandler.SetLineBuffer(msg.Command)
+		}
+		return m, nil
+
+	case historypicker.HistoryPickerCancelMsg:
+		// History picker cancelled
+		slog.Info("history_picker_cancel")
+		m.inputHandler.SetHistoryPickerMode(false)
 		return m, nil
 
 	case settings.SettingsCloseMsg:
@@ -834,6 +892,8 @@ func (m Model) renderCanvas() *lipgloss.Canvas {
 		layers = addOverlayLayer(layers, m.resultPanel.View(), m.width, m.height, overlayLayerZ)
 	} else if m.palette.IsVisible() {
 		layers = addOverlayLayer(layers, m.palette.View(), m.width, m.height, overlayLayerZ)
+	} else if m.historyPicker != nil && m.historyPicker.IsVisible() {
+		layers = addOverlayLayer(layers, m.historyPicker.View(), m.width, m.height, overlayLayerZ)
 	}
 
 	return lipgloss.NewCanvas(layers...)

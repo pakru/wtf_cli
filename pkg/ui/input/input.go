@@ -8,10 +8,12 @@ import (
 
 // InputHandler manages keyboard input routing
 type InputHandler struct {
-	ptyWriter      io.Writer
-	atLineStart    bool // Track if cursor is at start of line (for / detection)
-	paletteMode    bool // True when command palette is active
-	fullScreenMode bool // True when full-screen app (vim, nano) is active
+	ptyWriter         io.Writer
+	atLineStart       bool   // Track if cursor is at start of line (for / detection)
+	lineBuffer        string // Track current line text for Ctrl+R initial filter
+	paletteMode       bool   // True when command palette is active
+	historyPickerMode bool   // True when history picker is active
+	fullScreenMode    bool   // True when full-screen app (vim, nano) is active
 
 	cursorKeysAppMode bool
 	keypadAppMode     bool
@@ -37,8 +39,29 @@ func (ih *InputHandler) IsPaletteMode() bool {
 	return ih.paletteMode
 }
 
+// SetHistoryPickerMode sets whether the history picker is active
+func (ih *InputHandler) SetHistoryPickerMode(active bool) {
+	ih.historyPickerMode = active
+}
+
+// IsHistoryPickerMode returns whether the history picker is active
+func (ih *InputHandler) IsHistoryPickerMode() bool {
+	return ih.historyPickerMode
+}
+
+// SetLineBuffer sets the current line buffer and updates line start tracking.
+func (ih *InputHandler) SetLineBuffer(text string) {
+	ih.lineBuffer = text
+	ih.atLineStart = len(text) == 0
+}
+
 // ShowPaletteMsg is sent when / is pressed at line start
 type ShowPaletteMsg struct{}
+
+// ShowHistoryPickerMsg is sent when Ctrl+R is pressed
+type ShowHistoryPickerMsg struct {
+	InitialFilter string // Pre-typed text to use as initial filter (empty for now)
+}
 
 type CtrlDPressedMsg struct{}
 
@@ -56,6 +79,12 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 		return false, nil
 	}
 
+	// If history picker mode is active, don't process keys here
+	// (they should be handled by the picker)
+	if ih.historyPickerMode {
+		return false, nil
+	}
+
 	keyStr := msg.String()
 
 	// Check for special keys first using string matching (v2 API)
@@ -64,11 +93,19 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 		// Ctrl+C - send interrupt to PTY
 		ih.ptyWriter.Write([]byte{3}) // ASCII ETX (Ctrl+C)
 		ih.atLineStart = true         // After interrupt, usually at new prompt
+		ih.lineBuffer = ""            // Clear line buffer on interrupt
 		return true, nil
 
 	case "ctrl+d":
 		return true, func() tea.Msg {
 			return CtrlDPressedMsg{}
+		}
+
+	case "ctrl+r":
+		// Ctrl+R - trigger history picker with current line as initial filter
+		initFilter := ih.lineBuffer
+		return true, func() tea.Msg {
+			return ShowHistoryPickerMsg{InitialFilter: initFilter}
 		}
 
 	case "ctrl+z":
@@ -86,18 +123,23 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 		// Enter - send newline to PTY
 		ih.ptyWriter.Write([]byte{13}) // CR (some shells need this)
 		ih.atLineStart = true          // After enter, we're at new line start
+		ih.lineBuffer = ""             // Clear line buffer on enter
 		return true, nil
 
 	case "backspace":
 		// Backspace - send to PTY
 		ih.ptyWriter.Write([]byte{127}) // ASCII DEL
-		// We can't perfectly track if we're at line start after backspace
-		// but it's conservative to keep atLineStart false
+		// Remove last character from line buffer
+		if len(ih.lineBuffer) > 0 {
+			ih.lineBuffer = ih.lineBuffer[:len(ih.lineBuffer)-1]
+			ih.atLineStart = len(ih.lineBuffer) == 0
+		}
 		return true, nil
 
 	case " ":
 		// Space - send to PTY
 		ih.ptyWriter.Write([]byte{32}) // ASCII SPACE
+		ih.lineBuffer += " "
 		ih.atLineStart = false
 		return true, nil
 
@@ -144,6 +186,7 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 	// Normal "/" in the middle of typing - send to PTY
 	if keyStr == "/" {
 		ih.ptyWriter.Write([]byte("/"))
+		ih.lineBuffer += "/"
 		ih.atLineStart = false
 		return true, nil
 	}
@@ -152,6 +195,7 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 	key := msg.Key()
 	if key.Text != "" {
 		ih.ptyWriter.Write([]byte(key.Text))
+		ih.lineBuffer += key.Text
 		ih.atLineStart = false
 		return true, nil
 	}

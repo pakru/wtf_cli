@@ -59,6 +59,7 @@ func WelcomeMessage() string {
 		{"Ctrl+D", "Exit terminal (press twice)"},
 		{"Ctrl+C", "Cancel current command"},
 		{"Ctrl+Z", "Suspend process"},
+		{"Ctrl+R", "Search command history"},
 		{"/", "Open command palette"},
 	}
 	for _, s := range shortcuts {

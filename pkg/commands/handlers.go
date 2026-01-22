@@ -283,30 +283,9 @@ func (h *HistoryHandler) Name() string        { return "/history" }
 func (h *HistoryHandler) Description() string { return "Show command history" }
 
 func (h *HistoryHandler) Execute(ctx *Context) *Result {
-	if ctx.Session == nil {
-		return &Result{
-			Title:   "History",
-			Content: "No session history available.",
-		}
-	}
-
-	history := ctx.Session.GetHistory()
-	if len(history) == 0 {
-		return &Result{
-			Title:   "History",
-			Content: "No commands in history yet.",
-		}
-	}
-
-	var sb strings.Builder
-	sb.WriteString("📜 Command History\n\n")
-	for i, entry := range history {
-		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, entry.Command))
-	}
-
 	return &Result{
-		Title:   "History",
-		Content: sb.String(),
+		Title:  "History",
+		Action: ResultActionOpenHistoryPicker,
 	}
 }
 
@@ -317,10 +296,9 @@ func (h *SettingsHandler) Name() string        { return "/settings" }
 func (h *SettingsHandler) Description() string { return "Open settings panel" }
 
 func (h *SettingsHandler) Execute(ctx *Context) *Result {
-	// Special marker to tell UI to open settings panel
 	return &Result{
-		Title:   "__OPEN_SETTINGS__",
-		Content: "",
+		Title:  "Settings",
+		Action: ResultActionOpenSettings,
 	}
 }
 
@@ -346,6 +324,7 @@ Shortcuts:
   Ctrl+D    - Exit terminal (press twice)
   Ctrl+C    - Cancel current command
   Ctrl+Z    - Suspend process
+  Ctrl+R    - Search command history
   /         - Open command palette (at empty prompt)
   Esc       - Close command palette or result
 

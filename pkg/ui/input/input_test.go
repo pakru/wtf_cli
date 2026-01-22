@@ -305,6 +305,90 @@ func TestInputHandler_FullScreenMode_BypassesCtrlD(t *testing.T) {
 	}
 }
 
+func TestInputHandler_CtrlR_ShowsHistoryPicker(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	// Type some text first
+	ih.HandleKey(testutils.NewTextKeyPressMsg("g"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("i"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("t"))
+	buf.Reset() // Clear the typed chars
+
+	// Ctrl+R should trigger history picker
+	msg := testutils.NewCtrlKeyPressMsg('r')
+	handled, cmd := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected Ctrl+R to be handled")
+	}
+
+	// Should NOT send to PTY (triggers history picker instead)
+	if buf.Len() != 0 {
+		t.Errorf("Expected empty buffer (history picker triggered), got %q", buf.String())
+	}
+
+	// Should return ShowHistoryPickerMsg
+	if cmd == nil {
+		t.Fatal("Expected command to show history picker")
+	}
+
+	result := cmd()
+	histMsg, ok := result.(ShowHistoryPickerMsg)
+	if !ok {
+		t.Fatalf("Expected ShowHistoryPickerMsg, got %T", result)
+	}
+
+	// Initial filter should contain the pre-typed text
+	if histMsg.InitialFilter != "git" {
+		t.Errorf("Expected initial filter 'git', got '%s'", histMsg.InitialFilter)
+	}
+}
+
+func TestInputHandler_SetHistoryPickerMode(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	if ih.IsHistoryPickerMode() {
+		t.Error("Should not be in history picker mode initially")
+	}
+
+	ih.SetHistoryPickerMode(true)
+	if !ih.IsHistoryPickerMode() {
+		t.Error("Should be in history picker mode after SetHistoryPickerMode(true)")
+	}
+
+	ih.SetHistoryPickerMode(false)
+	if ih.IsHistoryPickerMode() {
+		t.Error("Should not be in history picker mode after SetHistoryPickerMode(false)")
+	}
+}
+
+func TestInputHandler_HistoryPickerMode_BlocksInput(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	// Enable history picker mode
+	ih.SetHistoryPickerMode(true)
+
+	// Keys should not be handled when history picker is active
+	msg := testutils.NewTextKeyPressMsg("a")
+	handled, cmd := ih.HandleKey(msg)
+
+	if handled {
+		t.Error("Should not handle keys when history picker mode is active")
+	}
+
+	if cmd != nil {
+		t.Error("Should not return command when history picker mode is active")
+	}
+
+	// Should not send to PTY
+	if buf.Len() != 0 {
+		t.Errorf("Should not send to PTY in history picker mode, got %q", buf.String())
+	}
+}
+
 func TestInputHandler_FullScreenMode_CtrlX(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)

@@ -5,10 +5,19 @@ import (
 	"time"
 )
 
+// ResultAction indicates a UI side-effect to trigger for a command result.
+type ResultAction string
+
+const (
+	ResultActionOpenHistoryPicker ResultAction = "open_history_picker"
+	ResultActionOpenSettings      ResultAction = "open_settings"
+)
+
 // Result represents the result of a command execution
 type Result struct {
 	Title   string
 	Content string
+	Action  ResultAction
 	Error   error
 }
 
