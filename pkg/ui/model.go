@@ -416,6 +416,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inputHandler.SetHistoryPickerMode(false)
 		return m, nil
 
+	case input.CommandSubmittedMsg:
+		if m.session == nil {
+			return m, nil
+		}
+		if strings.TrimSpace(msg.Command) == "" {
+			return m, nil
+		}
+		m.session.AddCommand(capture.CommandRecord{
+			Command:    msg.Command,
+			StartTime:  time.Now(),
+			EndTime:    time.Now(),
+			WorkingDir: m.currentDir,
+		})
+		return m, nil
+
 	case settings.SettingsCloseMsg:
 		// Settings panel closed
 		slog.Info("settings_close")

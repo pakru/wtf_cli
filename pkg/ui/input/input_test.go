@@ -91,16 +91,33 @@ func TestInputHandler_HandleKey_Enter(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)
 
+	ih.HandleKey(testutils.NewTextKeyPressMsg("l"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("s"))
+
 	input := testutils.TestKeyEnter
-	handled, _ := ih.HandleKey(input)
+	handled, cmd := ih.HandleKey(input)
 
 	if !handled {
 		t.Error("Expected Enter to be handled")
 	}
 
+	if cmd == nil {
+		t.Fatal("Expected Enter to emit CommandSubmittedMsg")
+	}
+
+	msg := cmd()
+	submitted, ok := msg.(CommandSubmittedMsg)
+	if !ok {
+		t.Fatalf("Expected CommandSubmittedMsg, got %T", msg)
+	}
+	if submitted.Command != "ls" {
+		t.Errorf("Expected submitted command %q, got %q", "ls", submitted.Command)
+	}
+
 	// Should send CR (13)
-	if buf.Bytes()[0] != 13 {
-		t.Errorf("Expected byte 13, got %d", buf.Bytes()[0])
+	data := buf.Bytes()
+	if len(data) == 0 || data[len(data)-1] != 13 {
+		t.Errorf("Expected last byte 13, got %v", data)
 	}
 }
 

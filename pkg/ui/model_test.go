@@ -344,6 +344,36 @@ func TestModel_HistoryPickerFlow_FromCommand(t *testing.T) {
 	}
 }
 
+func TestModel_CommandSubmitted_ShowsInHistoryPicker(t *testing.T) {
+	tmpDir := t.TempDir()
+	histFile := filepath.Join(tmpDir, ".bash_history")
+	if err := os.WriteFile(histFile, []byte(""), 0o600); err != nil {
+		t.Fatalf("Failed to create history file: %v", err)
+	}
+
+	originalHistFile := os.Getenv("HISTFILE")
+	if err := os.Setenv("HISTFILE", histFile); err != nil {
+		t.Fatalf("Failed to set HISTFILE: %v", err)
+	}
+	defer os.Setenv("HISTFILE", originalHistFile)
+
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	newModel, _ := m.Update(input.CommandSubmittedMsg{Command: "echo fresh"})
+	m = newModel.(Model)
+
+	newModel, _ = m.Update(input.ShowHistoryPickerMsg{InitialFilter: ""})
+	m = newModel.(Model)
+
+	if m.historyPicker == nil || !m.historyPicker.IsVisible() {
+		t.Fatal("Expected history picker to be visible")
+	}
+
+	view := m.historyPicker.View()
+	if !strings.Contains(view, "echo fresh") {
+		t.Fatalf("Expected history picker view to include command, got %q", view)
+	}
+}
+
 func TestModel_Update_PTYOutput_NotSuppressedAfterDelay(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	m.ready = true

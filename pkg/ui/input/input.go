@@ -63,6 +63,11 @@ type ShowHistoryPickerMsg struct {
 	InitialFilter string // Pre-typed text to use as initial filter (empty for now)
 }
 
+// CommandSubmittedMsg is sent when the user submits a command line (Enter).
+type CommandSubmittedMsg struct {
+	Command string
+}
+
 type CtrlDPressedMsg struct{}
 
 // HandleKey processes a key message and returns whether it was handled
@@ -120,11 +125,14 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 		return true, nil
 
 	case "enter":
-		// Enter - send newline to PTY
+		// Enter - send newline to PTY and emit command submission
+		submitted := ih.lineBuffer
 		ih.ptyWriter.Write([]byte{13}) // CR (some shells need this)
 		ih.atLineStart = true          // After enter, we're at new line start
 		ih.lineBuffer = ""             // Clear line buffer on enter
-		return true, nil
+		return true, func() tea.Msg {
+			return CommandSubmittedMsg{Command: submitted}
+		}
 
 	case "backspace":
 		// Backspace - send to PTY
