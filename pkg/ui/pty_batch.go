@@ -35,7 +35,7 @@ func (m *Model) flushPTYBatch() {
 			if m.fullScreenMode {
 				m.exitFullScreen()
 			} else if len(chunk.Data) > 0 {
-				m.appendPTYOutput(chunk.Data)
+				m.appendNormalizedLines(chunk.Data)
 				m.viewport.AppendOutput(chunk.Data)
 			}
 			continue
@@ -52,7 +52,7 @@ func (m *Model) flushPTYBatch() {
 			}
 		} else {
 			// Normal mode: append to viewport AND buffer
-			m.appendPTYOutput(chunk.Data)
+			m.appendNormalizedLines(chunk.Data)
 			m.viewport.AppendOutput(chunk.Data)
 		}
 	}

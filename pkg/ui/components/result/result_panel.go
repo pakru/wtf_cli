@@ -3,6 +3,7 @@ package result
 import (
 	"strings"
 
+	"wtf_cli/pkg/ui/components/utils"
 	"wtf_cli/pkg/ui/styles"
 
 	tea "charm.land/bubbletea/v2"
@@ -141,11 +142,16 @@ func (rp *ResultPanel) View() string {
 	contentStyle := styles.TextStyle
 	footerStyle := styles.FooterStyle
 
+	contentWidth := panelWidth - 6
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+
 	// Build content
 	var sb strings.Builder
 
 	// Title
-	sb.WriteString(titleStyle.Render(rp.title))
+	sb.WriteString(titleStyle.Render(utils.TruncateToWidth(rp.title, contentWidth)))
 	sb.WriteString("\n\n")
 
 	// Content with scrolling
@@ -160,13 +166,13 @@ func (rp *ResultPanel) View() string {
 	}
 
 	for i := rp.scrollY; i < endLine; i++ {
-		sb.WriteString(contentStyle.Render(rp.lines[i]))
+		line := utils.TruncateToWidth(rp.lines[i], contentWidth)
+		sb.WriteString(contentStyle.Render(line))
 		sb.WriteString("\n")
 	}
 
 	// Scroll indicator
 	if len(rp.lines) > visibleLines {
-		sb.WriteString("\n")
 		sb.WriteString(footerStyle.Render("↑↓ Scroll • "))
 	}
 

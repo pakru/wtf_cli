@@ -13,6 +13,7 @@ import (
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/commands"
 	"wtf_cli/pkg/config"
+	"wtf_cli/pkg/logging"
 	"wtf_cli/pkg/ui/components/fullscreen"
 	"wtf_cli/pkg/ui/components/historypicker"
 	"wtf_cli/pkg/ui/components/palette"
@@ -60,7 +61,6 @@ type Model struct {
 	// Streaming state
 	wtfStream  <-chan commands.WtfStreamEvent
 	wtfContent string
-	wtfTitle   string
 
 	// UI state
 	width  int
@@ -74,8 +74,7 @@ type Model struct {
 	resizeTime       time.Time // When last PTY resize occurred (to suppress prompt reprint)
 	initialResize    bool      // Track if we've done the initial resize
 
-	ptyLineBuffer []byte
-	ptyPendingCR  bool
+	ptyNormalizer *terminal.Normalizer
 
 	// PTY output batching
 	ptyBatchBuffer  []byte        // Accumulated PTY data
@@ -129,6 +128,7 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		currentDir:          initialDir,
 		fullScreenPanel:     fullscreen.NewFullScreenPanel(80, 24),
 		altScreenState:      terminal.NewAltScreenState(),
+		ptyNormalizer:       terminal.NewNormalizer(),
 		ptyBatchMaxSize:     16384,                 // 16KB
 		ptyBatchMaxWait:     16 * time.Millisecond, // ~60fps
 		streamThrottleDelay: 50 * time.Millisecond, // Throttle stream updates
@@ -182,7 +182,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.viewport.SetSize(viewportWidth, viewportHeight)
 		m.palette.SetSize(m.width, m.height)
-		m.resultPanel.SetSize(m.width, m.height)
+		resultHeight := m.height
+		if resultHeight > 0 {
+			resultHeight--
+		}
+		m.resultPanel.SetSize(m.width, resultHeight)
 		m.settingsPanel.SetSize(m.width, m.height)
 		if m.modelPicker != nil {
 			m.modelPicker.SetSize(m.width, m.height)
@@ -348,7 +352,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if stream == nil {
 				m.resultPanel.Show(result.Title, result.Content)
-				m.wtfTitle = result.Title
 				m.wtfContent = ""
 				return m, nil
 			}
@@ -357,7 +360,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				slog.Info("sidebar_open", "title", result.Title, "streaming", true)
 				m.applyLayout()
 			}
-			m.wtfTitle = result.Title
 			m.wtfContent = ""
 			m.wtfStream = stream
 			return m, listenToWtfStream(stream)
@@ -365,7 +367,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Show result in panel
 		m.resultPanel.Show(result.Title, result.Content)
-		m.wtfTitle = result.Title
 		m.wtfContent = ""
 
 		return m, nil
@@ -453,6 +454,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				"log_format", msg.Config.LogFormat,
 				"log_file", msg.Config.LogFile,
 			)
+			logging.SetLevel(msg.Config.LogLevel)
 		}
 		m.statusBar.SetModel(msg.Config.OpenRouter.Model)
 		return m, nil
@@ -580,6 +582,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, listenToWtfStream(m.wtfStream)
 		}
 		if msg.Done {
+			logger := slog.Default()
+			if logger.Enabled(context.Background(), logging.LevelTrace) {
+				logger.Log(
+					context.Background(),
+					logging.LevelTrace,
+					"wtf_stream_full_response",
+					"response", m.wtfContent,
+				)
+			}
 			slog.Info("wtf_stream_done")
 			m.wtfStream = nil
 			// Final update to sidebar with all content
@@ -750,7 +761,11 @@ func (m *Model) applyLayout() {
 
 	m.viewport.SetSize(viewportWidth, viewportHeight)
 	m.palette.SetSize(m.width, m.height)
-	m.resultPanel.SetSize(m.width, m.height)
+	resultHeight := m.height
+	if resultHeight > 0 {
+		resultHeight--
+	}
+	m.resultPanel.SetSize(m.width, resultHeight)
 	m.settingsPanel.SetSize(m.width, m.height)
 	if m.modelPicker != nil {
 		m.modelPicker.SetSize(m.width, m.height)
@@ -904,7 +919,7 @@ func (m Model) renderCanvas() *lipgloss.Canvas {
 	} else if m.modelPicker != nil && m.modelPicker.IsVisible() {
 		layers = addOverlayLayer(layers, m.modelPicker.View(), m.width, m.height, overlayLayerZ)
 	} else if m.resultPanel.IsVisible() {
-		layers = addOverlayLayer(layers, m.resultPanel.View(), m.width, m.height, overlayLayerZ)
+		layers = addOverlayLayer(layers, m.resultPanel.View(), m.width, viewportHeight, overlayLayerZ)
 	} else if m.palette.IsVisible() {
 		layers = addOverlayLayer(layers, m.palette.View(), m.width, m.height, overlayLayerZ)
 	} else if m.historyPicker != nil && m.historyPicker.IsVisible() {
@@ -967,40 +982,40 @@ func listenToWtfStream(stream <-chan commands.WtfStreamEvent) tea.Cmd {
 	}
 }
 
-func (m *Model) appendPTYOutput(data []byte) {
-	if m.buffer == nil || len(data) == 0 {
+func (m *Model) appendNormalizedLines(data []byte) {
+	if m.buffer == nil || len(data) == 0 || m.ptyNormalizer == nil {
 		return
 	}
 
-	for _, b := range data {
-		if m.ptyPendingCR {
-			if b == '\n' {
-				if len(m.ptyLineBuffer) > 0 {
-					m.buffer.Write(m.ptyLineBuffer)
-					m.ptyLineBuffer = m.ptyLineBuffer[:0]
-				}
-				m.ptyPendingCR = false
-				continue
-			}
-			if b == '\r' {
-				continue
-			}
-			m.ptyLineBuffer = m.ptyLineBuffer[:0]
-			m.ptyPendingCR = false
-		}
+	lines := m.ptyNormalizer.Append(data)
+	for _, line := range lines {
+		m.captureCommandFromLine(line)
+		m.buffer.Write(line)
+	}
+}
 
-		switch b {
-		case '\r':
-			m.ptyPendingCR = true
-		case '\n':
-			if len(m.ptyLineBuffer) > 0 {
-				m.buffer.Write(m.ptyLineBuffer)
-				m.ptyLineBuffer = m.ptyLineBuffer[:0]
-			}
-		case '\t':
-			m.ptyLineBuffer = append(m.ptyLineBuffer, terminal.TabSpaces...)
-		default:
-			m.ptyLineBuffer = append(m.ptyLineBuffer, b)
+func (m *Model) captureCommandFromLine(line []byte) {
+	if m.session == nil || len(line) == 0 {
+		return
+	}
+
+	cmd := capture.ExtractCommandFromPrompt(string(line))
+	if cmd == "" {
+		return
+	}
+
+	now := time.Now()
+	last := m.session.GetLastN(1)
+	if len(last) > 0 && last[0].Command == cmd {
+		if now.Sub(last[0].StartTime) < 2*time.Second {
+			return
 		}
 	}
+
+	m.session.AddCommand(capture.CommandRecord{
+		Command:    cmd,
+		StartTime:  now,
+		EndTime:    now,
+		WorkingDir: m.currentDir,
+	})
 }

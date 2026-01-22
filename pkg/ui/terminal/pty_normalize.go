@@ -125,8 +125,8 @@ func AppendPTYContent(content string, data []byte, pendingCR *bool) string {
 				buf = buf[:len(buf)-1]
 			}
 		default:
-			// Only append printable characters (0x20-0x7E and extended ASCII)
-			if b >= 0x20 || b >= 0x80 {
+			// Only append printable characters (0x20 and above)
+			if b >= 0x20 {
 				buf = append(buf, b)
 			}
 		}

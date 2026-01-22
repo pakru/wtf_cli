@@ -19,10 +19,22 @@ const (
 	maxLogAgeDays = 14
 )
 
+// LevelTrace enables verbose diagnostic logging below debug.
+const LevelTrace slog.Level = -8
+
+var levelVar slog.LevelVar
+
+func init() {
+	levelVar.Set(slog.LevelInfo)
+}
+
 // Init configures slog to write structured logs to a file.
 func Init(cfg config.Config) (*slog.Logger, error) {
-	level := parseLogLevel(cfg.LogLevel)
-	handlerOptions := &slog.HandlerOptions{Level: level}
+	levelVar.Set(parseLogLevel(cfg.LogLevel))
+	handlerOptions := &slog.HandlerOptions{
+		Level:       &levelVar,
+		ReplaceAttr: replaceLevelAttr,
+	}
 
 	logPath := strings.TrimSpace(cfg.LogFile)
 	if logPath == "" {
@@ -47,6 +59,11 @@ func Init(cfg config.Config) (*slog.Logger, error) {
 	return logger, nil
 }
 
+// SetLevel updates the active log level for the default logger.
+func SetLevel(level string) {
+	levelVar.Set(parseLogLevel(level))
+}
+
 func defaultLogPath() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(homeDir) == "" {
@@ -57,6 +74,8 @@ func defaultLogPath() string {
 
 func parseLogLevel(level string) slog.Level {
 	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "trace":
+		return LevelTrace
 	case "debug":
 		return slog.LevelDebug
 	case "warn", "warning":
@@ -68,6 +87,24 @@ func parseLogLevel(level string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func replaceLevelAttr(_ []string, a slog.Attr) slog.Attr {
+	if a.Key != slog.LevelKey {
+		return a
+	}
+
+	switch a.Value.Kind() {
+	case slog.KindInt64:
+		if a.Value.Int64() == int64(LevelTrace) {
+			a.Value = slog.StringValue("TRACE")
+		}
+	case slog.KindAny:
+		if lvl, ok := a.Value.Any().(slog.Level); ok && lvl == LevelTrace {
+			a.Value = slog.StringValue("TRACE")
+		}
+	}
+	return a
 }
 
 func newHandler(format string, out io.Writer, opts *slog.HandlerOptions) slog.Handler {

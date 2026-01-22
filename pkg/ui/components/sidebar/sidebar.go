@@ -181,7 +181,7 @@ func (s *Sidebar) View() string {
 
 	content := strings.Join(lines, "\n")
 
-	boxWidth := s.width - 2*sidebarBorderSize
+	boxWidth := s.width
 	if boxWidth < 1 {
 		boxWidth = 1
 	}

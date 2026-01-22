@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/mattn/go-runewidth"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // TruncateToWidth truncates string to width with ellipsis
@@ -12,13 +12,13 @@ func TruncateToWidth(text string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if runewidth.StringWidth(text) <= width {
+	if ansi.StringWidth(text) <= width {
 		return text
 	}
 	if width <= 3 {
 		return TrimToWidth(text, width)
 	}
-	return TrimToWidth(text, width-3) + "..."
+	return ansi.Truncate(text, width, "...")
 }
 
 // TrimToWidth trims string to width without ellipsis
@@ -26,17 +26,7 @@ func TrimToWidth(text string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	var sb strings.Builder
-	currentWidth := 0
-	for _, r := range text {
-		runeWidth := runewidth.RuneWidth(r)
-		if currentWidth+runeWidth > width {
-			break
-		}
-		sb.WriteRune(r)
-		currentWidth += runeWidth
-	}
-	return sb.String()
+	return ansi.Truncate(text, width, "")
 }
 
 // PadPlain pads text with spaces to width
@@ -44,7 +34,7 @@ func PadPlain(text string, width int) string {
 	if width <= 0 {
 		return text
 	}
-	textWidth := runewidth.StringWidth(text)
+	textWidth := ansi.StringWidth(text)
 	if textWidth >= width {
 		return text
 	}

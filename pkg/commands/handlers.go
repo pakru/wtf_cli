@@ -10,6 +10,7 @@ import (
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/config"
+	"wtf_cli/pkg/logging"
 	"wtf_cli/pkg/version"
 )
 
@@ -74,6 +75,18 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 
 	meta := buildTerminalMetadata(ctx)
 	messages, termCtx := ai.BuildWtfMessages(lines, meta)
+
+	logger := slog.Default()
+	if logger.Enabled(context.Background(), logging.LevelTrace) {
+		logger.Log(
+			context.Background(),
+			logging.LevelTrace,
+			"wtf_stream_prompt",
+			"model", cfg.OpenRouter.Model,
+			"message_count", len(messages),
+			"messages_full", buildMessageDump(messages),
+		)
+	}
 
 	temperature := cfg.OpenRouter.Temperature
 	maxTokens := cfg.OpenRouter.MaxTokens
@@ -210,6 +223,27 @@ func buildMessagePreview(messages []ai.Message, maxMessages, maxChars int) []str
 	}
 
 	return preview
+}
+
+func buildMessageDump(messages []ai.Message) string {
+	if len(messages) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	for i, msg := range messages {
+		role := strings.TrimSpace(msg.Role)
+		if role == "" {
+			role = "unknown"
+		}
+		sb.WriteString(role)
+		sb.WriteString(":\n")
+		sb.WriteString(msg.Content)
+		if i < len(messages)-1 {
+			sb.WriteString("\n\n---\n\n")
+		}
+	}
+	return sb.String()
 }
 
 func omittedCount(total, max int) int {

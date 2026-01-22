@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
+	"wtf_cli/pkg/commands"
 	"wtf_cli/pkg/ui/components/historypicker"
 	"wtf_cli/pkg/ui/components/palette"
 	"wtf_cli/pkg/ui/components/testutils"
@@ -371,6 +373,88 @@ func TestModel_CommandSubmitted_ShowsInHistoryPicker(t *testing.T) {
 	view := m.historyPicker.View()
 	if !strings.Contains(view, "echo fresh") {
 		t.Fatalf("Expected history picker view to include command, got %q", view)
+	}
+}
+
+func TestModel_PTYOutput_BackspaceNormalization(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 24)
+
+	data := []byte("git tashg\x08\x08\x08g\n")
+	newModel, _ := m.Update(ptyOutputMsg{data: data})
+	newModel, _ = newModel.Update(ptyBatchFlushMsg{})
+	m = newModel.(Model)
+
+	lines := m.buffer.GetLastN(1)
+	if len(lines) != 1 {
+		t.Fatalf("Expected 1 line in buffer, got %d", len(lines))
+	}
+	if string(lines[0]) != "git tag" {
+		t.Fatalf("Expected normalized line %q, got %q", "git tag", string(lines[0]))
+	}
+}
+
+func TestModel_PTYOutput_StripsOSCAndCapturesCommand(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 24)
+
+	data := []byte("\x1b]0;dev@host: ~/project\x07dev@host:~/project$ ifconfig \n")
+	newModel, _ := m.Update(ptyOutputMsg{data: data})
+	newModel, _ = newModel.Update(ptyBatchFlushMsg{})
+	m = newModel.(Model)
+
+	lines := m.buffer.GetLastN(1)
+	if len(lines) != 1 {
+		t.Fatalf("Expected 1 line in buffer, got %d", len(lines))
+	}
+	if strings.Contains(string(lines[0]), "0;") {
+		t.Fatalf("Expected OSC sequence to be stripped, got %q", string(lines[0]))
+	}
+
+	last := m.session.GetLastN(1)
+	if len(last) != 1 || last[0].Command != "ifconfig" {
+		t.Fatalf("Expected last command %q, got %+v", "ifconfig", last)
+	}
+}
+
+func TestModel_LLMContext_StripsOSC(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 24)
+
+	data := []byte("\x1b]0;dev@host: ~/project\x07dev@host$ ls\n")
+	newModel, _ := m.Update(ptyOutputMsg{data: data})
+	newModel, _ = newModel.Update(ptyBatchFlushMsg{})
+	m = newModel.(Model)
+
+	ctx := commands.NewContext(m.buffer, m.session, m.currentDir)
+	lines := ctx.GetLastNLines(10)
+	termCtx := ai.BuildTerminalContext(lines, ai.TerminalMetadata{})
+	if strings.Contains(termCtx.Output, "0;") {
+		t.Fatalf("Expected OSC payload to be stripped, got %q", termCtx.Output)
+	}
+}
+
+func TestModel_LLMContext_BackspaceNormalized(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 24)
+
+	data := []byte("git tashg\x08\x08\x08g\n")
+	newModel, _ := m.Update(ptyOutputMsg{data: data})
+	newModel, _ = newModel.Update(ptyBatchFlushMsg{})
+	m = newModel.(Model)
+
+	ctx := commands.NewContext(m.buffer, m.session, m.currentDir)
+	lines := ctx.GetLastNLines(10)
+	termCtx := ai.BuildTerminalContext(lines, ai.TerminalMetadata{})
+	if strings.Contains(termCtx.Output, "tashg") {
+		t.Fatalf("Expected backspace-normalized output, got %q", termCtx.Output)
+	}
+	if !strings.Contains(termCtx.Output, "git tag") {
+		t.Fatalf("Expected output to contain %q, got %q", "git tag", termCtx.Output)
 	}
 }
 

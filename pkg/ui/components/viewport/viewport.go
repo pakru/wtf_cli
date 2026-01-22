@@ -7,7 +7,6 @@ import (
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
 // PTYViewport wraps Bubble Tea's viewport for displaying PTY output
@@ -118,20 +117,19 @@ func (v *PTYViewport) Stats() (totalLines, visibleLines, scrollPercent int) {
 	// Count total lines
 	lines := strings.Split(v.content, "\n")
 	totalLines = len(lines)
+
+	// Visible lines equals viewport height
 	visibleLines = v.Viewport.Height()
 
-	// Calculate scroll percentage
-	if totalLines <= visibleLines {
-		scrollPercent = 100
-	} else {
-		scrollPercent = int(v.Viewport.ScrollPercent() * 100)
-	}
+	// Scroll percent
+	scrollPercent = int(v.Viewport.ScrollPercent() * 100)
 
 	return
 }
 
-// Style helpers for rendering
-
-var viewportStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.RoundedBorder()).
-	BorderForeground(lipgloss.Color("62"))
+// RenderLines renders viewport content and returns it, without outer whitespace.
+// Useful in tests.
+func (v *PTYViewport) RenderLines() string {
+	view := v.View()
+	return strings.TrimSpace(view)
+}

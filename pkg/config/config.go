@@ -166,9 +166,9 @@ func (c Config) Validate() error {
 
 	if strings.TrimSpace(c.LogLevel) != "" {
 		switch strings.ToLower(strings.TrimSpace(c.LogLevel)) {
-		case "debug", "info", "warn", "warning", "error":
+		case "trace", "debug", "info", "warn", "warning", "error":
 		default:
-			return fmt.Errorf("log_level must be one of debug, info, warn, error, got: %s", c.LogLevel)
+			return fmt.Errorf("log_level must be one of trace, debug, info, warn, error, got: %s", c.LogLevel)
 		}
 	}
 

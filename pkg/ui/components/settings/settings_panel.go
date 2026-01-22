@@ -580,5 +580,5 @@ func normalizeLogLevel(value string) string {
 }
 
 func logLevelOptions() []string {
-	return []string{"debug", "info", "warn", "error"}
+	return []string{"trace", "debug", "info", "warn", "error"}
 }
