@@ -2,6 +2,7 @@ package input
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"wtf_cli/pkg/ui/components/testutils"
@@ -199,6 +200,122 @@ func TestInputHandler_HandleKey_NormalTyping(t *testing.T) {
 	// msg.String() for this should be "a"
 	if buf.Len() == 0 {
 		t.Error("Expected output in buffer")
+	}
+}
+
+func TestInputHandler_HandlePaste_SingleLine(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	ih.HandlePaste("hello")
+
+	if buf.String() != "hello" {
+		t.Fatalf("Expected paste output %q, got %q", "hello", buf.String())
+	}
+	if ih.lineBuffer != "hello" {
+		t.Errorf("Expected lineBuffer %q, got %q", "hello", ih.lineBuffer)
+	}
+	if ih.atLineStart {
+		t.Error("Expected atLineStart to be false after single-line paste")
+	}
+}
+
+func TestInputHandler_HandlePaste_MultiLine(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	content := "one\ntwo"
+	ih.HandlePaste(content)
+
+	if buf.String() != content {
+		t.Fatalf("Expected paste output %q, got %q", content, buf.String())
+	}
+	if ih.lineBuffer != "two" {
+		t.Errorf("Expected lineBuffer %q, got %q", "two", ih.lineBuffer)
+	}
+	if ih.atLineStart {
+		t.Error("Expected atLineStart to be false after multi-line paste without trailing newline")
+	}
+}
+
+func TestInputHandler_HandlePaste_MultiLine_TrailingNewline(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	content := "one\ntwo\n"
+	ih.HandlePaste(content)
+
+	if buf.String() != content {
+		t.Fatalf("Expected paste output %q, got %q", content, buf.String())
+	}
+	if ih.lineBuffer != "" {
+		t.Errorf("Expected lineBuffer to be empty, got %q", ih.lineBuffer)
+	}
+	if !ih.atLineStart {
+		t.Error("Expected atLineStart to be true after trailing newline")
+	}
+}
+
+func TestInputHandler_HandlePaste_BracketedPaste(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	ih.UpdateTerminalModes([]byte("\x1b[?2004h"))
+	ih.HandlePaste("abc")
+
+	expected := "\x1b[200~abc\x1b[201~"
+	if buf.String() != expected {
+		t.Fatalf("Expected bracketed paste output %q, got %q", expected, buf.String())
+	}
+	if ih.lineBuffer != "abc" {
+		t.Errorf("Expected lineBuffer %q, got %q", "abc", ih.lineBuffer)
+	}
+	if ih.atLineStart {
+		t.Error("Expected atLineStart to be false after bracketed paste")
+	}
+
+	buf.Reset()
+	ih.UpdateTerminalModes([]byte("\x1b[?2004l"))
+	ih.HandlePaste("def")
+	if buf.String() != "def" {
+		t.Fatalf("Expected non-bracketed paste output %q, got %q", "def", buf.String())
+	}
+}
+
+func TestInputHandler_UpdateTerminalModes_BracketedPasteParsing(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	if ih.bracketedPasteMode {
+		t.Fatal("Expected bracketedPasteMode to start false")
+	}
+
+	ih.UpdateTerminalModes([]byte("\x1b[?2004h"))
+	if !ih.bracketedPasteMode {
+		t.Fatal("Expected bracketedPasteMode to be enabled")
+	}
+
+	ih.UpdateTerminalModes([]byte("\x1b[?2004l"))
+	if ih.bracketedPasteMode {
+		t.Fatal("Expected bracketedPasteMode to be disabled")
+	}
+}
+
+func TestInputHandler_HandlePaste_StripsCarriageReturnTracking(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	content := "one\r\ntwo"
+	ih.HandlePaste(content)
+
+	if buf.String() != content {
+		t.Fatalf("Expected paste output %q, got %q", content, buf.String())
+	}
+	if ih.lineBuffer != "two" {
+		t.Errorf("Expected lineBuffer %q, got %q", "two", ih.lineBuffer)
+	}
+	if strings.HasSuffix(ih.lineBuffer, "\r") {
+		t.Error("Expected lineBuffer to not retain carriage return")
 	}
 }
 

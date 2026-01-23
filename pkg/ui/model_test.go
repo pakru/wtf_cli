@@ -128,6 +128,42 @@ func TestModel_Update_PTYOutput_BufferIsolation(t *testing.T) {
 	}
 }
 
+func TestModel_Update_PasteMsg_RoutesToPTY(t *testing.T) {
+	tmpDir := t.TempDir()
+	ptyFile, err := os.CreateTemp(tmpDir, "pty")
+	if err != nil {
+		t.Fatalf("Failed to create temp PTY file: %v", err)
+	}
+	defer ptyFile.Close()
+
+	m := NewModel(ptyFile, buffer.New(100), capture.NewSessionContext(), nil)
+	content := "/history\n"
+
+	newModel, cmd := m.Update(tea.PasteMsg{Content: content})
+	if cmd != nil {
+		t.Fatal("Expected no command from PasteMsg")
+	}
+	m = newModel.(Model)
+
+	if m.palette.IsVisible() {
+		t.Error("Expected palette to remain hidden after paste")
+	}
+	if m.historyPicker != nil && m.historyPicker.IsVisible() {
+		t.Error("Expected history picker to remain hidden after paste")
+	}
+
+	if _, err := ptyFile.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("Failed to seek PTY file: %v", err)
+	}
+	data, err := io.ReadAll(ptyFile)
+	if err != nil {
+		t.Fatalf("Failed to read PTY output: %v", err)
+	}
+	if string(data) != content {
+		t.Errorf("Expected PTY output %q, got %q", content, string(data))
+	}
+}
+
 func TestModel_Update_PTYOutput_ExitSuppressedWithFutureEnter(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 

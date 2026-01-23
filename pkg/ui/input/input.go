@@ -2,6 +2,8 @@ package input
 
 import (
 	"io"
+	"log/slog"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -15,9 +17,10 @@ type InputHandler struct {
 	historyPickerMode bool   // True when history picker is active
 	fullScreenMode    bool   // True when full-screen app (vim, nano) is active
 
-	cursorKeysAppMode bool
-	keypadAppMode     bool
-	modePending       []byte
+	cursorKeysAppMode  bool
+	keypadAppMode      bool
+	bracketedPasteMode bool
+	modePending        []byte
 }
 
 // NewInputHandler creates a new input handler
@@ -236,19 +239,34 @@ func (ih *InputHandler) UpdateTerminalModes(data []byte) {
 
 		switch combined[i+1] {
 		case '[':
-			if i+4 >= len(combined) {
+			if i+2 >= len(combined) {
 				ih.modePending = append(ih.modePending, combined[i:]...)
 				i = len(combined)
 				break
 			}
-			if combined[i+2] == '?' && combined[i+3] == '1' {
-				switch combined[i+4] {
-				case 'h':
-					ih.cursorKeysAppMode = true
-					i += 4
-				case 'l':
-					ih.cursorKeysAppMode = false
-					i += 4
+			if combined[i+2] == '?' {
+				j := i + 3
+				for j < len(combined) && combined[j] >= '0' && combined[j] <= '9' {
+					j++
+				}
+				if j >= len(combined) {
+					ih.modePending = append(ih.modePending, combined[i:]...)
+					i = len(combined)
+					break
+				}
+				if combined[j] == 'h' || combined[j] == 'l' {
+					enable := combined[j] == 'h'
+					digits := combined[i+3 : j]
+					if len(digits) == 1 && digits[0] == '1' {
+						ih.cursorKeysAppMode = enable
+					} else if len(digits) == 4 &&
+						digits[0] == '2' && digits[1] == '0' && digits[2] == '0' && digits[3] == '4' {
+						if ih.bracketedPasteMode != enable {
+							ih.bracketedPasteMode = enable
+							slog.Debug("bracketed_paste_mode", "enabled", enable)
+						}
+					}
+					i = j
 				}
 			}
 		case '=':
@@ -269,6 +287,35 @@ func (ih *InputHandler) UpdateTerminalModes(data []byte) {
 func (ih *InputHandler) SendToPTY(data []byte) error {
 	_, err := ih.ptyWriter.Write(data)
 	return err
+}
+
+// HandlePaste sends pasted content to the PTY, wrapping with bracketed paste
+// delimiters when enabled, and updates line buffer tracking.
+func (ih *InputHandler) HandlePaste(content string) {
+	if content == "" {
+		return
+	}
+
+	slog.Debug("paste_to_pty", "len", len(content), "bracketed", ih.bracketedPasteMode)
+	if ih.bracketedPasteMode {
+		ih.ptyWriter.Write([]byte("\x1b[200~"))
+	}
+	if len(content) > 0 {
+		ih.ptyWriter.Write([]byte(content))
+	}
+	if ih.bracketedPasteMode {
+		ih.ptyWriter.Write([]byte("\x1b[201~"))
+	}
+
+	lastNL := strings.LastIndexAny(content, "\n\r")
+	if lastNL == -1 {
+		ih.lineBuffer += content
+		ih.atLineStart = false
+		return
+	}
+
+	ih.lineBuffer = content[lastNL+1:]
+	ih.atLineStart = len(ih.lineBuffer) == 0
 }
 
 // ResetLineStart resets the line start tracker (called after PTY output)

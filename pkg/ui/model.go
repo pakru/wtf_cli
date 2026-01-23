@@ -236,6 +236,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tea.PasteMsg:
+		if msg.Content == "" {
+			return m, nil
+		}
+
+		if m.fullScreenMode {
+			if m.inputHandler != nil {
+				m.inputHandler.HandlePaste(msg.Content)
+			}
+			slog.Debug("paste_route", "target", "pty_fullscreen", "len", len(msg.Content))
+			return m, nil
+		}
+
+		if m.exitPending {
+			m.exitPending = false
+			m.statusBar.SetMessage("")
+		}
+
+		if m.optionPicker != nil && m.optionPicker.IsVisible() {
+			slog.Debug("paste_route", "target", "option_picker", "len", len(msg.Content))
+			return m, applyPasteToOverlay(msg.Content, m.optionPicker.Update)
+		}
+
+		if m.modelPicker != nil && m.modelPicker.IsVisible() {
+			slog.Debug("paste_route", "target", "model_picker", "len", len(msg.Content))
+			return m, applyPasteToOverlay(msg.Content, m.modelPicker.Update)
+		}
+
+		if m.settingsPanel.IsVisible() {
+			slog.Debug("paste_route", "target", "settings_panel", "len", len(msg.Content))
+			return m, applyPasteToOverlay(msg.Content, m.settingsPanel.Update)
+		}
+
+		if m.resultPanel.IsVisible() {
+			slog.Debug("paste_route", "target", "result_panel_ignored", "len", len(msg.Content))
+			return m, nil
+		}
+
+		if m.palette.IsVisible() {
+			slog.Debug("paste_route", "target", "palette", "len", len(msg.Content))
+			return m, applyPasteToOverlay(msg.Content, m.palette.Update)
+		}
+
+		if m.historyPicker != nil && m.historyPicker.IsVisible() {
+			slog.Debug("paste_route", "target", "history_picker", "len", len(msg.Content))
+			return m, applyPasteToOverlay(msg.Content, m.historyPicker.Update)
+		}
+
+		if m.inputHandler != nil {
+			m.inputHandler.HandlePaste(msg.Content)
+		}
+		slog.Debug("paste_route", "target", "pty", "len", len(msg.Content))
+		return m, nil
+
 	case tea.KeyPressMsg:
 		if m.fullScreenMode {
 			handled, cmd := m.inputHandler.HandleKey(msg)
@@ -1018,4 +1072,21 @@ func (m *Model) captureCommandFromLine(line []byte) {
 		EndTime:    now,
 		WorkingDir: m.currentDir,
 	})
+}
+
+func applyPasteToOverlay(content string, update func(tea.KeyPressMsg) tea.Cmd) tea.Cmd {
+	cmds := make([]tea.Cmd, 0, len(content))
+	for _, r := range content {
+		msg := tea.KeyPressMsg(tea.Key{Code: r, Text: string(r)})
+		if cmd := update(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	if len(cmds) == 1 {
+		return cmds[0]
+	}
+	return tea.Batch(cmds...)
 }
