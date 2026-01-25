@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // CursorTracker tracks cursor position from ANSI escape sequences
@@ -101,22 +102,89 @@ func (ct *CursorTracker) GetPosition() (row, col int) {
 	return ct.row, ct.col
 }
 
+// SetPosition overrides the tracked cursor position.
+func (ct *CursorTracker) SetPosition(row, col int) {
+	if row < 0 {
+		row = 0
+	}
+	if col < 0 {
+		col = 0
+	}
+	ct.row = row
+	ct.col = col
+}
+
 // RenderCursorOverlay adds a visual cursor at the end of the last line
 func (ct *CursorTracker) RenderCursorOverlay(content string, cursorChar string) string {
-	// Simple approach: just append cursor at end of content
-	// This is where typing happens in a shell
+	if cursorChar == "" {
+		return content
+	}
+
 	if len(content) == 0 {
 		return cursorChar
 	}
 
-	// Remove trailing newlines, add cursor, restore newlines
-	trimmed := strings.TrimRight(content, "\n")
-	trailingNewlines := len(content) - len(trimmed)
-
-	result := trimmed + cursorChar
-	for i := 0; i < trailingNewlines; i++ {
-		result += "\n"
+	lines := strings.Split(content, "\n")
+	row := ct.row
+	col := ct.col
+	if row < 0 {
+		row = 0
+	}
+	if col < 0 {
+		col = 0
+	}
+	for len(lines) <= row {
+		lines = append(lines, "")
 	}
 
-	return result
+	lines[row] = renderCursorInLine(lines[row], col, cursorChar)
+	return strings.Join(lines, "\n")
+}
+
+func renderCursorInLine(line string, col int, cursorChar string) string {
+	var b strings.Builder
+	visible := 0
+	inserted := false
+
+	for i := 0; i < len(line); {
+		if line[i] == 0x1b && i+1 < len(line) && line[i+1] == '[' {
+			j := i + 2
+			for j < len(line) {
+				c := line[j]
+				if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+					j++
+					break
+				}
+				j++
+			}
+			b.WriteString(line[i:j])
+			i = j
+			continue
+		}
+
+		if !inserted && visible == col {
+			b.WriteString(cursorChar)
+			inserted = true
+		}
+
+		r, size := utf8.DecodeRuneInString(line[i:])
+		if r == utf8.RuneError && size == 1 {
+			b.WriteByte(line[i])
+			i++
+			visible++
+			continue
+		}
+		b.WriteRune(r)
+		i += size
+		visible++
+	}
+
+	if !inserted {
+		if visible < col {
+			b.WriteString(strings.Repeat(" ", col-visible))
+		}
+		b.WriteString(cursorChar)
+	}
+
+	return b.String()
 }

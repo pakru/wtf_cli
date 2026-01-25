@@ -245,7 +245,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.inputHandler != nil {
 				m.inputHandler.HandlePaste(msg.Content)
 			}
-			slog.Debug("paste_route", "target", "pty_fullscreen", "len", len(msg.Content))
+			logger := slog.Default()
+			if logger.Enabled(context.Background(), logging.LevelTrace) {
+				logger.Log(context.Background(), logging.LevelTrace, "paste_route", "target", "pty_fullscreen", "len", len(msg.Content))
+			}
 			return m, nil
 		}
 
@@ -255,39 +258,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.optionPicker != nil && m.optionPicker.IsVisible() {
-			slog.Debug("paste_route", "target", "option_picker", "len", len(msg.Content))
+			logger := slog.Default()
+			if logger.Enabled(context.Background(), logging.LevelTrace) {
+				logger.Log(context.Background(), logging.LevelTrace, "paste_route", "target", "option_picker", "len", len(msg.Content))
+			}
 			return m, applyPasteToOverlay(msg.Content, m.optionPicker.Update)
 		}
 
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
-			slog.Debug("paste_route", "target", "model_picker", "len", len(msg.Content))
+			logger := slog.Default()
+			if logger.Enabled(context.Background(), logging.LevelTrace) {
+				logger.Log(context.Background(), logging.LevelTrace, "paste_route", "target", "model_picker", "len", len(msg.Content))
+			}
 			return m, applyPasteToOverlay(msg.Content, m.modelPicker.Update)
 		}
 
 		if m.settingsPanel.IsVisible() {
-			slog.Debug("paste_route", "target", "settings_panel", "len", len(msg.Content))
+			logger := slog.Default()
+			if logger.Enabled(context.Background(), logging.LevelTrace) {
+				logger.Log(context.Background(), logging.LevelTrace, "paste_route", "target", "settings_panel", "len", len(msg.Content))
+			}
 			return m, applyPasteToOverlay(msg.Content, m.settingsPanel.Update)
 		}
 
 		if m.resultPanel.IsVisible() {
-			slog.Debug("paste_route", "target", "result_panel_ignored", "len", len(msg.Content))
+			logger := slog.Default()
+			if logger.Enabled(context.Background(), logging.LevelTrace) {
+				logger.Log(context.Background(), logging.LevelTrace, "paste_route", "target", "result_panel_ignored", "len", len(msg.Content))
+			}
 			return m, nil
 		}
 
 		if m.palette.IsVisible() {
-			slog.Debug("paste_route", "target", "palette", "len", len(msg.Content))
+			logger := slog.Default()
+			if logger.Enabled(context.Background(), logging.LevelTrace) {
+				logger.Log(context.Background(), logging.LevelTrace, "paste_route", "target", "palette", "len", len(msg.Content))
+			}
 			return m, applyPasteToOverlay(msg.Content, m.palette.Update)
 		}
 
 		if m.historyPicker != nil && m.historyPicker.IsVisible() {
-			slog.Debug("paste_route", "target", "history_picker", "len", len(msg.Content))
+			logger := slog.Default()
+			if logger.Enabled(context.Background(), logging.LevelTrace) {
+				logger.Log(context.Background(), logging.LevelTrace, "paste_route", "target", "history_picker", "len", len(msg.Content))
+			}
 			return m, applyPasteToOverlay(msg.Content, m.historyPicker.Update)
 		}
 
 		if m.inputHandler != nil {
 			m.inputHandler.HandlePaste(msg.Content)
 		}
-		slog.Debug("paste_route", "target", "pty", "len", len(msg.Content))
+		logger := slog.Default()
+		if logger.Enabled(context.Background(), logging.LevelTrace) {
+			logger.Log(context.Background(), logging.LevelTrace, "paste_route", "target", "pty", "len", len(msg.Content))
+		}
 		return m, nil
 
 	case tea.KeyPressMsg:

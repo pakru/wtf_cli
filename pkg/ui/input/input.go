@@ -1,9 +1,12 @@
 package input
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"strings"
+
+	"wtf_cli/pkg/logging"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -94,6 +97,21 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 	}
 
 	keyStr := msg.String()
+	if keyStr == "left" || keyStr == "right" || keyStr == "backspace" {
+		key := msg.Key()
+		logger := slog.Default()
+		ctx := context.Background()
+		if logger.Enabled(ctx, logging.LevelTrace) {
+			logger.Log(ctx, logging.LevelTrace, "key_input", "key", keyStr, "code", key.Code, "mod", key.Mod, "text_len", len(key.Text), "fullscreen", ih.fullScreenMode)
+		}
+	}
+
+	cursorSeq := func(normal, app string) []byte {
+		if ih.cursorKeysAppMode {
+			return []byte(app)
+		}
+		return []byte(normal)
+	}
 
 	// Check for special keys first using string matching (v2 API)
 	switch keyStr {
@@ -160,16 +178,16 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 		return true, nil
 
 	case "up":
-		ih.ptyWriter.Write([]byte("\x1b[A"))
+		ih.ptyWriter.Write(cursorSeq("\x1b[A", "\x1bOA"))
 		return true, nil
 	case "down":
-		ih.ptyWriter.Write([]byte("\x1b[B"))
+		ih.ptyWriter.Write(cursorSeq("\x1b[B", "\x1bOB"))
 		return true, nil
 	case "right":
-		ih.ptyWriter.Write([]byte("\x1b[C"))
+		ih.ptyWriter.Write(cursorSeq("\x1b[C", "\x1bOC"))
 		return true, nil
 	case "left":
-		ih.ptyWriter.Write([]byte("\x1b[D"))
+		ih.ptyWriter.Write(cursorSeq("\x1b[D", "\x1bOD"))
 		return true, nil
 	}
 
@@ -263,7 +281,11 @@ func (ih *InputHandler) UpdateTerminalModes(data []byte) {
 						digits[0] == '2' && digits[1] == '0' && digits[2] == '0' && digits[3] == '4' {
 						if ih.bracketedPasteMode != enable {
 							ih.bracketedPasteMode = enable
-							slog.Debug("bracketed_paste_mode", "enabled", enable)
+							logger := slog.Default()
+							ctx := context.Background()
+							if logger.Enabled(ctx, logging.LevelTrace) {
+								logger.Log(ctx, logging.LevelTrace, "bracketed_paste_mode", "enabled", enable)
+							}
 						}
 					}
 					i = j
@@ -296,7 +318,11 @@ func (ih *InputHandler) HandlePaste(content string) {
 		return
 	}
 
-	slog.Debug("paste_to_pty", "len", len(content), "bracketed", ih.bracketedPasteMode)
+	logger := slog.Default()
+	ctx := context.Background()
+	if logger.Enabled(ctx, logging.LevelTrace) {
+		logger.Log(ctx, logging.LevelTrace, "paste_to_pty", "len", len(content), "bracketed", ih.bracketedPasteMode)
+	}
 	if ih.bracketedPasteMode {
 		ih.ptyWriter.Write([]byte("\x1b[200~"))
 	}

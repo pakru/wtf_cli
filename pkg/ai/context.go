@@ -110,7 +110,7 @@ func buildUserPrompt(meta TerminalMetadata, ctx TerminalContext) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("Please help diagnose the terminal issue and suggest fixes.\n")
+	sb.WriteString("Please check user`s terminal output, and explain what's going on. Check if there are any issues and suggest fixes in that case.\n")
 	sb.WriteString("Terminal metadata (captured fields):\n")
 	if workingDir != "" {
 		sb.WriteString(fmt.Sprintf("cwd: %s\n", workingDir))

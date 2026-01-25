@@ -417,7 +417,7 @@ func TestModel_PTYOutput_BackspaceNormalization(t *testing.T) {
 	m.ready = true
 	m.viewport.SetSize(80, 24)
 
-	data := []byte("git tashg\x08\x08\x08g\n")
+	data := []byte("git tashg\x08 \x08\x08 \x08\x08 \x08g\n")
 	newModel, _ := m.Update(ptyOutputMsg{data: data})
 	newModel, _ = newModel.Update(ptyBatchFlushMsg{})
 	m = newModel.(Model)
@@ -478,7 +478,7 @@ func TestModel_LLMContext_BackspaceNormalized(t *testing.T) {
 	m.ready = true
 	m.viewport.SetSize(80, 24)
 
-	data := []byte("git tashg\x08\x08\x08g\n")
+	data := []byte("git tashg\x08 \x08\x08 \x08\x08 \x08g\n")
 	newModel, _ := m.Update(ptyOutputMsg{data: data})
 	newModel, _ = newModel.Update(ptyBatchFlushMsg{})
 	m = newModel.(Model)

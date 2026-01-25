@@ -1,5 +1,13 @@
 package ui
 
+import (
+	"bytes"
+	"context"
+	"log/slog"
+
+	"wtf_cli/pkg/logging"
+)
+
 func (m *Model) flushPTYBatch() {
 	data := m.ptyBatchBuffer
 	m.ptyBatchBuffer = m.ptyBatchBuffer[:0]
@@ -9,6 +17,18 @@ func (m *Model) flushPTYBatch() {
 	for i, chunk := range chunks {
 		if m.inputHandler != nil {
 			m.inputHandler.UpdateTerminalModes(chunk.Data)
+		}
+		if len(chunk.Data) > 0 {
+			hasLeft := bytes.Contains(chunk.Data, []byte("\x1b[D")) || bytes.Contains(chunk.Data, []byte("\x1bOD"))
+			hasRight := bytes.Contains(chunk.Data, []byte("\x1b[C")) || bytes.Contains(chunk.Data, []byte("\x1bOC"))
+			hasBackspace := bytes.Contains(chunk.Data, []byte{0x08}) || bytes.Contains(chunk.Data, []byte{0x7f})
+			if hasLeft || hasRight || hasBackspace {
+				logger := slog.Default()
+				ctx := context.Background()
+				if logger.Enabled(ctx, logging.LevelTrace) {
+					logger.Log(ctx, logging.LevelTrace, "pty_output_nav", "left", hasLeft, "right", hasRight, "backspace", hasBackspace, "len", len(chunk.Data))
+				}
+			}
 		}
 
 		if chunk.Entering {

@@ -48,6 +48,43 @@ func TestPTYViewport_AppendOutput(t *testing.T) {
 	}
 }
 
+func TestPTYViewport_CursorLeft_ShowsCursorInPlace(t *testing.T) {
+	vp := NewPTYViewport()
+	vp.SetSize(80, 24)
+
+	vp.AppendOutput([]byte("hello"))
+	vp.AppendOutput([]byte("\x08")) // backspace moves cursor left
+
+	view := vp.View()
+	if !strings.Contains(view, "hell█o") {
+		t.Errorf("Expected cursor in 'hell█o', got %q", view)
+	}
+}
+
+func TestPTYViewport_CursorLeftCSI_ShowsCursorInPlace(t *testing.T) {
+	vp := NewPTYViewport()
+	vp.SetSize(80, 24)
+
+	vp.AppendOutput([]byte("hello\x1b[2D"))
+
+	view := vp.View()
+	if !strings.Contains(view, "hel█lo") {
+		t.Errorf("Expected cursor in 'hel█lo', got %q", view)
+	}
+}
+
+func TestPTYViewport_CursorRight_PadsSpaces(t *testing.T) {
+	vp := NewPTYViewport()
+	vp.SetSize(80, 24)
+
+	vp.AppendOutput([]byte("hi\x1b[3C"))
+
+	view := vp.View()
+	if !strings.Contains(view, "hi   █") {
+		t.Errorf("Expected cursor after padding in 'hi   █', got %q", view)
+	}
+}
+
 func TestPTYViewport_Clear(t *testing.T) {
 	vp := NewPTYViewport()
 	vp.SetSize(80, 24)

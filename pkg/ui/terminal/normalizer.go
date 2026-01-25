@@ -4,14 +4,17 @@ package terminal
 // It handles common control sequences such as CR/LF, backspace, CSI cursor
 // left, OSC title sequences, and tabs.
 type Normalizer struct {
-	line        []byte
-	pendingCR   bool
-	inEscape    bool
-	inCSI       bool
-	csiParam    int
-	csiHasParam bool
-	inOSC       bool
-	oscEscape   bool
+	line           []byte
+	col            int
+	pendingCR      bool
+	pendingBS      bool
+	pendingBSSpace bool
+	inEscape       bool
+	inCSI          bool
+	csiParam       int
+	csiHasParam    bool
+	inOSC          bool
+	oscEscape      bool
 }
 
 // NewNormalizer creates a new PTY normalizer instance.
@@ -82,11 +85,21 @@ func (n *Normalizer) Append(data []byte) [][]byte {
 					if n.csiHasParam && n.csiParam > 0 {
 						count = n.csiParam
 					}
-					for i := 0; i < count && len(n.line) > 0; i++ {
-						n.line = n.line[:len(n.line)-1]
+					n.col -= count
+					if n.col < 0 {
+						n.col = 0
 					}
+				case 'C':
+					count := 1
+					if n.csiHasParam && n.csiParam > 0 {
+						count = n.csiParam
+					}
+					n.col += count
 				case 'K':
-					// Clear to end of line - nothing to do for buffer output.
+					// Clear to end of line.
+					if n.col < len(n.line) {
+						n.line = n.line[:n.col]
+					}
 				}
 				n.inCSI = false
 				n.csiParam = 0
@@ -109,6 +122,7 @@ func (n *Normalizer) Append(data []byte) [][]byte {
 				n.pendingCR = false
 			} else {
 				n.line = n.line[:0]
+				n.col = 0
 				n.pendingCR = false
 			}
 		}
@@ -118,20 +132,44 @@ func (n *Normalizer) Append(data []byte) [][]byte {
 			continue
 		}
 
+		if n.pendingBSSpace {
+			if b == 0x08 || b == 0x7f {
+				n.deleteAtCursor()
+				n.pendingBSSpace = false
+				n.pendingBS = false
+				continue
+			}
+			n.writeByte(' ')
+			n.pendingBSSpace = false
+		}
+
+		if n.pendingBS {
+			if b == ' ' {
+				n.pendingBSSpace = true
+				continue
+			}
+			n.pendingBS = false
+		}
+
 		switch b {
 		case '\r':
 			n.pendingCR = true
+			n.col = 0
 		case '\n':
 			n.flushLine(&lines)
 		case '\t':
-			n.line = append(n.line, TabSpaces...)
-		case 0x08, 0x7f:
-			if len(n.line) > 0 {
-				n.line = n.line[:len(n.line)-1]
+			for i := 0; i < len(TabSpaces); i++ {
+				n.writeByte(TabSpaces[i])
 			}
+		case 0x08, 0x7f:
+			n.col--
+			if n.col < 0 {
+				n.col = 0
+			}
+			n.pendingBS = true
 		default:
 			if b >= 0x20 {
-				n.line = append(n.line, b)
+				n.writeByte(b)
 			}
 		}
 	}
@@ -147,4 +185,37 @@ func (n *Normalizer) flushLine(lines *[][]byte) {
 	copy(lineCopy, n.line)
 	*lines = append(*lines, lineCopy)
 	n.line = n.line[:0]
+	n.col = 0
+	n.pendingBS = false
+	n.pendingBSSpace = false
+}
+
+func (n *Normalizer) writeByte(b byte) {
+	if n.col < 0 {
+		n.col = 0
+	}
+	if n.col < len(n.line) {
+		n.line[n.col] = b
+		n.col++
+		return
+	}
+	if n.col > len(n.line) {
+		padding := n.col - len(n.line)
+		n.line = append(n.line, make([]byte, padding)...)
+		for i := len(n.line) - padding; i < len(n.line); i++ {
+			n.line[i] = ' '
+		}
+	}
+	n.line = append(n.line, b)
+	n.col++
+}
+
+func (n *Normalizer) deleteAtCursor() {
+	if n.col < 0 {
+		n.col = 0
+	}
+	if n.col >= len(n.line) {
+		return
+	}
+	n.line = append(n.line[:n.col], n.line[n.col+1:]...)
 }

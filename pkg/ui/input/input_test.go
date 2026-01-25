@@ -186,6 +186,37 @@ func TestInputHandler_HandleKey_ArrowKeys(t *testing.T) {
 	}
 }
 
+func TestInputHandler_HandleKey_ArrowKeys_AppMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      tea.KeyPressMsg
+		expected string
+	}{
+		{"Up", testutils.TestKeyUp, "\x1bOA"},
+		{"Down", testutils.TestKeyDown, "\x1bOB"},
+		{"Right", testutils.TestKeyRight, "\x1bOC"},
+		{"Left", testutils.TestKeyLeft, "\x1bOD"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			ih := NewInputHandler(buf)
+			ih.UpdateTerminalModes([]byte("\x1b[?1h"))
+
+			handled, _ := ih.HandleKey(tt.msg)
+
+			if !handled {
+				t.Errorf("Expected %s to be handled", tt.name)
+			}
+
+			if buf.String() != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, buf.String())
+			}
+		})
+	}
+}
+
 func TestInputHandler_HandleKey_NormalTyping(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)

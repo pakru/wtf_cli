@@ -14,8 +14,8 @@ type PTYViewport struct {
 	Viewport      viewport.Model
 	content       string
 	cursorTracker *terminal.CursorTracker
+	lineRenderer  *terminal.LineRenderer
 	ready         bool
-	pendingCR     bool
 	dirty         bool // True if content changed since last View()
 }
 
@@ -25,6 +25,7 @@ func NewPTYViewport() PTYViewport {
 		Viewport:      viewport.New(),
 		content:       "",
 		cursorTracker: terminal.NewCursorTracker(),
+		lineRenderer:  terminal.NewLineRenderer(),
 	}
 }
 
@@ -41,11 +42,20 @@ func (v *PTYViewport) AppendOutput(data []byte) {
 		return
 	}
 
-	v.content = terminal.AppendPTYContent(v.content, data, &v.pendingCR)
+	if v.lineRenderer != nil {
+		v.lineRenderer.Append(data)
+		v.content = v.lineRenderer.Content()
+		if v.cursorTracker != nil {
+			row, col := v.lineRenderer.CursorPosition()
+			v.cursorTracker.SetPosition(row, col)
+		}
+	} else {
+		v.content = terminal.AppendPTYContent(v.content, data, nil)
+		if v.cursorTracker != nil {
+			v.cursorTracker.UpdateFromOutput(data)
+		}
+	}
 	v.dirty = true // Mark content as changed
-
-	// Track cursor position from ANSI codes
-	v.cursorTracker.UpdateFromOutput(data)
 
 	// Set content with cursor overlay
 	contentWithCursor := v.cursorTracker.RenderCursorOverlay(v.content, "█")
@@ -63,6 +73,9 @@ func (v *PTYViewport) GetContent() string {
 // Clear empties the viewport
 func (v *PTYViewport) Clear() {
 	v.content = ""
+	if v.lineRenderer != nil {
+		v.lineRenderer.Reset()
+	}
 	v.Viewport.SetContent("")
 	v.dirty = true // Mark as changed
 }
