@@ -217,6 +217,63 @@ func TestInputHandler_HandleKey_ArrowKeys_AppMode(t *testing.T) {
 	}
 }
 
+func TestInputHandler_HandleKey_HomeEnd(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      tea.KeyPressMsg
+		expected string
+	}{
+		{"Home", testutils.TestKeyHome, "\x1b[H"},
+		{"End", testutils.TestKeyEnd, "\x1b[F"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			ih := NewInputHandler(buf)
+
+			handled, _ := ih.HandleKey(tt.msg)
+
+			if !handled {
+				t.Errorf("Expected %s to be handled", tt.name)
+			}
+
+			if buf.String() != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, buf.String())
+			}
+		})
+	}
+}
+
+func TestInputHandler_HandleKey_HomeEnd_AppMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      tea.KeyPressMsg
+		expected string
+	}{
+		{"Home", testutils.TestKeyHome, "\x1bOH"},
+		{"End", testutils.TestKeyEnd, "\x1bOF"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			ih := NewInputHandler(buf)
+			ih.UpdateTerminalModes([]byte("\x1b[?1h"))
+
+			handled, _ := ih.HandleKey(tt.msg)
+
+			if !handled {
+				t.Errorf("Expected %s to be handled", tt.name)
+			}
+
+			if buf.String() != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, buf.String())
+			}
+		})
+	}
+}
+
 func TestInputHandler_HandleKey_NormalTyping(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)

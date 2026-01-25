@@ -117,8 +117,9 @@ func TestCursorTracker_RenderCursorOverlay_MiddleOfLine(t *testing.T) {
 	ct.SetPosition(0, 2)
 
 	result := ct.RenderCursorOverlay("hello", "█")
-	if result != "he█llo" {
-		t.Errorf("Expected %q, got %q", "he█llo", result)
+	expected := "he\x1b[7ml\x1b[27mlo"
+	if result != expected {
+		t.Errorf("Expected %q, got %q", expected, result)
 	}
 }
 
@@ -128,7 +129,7 @@ func TestCursorTracker_RenderCursorOverlay_MiddleRow(t *testing.T) {
 
 	content := "line1\nline2\nline3"
 	result := ct.RenderCursorOverlay(content, "█")
-	expected := "line1\nl█ine2\nline3"
+	expected := "line1\nl\x1b[7mi\x1b[27mne2\nline3"
 	if result != expected {
 		t.Errorf("Expected %q, got %q", expected, result)
 	}
@@ -259,7 +260,7 @@ func TestCursorTracker_RenderCursorOverlay_WithANSICodes(t *testing.T) {
 
 	result := ct.RenderCursorOverlay("\x1b[31mred\x1b[0mtext", "█")
 	// Cursor at visible position 3, which is after "red" escape sequences
-	expected := "\x1b[31mred\x1b[0m█text"
+	expected := "\x1b[31mred\x1b[0m\x1b[7mt\x1b[27mext"
 	if result != expected {
 		t.Errorf("Expected %q, got %q", expected, result)
 	}
@@ -271,7 +272,7 @@ func TestCursorTracker_RenderCursorOverlay_MultiLineWithANSI(t *testing.T) {
 
 	content := "first\n\x1b[32msecond\x1b[0m\nthird"
 	result := ct.RenderCursorOverlay(content, "█")
-	expected := "first\n\x1b[32mse█cond\x1b[0m\nthird"
+	expected := "first\n\x1b[32mse\x1b[7mc\x1b[27mond\x1b[0m\nthird"
 	if result != expected {
 		t.Errorf("Expected %q, got %q", expected, result)
 	}
@@ -282,8 +283,9 @@ func TestCursorTracker_RenderCursorOverlay_AtStartOfLine(t *testing.T) {
 	ct.SetPosition(0, 0)
 
 	result := ct.RenderCursorOverlay("hello", "█")
-	if result != "█hello" {
-		t.Errorf("Expected %q, got %q", "█hello", result)
+	expected := "\x1b[7mh\x1b[27mello"
+	if result != expected {
+		t.Errorf("Expected %q, got %q", expected, result)
 	}
 }
 

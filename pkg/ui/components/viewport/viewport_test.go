@@ -56,8 +56,8 @@ func TestPTYViewport_CursorLeft_ShowsCursorInPlace(t *testing.T) {
 	vp.AppendOutput([]byte("\x08")) // backspace moves cursor left
 
 	view := vp.View()
-	if !strings.Contains(view, "hell█o") {
-		t.Errorf("Expected cursor in 'hell█o', got %q", view)
+	if !strings.Contains(view, "hell\x1b[7mo\x1b[27m") {
+		t.Errorf("Expected cursor in 'hell\\x1b[7mo\\x1b[27m', got %q", view)
 	}
 }
 
@@ -68,8 +68,8 @@ func TestPTYViewport_CursorLeftCSI_ShowsCursorInPlace(t *testing.T) {
 	vp.AppendOutput([]byte("hello\x1b[2D"))
 
 	view := vp.View()
-	if !strings.Contains(view, "hel█lo") {
-		t.Errorf("Expected cursor in 'hel█lo', got %q", view)
+	if !strings.Contains(view, "hel\x1b[7ml\x1b[27mo") {
+		t.Errorf("Expected cursor in 'hel\\x1b[7ml\\x1b[27mo', got %q", view)
 	}
 }
 
@@ -82,6 +82,48 @@ func TestPTYViewport_CursorRight_PadsSpaces(t *testing.T) {
 	view := vp.View()
 	if !strings.Contains(view, "hi   █") {
 		t.Errorf("Expected cursor after padding in 'hi   █', got %q", view)
+	}
+}
+
+func TestPTYViewport_CursorHome_ShowsCursorAtStart(t *testing.T) {
+	vp := NewPTYViewport()
+	vp.SetSize(80, 24)
+
+	vp.AppendOutput([]byte("hello"))
+	vp.AppendOutput([]byte("\x1b[H"))
+
+	view := vp.View()
+	if !strings.Contains(view, "\x1b[7mh\x1b[27mello") {
+		t.Errorf("Expected cursor at start in '\\x1b[7mh\\x1b[27mello', got %q", view)
+	}
+}
+
+func TestPTYViewport_CursorEnd_ShowsCursorAtEnd(t *testing.T) {
+	vp := NewPTYViewport()
+	vp.SetSize(80, 24)
+
+	vp.AppendOutput([]byte("hello"))
+	vp.AppendOutput([]byte("\x1b[H"))
+	vp.AppendOutput([]byte("\x1b[F"))
+
+	view := vp.View()
+	if !strings.Contains(view, "hello█") {
+		t.Errorf("Expected cursor at end in 'hello█', got %q", view)
+	}
+}
+
+func TestPTYViewport_HomeEndEdits(t *testing.T) {
+	vp := NewPTYViewport()
+	vp.SetSize(80, 24)
+
+	vp.AppendOutput([]byte("abcd"))
+	vp.AppendOutput([]byte("\x1b[H"))
+	vp.AppendOutput([]byte("X"))
+	vp.AppendOutput([]byte("\x1b[F"))
+	vp.AppendOutput([]byte("Z"))
+
+	if got := vp.GetContent(); got != "XbcdZ" {
+		t.Errorf("Expected %q, got %q", "XbcdZ", got)
 	}
 }
 

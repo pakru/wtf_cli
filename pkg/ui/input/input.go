@@ -97,14 +97,6 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 	}
 
 	keyStr := msg.String()
-	if keyStr == "left" || keyStr == "right" || keyStr == "backspace" {
-		key := msg.Key()
-		logger := slog.Default()
-		ctx := context.Background()
-		if logger.Enabled(ctx, logging.LevelTrace) {
-			logger.Log(ctx, logging.LevelTrace, "key_input", "key", keyStr, "code", key.Code, "mod", key.Mod, "text_len", len(key.Text), "fullscreen", ih.fullScreenMode)
-		}
-	}
 
 	cursorSeq := func(normal, app string) []byte {
 		if ih.cursorKeysAppMode {
@@ -188,6 +180,12 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 		return true, nil
 	case "left":
 		ih.ptyWriter.Write(cursorSeq("\x1b[D", "\x1bOD"))
+		return true, nil
+	case "home":
+		ih.ptyWriter.Write(cursorSeq("\x1b[H", "\x1bOH"))
+		return true, nil
+	case "end":
+		ih.ptyWriter.Write(cursorSeq("\x1b[F", "\x1bOF"))
 		return true, nil
 	}
 

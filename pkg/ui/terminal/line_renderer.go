@@ -279,6 +279,13 @@ func (r *LineRenderer) Append(data []byte) {
 		case 0x08, 0x7f:
 			r.moveCursorLeft(1)
 			i++
+		case 0x01: // Ctrl+A (home)
+			r.col = 0
+			i++
+		case 0x05: // Ctrl+E (end)
+			r.ensureLine(r.row)
+			r.col = r.lines[r.row].visibleLen()
+			i++
 		default:
 			if b >= 0x20 {
 				r.ensureLine(r.row)
@@ -329,10 +336,17 @@ func (r *LineRenderer) handleCSI(final byte) {
 			n = r.csiParams[0]
 		}
 		r.moveCursorRight(n)
+	case 'F':
+		r.ensureLine(r.row)
+		r.col = r.lines[r.row].visibleLen()
 	case 'K':
 		r.ensureLine(r.row)
 		r.lines[r.row].truncateFromCol(r.col)
 	case 'H', 'f':
+		if len(r.csiParams) == 0 {
+			r.col = 0
+			break
+		}
 		row := 1
 		col := 1
 		if len(r.csiParams) >= 1 && r.csiParams[0] > 0 {

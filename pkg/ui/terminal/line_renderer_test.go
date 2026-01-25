@@ -84,6 +84,15 @@ func TestLineRenderer_ANSISequencePreserved(t *testing.T) {
 	}
 }
 
+func TestLineRenderer_HomeEndEdits(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("abcd\x1b[HXY\x1b[FZ"))
+
+	if got := r.Content(); got != "XYcdZ" {
+		t.Fatalf("expected %q, got %q", "XYcdZ", got)
+	}
+}
+
 // New tests for better coverage
 
 func TestLineRenderer_WideCharacters(t *testing.T) {
@@ -318,7 +327,7 @@ func TestLineRenderer_OnlyCR(t *testing.T) {
 func TestLineRenderer_ControlCharsIgnored(t *testing.T) {
 	r := NewLineRenderer()
 	// Include some control chars that should be ignored (< 0x20 and not special)
-	r.Append([]byte("ab\x01\x02cd"))
+	r.Append([]byte("ab\x02\x03cd"))
 
 	content := r.Content()
 	if content != "abcd" {

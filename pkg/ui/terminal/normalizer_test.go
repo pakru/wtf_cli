@@ -89,6 +89,18 @@ func TestNormalizer_InlineEdit_PromptExtraction(t *testing.T) {
 	}
 }
 
+func TestNormalizer_HomeEndEdits(t *testing.T) {
+	n := NewNormalizer()
+	lines := n.Append([]byte("abcd\x1b[HXY\x1b[FZ\n"))
+
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
+	}
+	if string(lines[0]) != "XYcdZ" {
+		t.Fatalf("expected %q, got %q", "XYcdZ", string(lines[0]))
+	}
+}
+
 func TestNormalizer_OSCStripped(t *testing.T) {
 	n := NewNormalizer()
 	lines := n.Append([]byte("\x1b]0;dev@host: ~/project\x07dev@host$ ls\n"))

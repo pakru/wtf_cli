@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/mattn/go-runewidth"
 )
 
 // CursorTracker tracks cursor position from ANSI escape sequences
@@ -142,9 +144,14 @@ func (ct *CursorTracker) RenderCursorOverlay(content string, cursorChar string) 
 }
 
 func renderCursorInLine(line string, col int, cursorChar string) string {
+	const (
+		inverseOn  = "\x1b[7m"
+		inverseOff = "\x1b[27m"
+	)
+
 	var b strings.Builder
 	visible := 0
-	inserted := false
+	applied := false
 
 	for i := 0; i < len(line); {
 		if line[i] == 0x1b && i+1 < len(line) && line[i+1] == '[' {
@@ -162,24 +169,39 @@ func renderCursorInLine(line string, col int, cursorChar string) string {
 			continue
 		}
 
-		if !inserted && visible == col {
-			b.WriteString(cursorChar)
-			inserted = true
-		}
-
 		r, size := utf8.DecodeRuneInString(line[i:])
 		if r == utf8.RuneError && size == 1 {
-			b.WriteByte(line[i])
+			width := 1
+			if !applied && col >= visible && col < visible+width {
+				b.WriteString(inverseOn)
+				b.WriteByte(line[i])
+				b.WriteString(inverseOff)
+				applied = true
+			} else {
+				b.WriteByte(line[i])
+			}
 			i++
-			visible++
+			visible += width
 			continue
 		}
-		b.WriteRune(r)
+
+		width := runewidth.RuneWidth(r)
+		if width < 1 {
+			width = 1
+		}
+		if !applied && col >= visible && col < visible+width {
+			b.WriteString(inverseOn)
+			b.WriteRune(r)
+			b.WriteString(inverseOff)
+			applied = true
+		} else {
+			b.WriteRune(r)
+		}
 		i += size
-		visible++
+		visible += width
 	}
 
-	if !inserted {
+	if !applied {
 		if visible < col {
 			b.WriteString(strings.Repeat(" ", col-visible))
 		}

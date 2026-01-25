@@ -95,6 +95,10 @@ func (n *Normalizer) Append(data []byte) [][]byte {
 						count = n.csiParam
 					}
 					n.col += count
+				case 'H':
+					n.col = 0
+				case 'F':
+					n.col = len(n.line)
 				case 'K':
 					// Clear to end of line.
 					if n.col < len(n.line) {
@@ -167,6 +171,10 @@ func (n *Normalizer) Append(data []byte) [][]byte {
 				n.col = 0
 			}
 			n.pendingBS = true
+		case 0x01: // Ctrl+A (home)
+			n.col = 0
+		case 0x05: // Ctrl+E (end)
+			n.col = len(n.line)
 		default:
 			if b >= 0x20 {
 				n.writeByte(b)
