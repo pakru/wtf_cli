@@ -71,7 +71,7 @@ func TestRender(t *testing.T) {
 
 func TestRender_Truncation(t *testing.T) {
 	sb := NewStatusBar()
-	sb.termWidth = 30
+	sb.termWidth = 80
 	sb.termHeight = 24
 	sb.currentDir = "/very/long/directory/path/that/exceeds/terminal/width"
 
@@ -80,9 +80,9 @@ func TestRender_Truncation(t *testing.T) {
 	// Debug: print the output
 	t.Logf("Output length: %d, content: %q", len(output), output)
 
-	// Should have truncation indicator
-	if !strings.Contains(output, "...") {
-		t.Error("Expected truncation indicator (...)")
+	// Should have middle truncation indicator
+	if !strings.Contains(output, "/../") {
+		t.Error("Expected middle truncation indicator (/../)")
 	}
 
 	// The full long part should not appear

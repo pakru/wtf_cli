@@ -57,38 +57,99 @@ func (sb *StatusBar) Render() string {
 
 	sb.updateTerminalSize()
 
-	// Build status bar content
-	var content string
 	modelLabel := sb.model
 	if modelLabel == "" {
 		modelLabel = "unknown"
 	}
-	if sb.message != "" {
-		content = fmt.Sprintf("[wtf_cli] %s | [llm]: %s", sb.message, modelLabel)
+	const (
+		minGap         = 2
+		contentPadding = 2
+	)
+
+	rightContent := fmt.Sprintf("[llm]: %s", modelLabel)
+	if sb.message == "" {
+		rightContent = fmt.Sprintf("[llm]: %s | Press / for commands", modelLabel)
+	}
+	rightWidth := ansi.StringWidth(rightContent)
+
+	innerWidth := sb.termWidth - contentPadding
+	if innerWidth < 0 {
+		innerWidth = 0
+	}
+
+	innerContent := ""
+	if innerWidth == 0 {
+		innerContent = ""
+	} else if rightWidth > innerWidth {
+		innerContent = ansi.Truncate(rightContent, innerWidth, "")
 	} else {
-		content = fmt.Sprintf("[wtf_cli] %s | [llm]: %s | Press / for commands", sb.currentDir, modelLabel)
+		leftText := sb.currentDir
+		if sb.message != "" {
+			leftText = sb.message
+		}
+
+		leftPrefix := "[wtf_cli]"
+		leftContent := leftPrefix
+
+		leftAvailable := innerWidth - rightWidth - minGap
+		if leftAvailable < 0 {
+			leftAvailable = 0
+		}
+
+		prefixWidth := ansi.StringWidth(leftPrefix)
+		if leftAvailable >= prefixWidth+1 {
+			bodyWidth := leftAvailable - prefixWidth - 1
+			if bodyWidth > 0 && leftText != "" {
+				truncated := truncatePath(leftText, bodyWidth)
+				if truncated != "" {
+					leftContent = leftPrefix + " " + truncated
+				}
+			}
+		} else if leftAvailable < prefixWidth {
+			leftContent = ansi.Truncate(leftPrefix, leftAvailable, "")
+		}
+
+		leftWidth := ansi.StringWidth(leftContent)
+		gap := innerWidth - leftWidth - rightWidth
+		if gap < 0 {
+			gap = 0
+		}
+		if gap < minGap && leftWidth > 0 {
+			allowedLeft := innerWidth - rightWidth - minGap
+			if allowedLeft < 0 {
+				allowedLeft = 0
+			}
+			leftContent = ansi.Truncate(leftContent, allowedLeft, "")
+			leftWidth = ansi.StringWidth(leftContent)
+			gap = innerWidth - leftWidth - rightWidth
+			if gap < 0 {
+				gap = 0
+			}
+		}
+
+		innerContent = leftContent + strings.Repeat(" ", gap) + rightContent
 	}
 
-	// Truncate if too long (ANSI-aware width).
-	maxWidth := sb.termWidth - 2
-	if maxWidth < 10 {
-		maxWidth = 10 // Minimum width
+	if w := ansi.StringWidth(innerContent); w < innerWidth {
+		innerContent += strings.Repeat(" ", innerWidth-w)
+	} else if w > innerWidth && innerWidth > 0 {
+		innerContent = ansi.Truncate(innerContent, innerWidth, "")
 	}
 
-	if ansi.StringWidth(content) > maxWidth {
-		content = ansi.Truncate(content, maxWidth, "...")
+	fullContent := innerContent
+	if contentPadding == 2 && sb.termWidth >= 2 {
+		fullContent = " " + innerContent + " "
 	}
-
-	// Pad to full width
-	padding := strings.Repeat(" ", sb.termWidth-ansi.StringWidth(content))
+	if w := ansi.StringWidth(fullContent); w < sb.termWidth {
+		fullContent += strings.Repeat(" ", sb.termWidth-w)
+	}
 
 	// Build ANSI escape sequence for bottom bar
 	// Save cursor, move to bottom, print with inverse colors, restore cursor
 	return fmt.Sprintf(
-		"\033[s\033[%d;1H\033[7m%s%s\033[0m\033[u",
+		"\033[s\033[%d;1H\033[7m%s\033[0m\033[u",
 		sb.termHeight,
-		content,
-		padding,
+		fullContent,
 	)
 }
 

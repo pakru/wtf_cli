@@ -47,39 +47,86 @@ func (s *StatusBarView) SetWidth(width int) {
 
 // Render returns the styled status bar string
 func (s *StatusBarView) Render() string {
-	// Build content
-	var content string
 	modelLabel := s.model
 	if modelLabel == "" {
 		modelLabel = "unknown"
 	}
+	const (
+		minGap         = 2
+		contentPadding = 2
+	)
+
+	rightContent := fmt.Sprintf("[llm]: %s", modelLabel)
+	if s.message == "" {
+		rightContent = fmt.Sprintf("[llm]: %s | Press / for commands", modelLabel)
+	}
+	rightWidth := ansi.StringWidth(rightContent)
+
+	innerWidth := s.width - contentPadding
+	if innerWidth < 0 {
+		innerWidth = 0
+	}
+
+	if innerWidth == 0 {
+		return statusStyle.Width(s.width).Render("")
+	}
+
+	leftText := s.currentDir
 	if s.message != "" {
-		content = fmt.Sprintf("[wtf_cli] %s | [llm]: %s", s.message, modelLabel)
-	} else {
-		content = fmt.Sprintf("[wtf_cli] %s | [llm]: %s | Press / for commands", s.currentDir, modelLabel)
+		leftText = s.message
 	}
 
-	// Truncate if too long (ANSI-aware width).
-	maxWidth := s.width - 4
-	if maxWidth < 10 {
-		maxWidth = 10
+	leftPrefix := "[wtf_cli]"
+	leftContent := leftPrefix
+
+	leftAvailable := innerWidth - rightWidth - minGap
+	if leftAvailable < 0 {
+		leftAvailable = 0
 	}
 
-	if ansi.StringWidth(content) > maxWidth {
-		content = ansi.Truncate(content, maxWidth, "...")
+	prefixWidth := ansi.StringWidth(leftPrefix)
+	if leftAvailable >= prefixWidth+1 {
+		bodyWidth := leftAvailable - prefixWidth - 1
+		if bodyWidth > 0 && leftText != "" {
+			truncated := truncatePath(leftText, bodyWidth)
+			if truncated != "" {
+				leftContent = leftPrefix + " " + truncated
+			}
+		}
+	} else if leftAvailable < prefixWidth {
+		leftContent = ansi.Truncate(leftPrefix, leftAvailable, "")
 	}
 
-	// Style first, then pad to fill width
-	styled := statusStyle.Render(content)
-
-	// Calculate how much padding we need
-	contentWidth := ansi.StringWidth(content)
-	if contentWidth < s.width {
-		padding := s.width - contentWidth
-		styled += strings.Repeat(" ", padding)
+	leftWidth := ansi.StringWidth(leftContent)
+	gap := innerWidth - leftWidth - rightWidth
+	if gap < 0 {
+		gap = 0
+	}
+	if gap < minGap && leftWidth > 0 {
+		allowedLeft := innerWidth - rightWidth - minGap
+		if allowedLeft < 0 {
+			allowedLeft = 0
+		}
+		leftContent = ansi.Truncate(leftContent, allowedLeft, "")
+		leftWidth = ansi.StringWidth(leftContent)
+		gap = innerWidth - leftWidth - rightWidth
+		if gap < 0 {
+			gap = 0
+		}
 	}
 
-	return styled
+	if rightWidth > innerWidth {
+		rightContent = ansi.Truncate(rightContent, innerWidth, "")
+		rightWidth = ansi.StringWidth(rightContent)
+		leftContent = ""
+		gap = innerWidth - rightWidth
+		if gap < 0 {
+			gap = 0
+		}
+	}
+
+	fullContent := leftContent + strings.Repeat(" ", gap) + rightContent
+	return statusStyle.Width(s.width).Render(fullContent)
 }
 
 // getCurrentWorkingDir gets the current directory with ~ substitution

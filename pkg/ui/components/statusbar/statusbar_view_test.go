@@ -3,6 +3,8 @@ package statusbar
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestNewStatusBarView(t *testing.T) {
@@ -82,19 +84,91 @@ func TestStatusBarView_Render(t *testing.T) {
 
 func TestStatusBarView_Truncation(t *testing.T) {
 	sb := NewStatusBarView()
-	sb.SetWidth(30)
-	sb.SetDirectory("/very/long/directory/path/that/will/be/truncated")
+	sb.SetWidth(80)
+	longPath := "/very/long/directory/path/that/will/be/truncated"
+	sb.SetDirectory(longPath)
 
 	rendered := sb.Render()
+	stripped := ansi.Strip(rendered)
 
 	// Should be truncated
-	if strings.Contains(rendered, "be/truncated") {
+	if strings.Contains(stripped, longPath) {
 		t.Error("Expected long path to be truncated")
 	}
 
-	// Should have truncation indicator
-	if !strings.Contains(rendered, "...") {
-		t.Error("Expected truncation indicator")
+	// Should have middle truncation indicator
+	if !strings.Contains(stripped, "/../") {
+		t.Error("Expected middle truncation indicator")
+	}
+}
+
+func TestStatusBarView_LayoutAlignment(t *testing.T) {
+	sb := NewStatusBarView()
+	sb.SetWidth(80)
+	sb.SetDirectory("/home/user/projects/wtf_cli/pkg/ui/components")
+	sb.SetModel("model-1")
+
+	rendered := sb.Render()
+	stripped := ansi.Strip(rendered)
+	trimmed := strings.TrimSpace(stripped)
+	right := "[llm]: model-1 | Press / for commands"
+
+	if !strings.HasPrefix(trimmed, "[wtf_cli]") {
+		t.Fatalf("expected left content to start with [wtf_cli], got %q", trimmed)
+	}
+	if !strings.HasSuffix(trimmed, right) {
+		t.Fatalf("expected right content to be aligned at end, got %q", trimmed)
+	}
+	if width := ansi.StringWidth(stripped); width != 80 {
+		t.Fatalf("expected width 80, got %d", width)
+	}
+
+	idx := strings.Index(trimmed, right)
+	if idx <= 0 {
+		t.Fatalf("expected right content to appear, got %q", trimmed)
+	}
+	if trimmed[idx-1] != ' ' {
+		t.Fatalf("expected space gap before right content, got %q", trimmed)
+	}
+}
+
+func TestTruncatePath_ShortPath(t *testing.T) {
+	path := "/home/user/a"
+	got := truncatePath(path, 50)
+	if got != path {
+		t.Fatalf("expected %q, got %q", path, got)
+	}
+}
+
+func TestTruncatePath_LongPath(t *testing.T) {
+	path := "/home/user/projects/wtf_cli/pkg/ui"
+	got := truncatePath(path, 30)
+	expected := "/home/../wtf_cli/pkg/ui"
+	if got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestTruncatePath_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		maxWidth int
+		expected string
+	}{
+		{name: "root", path: "/", maxWidth: 4, expected: "/"},
+		{name: "home", path: "~", maxWidth: 4, expected: "~"},
+		{name: "empty", path: "", maxWidth: 4, expected: ""},
+		{name: "single", path: "single", maxWidth: 4, expected: "si.."},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := truncatePath(tc.path, tc.maxWidth)
+			if got != tc.expected {
+				t.Fatalf("expected %q, got %q", tc.expected, got)
+			}
+		})
 	}
 }
 
@@ -113,6 +187,39 @@ func TestStatusBarView_Width(t *testing.T) {
 		if len(rendered) == 0 {
 			t.Errorf("Expected non-empty output for width %d", width)
 		}
+	}
+}
+
+func TestStatusBarView_FullWidth(t *testing.T) {
+	sb := NewStatusBarView()
+	sb.SetWidth(80)
+	sb.SetDirectory("/home/user/projects/wtf_cli")
+	sb.SetModel("model-1")
+
+	rendered := sb.Render()
+	stripped := ansi.Strip(rendered)
+	if width := ansi.StringWidth(stripped); width != 80 {
+		t.Fatalf("expected width 80, got %d", width)
+	}
+}
+
+func TestStatusBarView_NarrowTerminal(t *testing.T) {
+	sb := NewStatusBarView()
+	sb.SetWidth(40)
+	sb.SetDirectory("/home/user/projects/wtf_cli/pkg/ui/components")
+	sb.SetModel("model-1")
+
+	rendered := sb.Render()
+	stripped := ansi.Strip(rendered)
+
+	if width := ansi.StringWidth(stripped); width != 40 {
+		t.Fatalf("expected width 40, got %d", width)
+	}
+	if strings.Contains(stripped, "/home/user/projects") {
+		t.Fatalf("expected path to be truncated or omitted at narrow width, got %q", stripped)
+	}
+	if !strings.Contains(stripped, "[llm]: model-1") {
+		t.Fatalf("expected model label to remain visible at narrow width, got %q", stripped)
 	}
 }
 
