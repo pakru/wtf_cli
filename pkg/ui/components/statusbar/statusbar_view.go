@@ -5,23 +5,27 @@ import (
 	"os"
 	"strings"
 
+	"wtf_cli/pkg/ui/styles"
+
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
 // StatusBarView handles the status bar rendering with Lipgloss
 type StatusBarView struct {
-	currentDir string
-	message    string
-	model      string
-	width      int
+	currentDir  string
+	message     string
+	model       string
+	width       int
+	statusStyle lipgloss.Style
 }
 
 // NewStatusBarView creates a new status bar view
 func NewStatusBarView() *StatusBarView {
 	return &StatusBarView{
-		currentDir: getCurrentWorkingDir(),
-		width:      80,
+		currentDir:  getCurrentWorkingDir(),
+		width:       80,
+		statusStyle: styles.StatusBarStyle,
 	}
 }
 
@@ -68,7 +72,7 @@ func (s *StatusBarView) Render() string {
 	}
 
 	if innerWidth == 0 {
-		return statusStyle.Width(s.width).Render("")
+		return s.statusStyle.Width(s.width).Render("")
 	}
 
 	leftText := s.currentDir
@@ -126,7 +130,7 @@ func (s *StatusBarView) Render() string {
 	}
 
 	fullContent := leftContent + strings.Repeat(" ", gap) + rightContent
-	return statusStyle.Width(s.width).Render(fullContent)
+	return s.statusStyle.Width(s.width).Render(fullContent)
 }
 
 // getCurrentWorkingDir gets the current directory with ~ substitution
@@ -145,45 +149,14 @@ func getCurrentWorkingDir() string {
 	return dir
 }
 
-// Lipgloss Styles
-
-var (
-	// Status bar with gradient background
-	statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FAFAFA")).
-			Background(lipgloss.Color("#7D56F4")).
-			Padding(0, 1).
-			Bold(true)
-
-	// Alternative color schemes for different themes
-
-	// Cyan/purple gradient style
-	statusStyleCyan = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FAFAFA")).
-			Background(lipgloss.Color("#00B8D4")).
-			Padding(0, 1).
-			Bold(true)
-
-	// Dark subtle style
-	statusStyleDark = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#D0D0D0")).
-			Background(lipgloss.Color("#3C3C3C")).
-			Padding(0, 1)
-
-	// Highlight style for wtf_cli prefix
-	prefixStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFD700")).
-			Bold(true)
-)
-
 // SetTheme allows changing the status bar theme
 func (s *StatusBarView) SetTheme(theme string) {
 	switch theme {
 	case "cyan":
-		statusStyle = statusStyleCyan
+		s.statusStyle = styles.StatusBarStyleCyan
 	case "dark":
-		statusStyle = statusStyleDark
+		s.statusStyle = styles.StatusBarStyleDark
 	default:
-		// Keep default purple
+		s.statusStyle = styles.StatusBarStyle
 	}
 }

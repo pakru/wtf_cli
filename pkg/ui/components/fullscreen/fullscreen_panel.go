@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"sync"
+	"wtf_cli/pkg/ui/styles"
 
-	"charm.land/lipgloss/v2"
 	"github.com/vito/midterm"
 )
 
@@ -68,13 +68,11 @@ func (p *FullScreenPanel) View() string {
 	}
 
 	content := strings.Join(lines, "\n")
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("141")).
-		Width(contentWidth).
-		Height(contentHeight)
 
-	return boxStyle.Render(content)
+	return styles.FullScreenBoxStyle.
+		Width(contentWidth).
+		Height(contentHeight).
+		Render(content)
 }
 
 // Resize updates the terminal dimensions

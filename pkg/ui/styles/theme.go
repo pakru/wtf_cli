@@ -130,3 +130,59 @@ var (
 		Foreground(ColorCode).
 		Background(ColorCodeBg)
 )
+
+// Status bar styles
+var (
+	// StatusBarStyle is the default status bar style (purple theme)
+	StatusBarStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FAFAFA")).
+			Background(lipgloss.Color("#7D56F4")).
+			Padding(0, 1).
+			Bold(true)
+
+	// StatusBarStyleCyan is the cyan theme variant
+	StatusBarStyleCyan = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FAFAFA")).
+				Background(lipgloss.Color("#00B8D4")).
+				Padding(0, 1).
+				Bold(true)
+
+	// StatusBarStyleDark is the dark theme variant
+	StatusBarStyleDark = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#D0D0D0")).
+				Background(lipgloss.Color("#3C3C3C")).
+				Padding(0, 1)
+)
+
+// Welcome message styles
+var (
+	// WelcomeBorderStyle for welcome box borders
+	WelcomeBorderStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("99"))
+
+	// WelcomeTitleStyle for welcome message title
+	WelcomeTitleStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("219")).
+				Bold(true)
+
+	// WelcomeKeyStyle for keyboard shortcut keys
+	WelcomeKeyStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("222")).
+			Bold(true)
+
+	// WelcomeHeaderStyle for section headers
+	WelcomeHeaderStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("248"))
+
+	// WelcomeVersionStyle for version info (dimmed)
+	WelcomeVersionStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("244"))
+)
+
+// Full-screen panel styles
+var (
+	// FullScreenBoxStyle for fullscreen application panels
+	FullScreenBoxStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorBorder)
+)

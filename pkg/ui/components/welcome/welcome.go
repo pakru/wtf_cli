@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"wtf_cli/pkg/ui/components/utils"
+	"wtf_cli/pkg/ui/styles"
 	"wtf_cli/pkg/version"
 
-	"charm.land/lipgloss/v2"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -15,26 +15,18 @@ import (
 func WelcomeMessage() string {
 	const boxWidth = 53 // Total inner width
 
-	// Styles
-	borderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("99"))
-	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("219")).Bold(true)
-	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("222")).Bold(true)
-	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
-	versionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-
 	// Helper: create a line with content padded to boxWidth
 	makeLine := func(content string, visualWidth int) string {
 		pad := boxWidth - visualWidth
 		if pad < 0 {
 			pad = 0
 		}
-		return borderStyle.Render("│") + content + strings.Repeat(" ", pad) + borderStyle.Render("│")
+		return styles.WelcomeBorderStyle.Render("│") + content + strings.Repeat(" ", pad) + styles.WelcomeBorderStyle.Render("│")
 	}
 
 	// Borders
-	top := borderStyle.Render("╭" + strings.Repeat("─", boxWidth) + "╮")
-	bottom := borderStyle.Render("╰" + strings.Repeat("─", boxWidth) + "╯")
+	top := styles.WelcomeBorderStyle.Render("╭" + strings.Repeat("─", boxWidth) + "╮")
+	bottom := styles.WelcomeBorderStyle.Render("╰" + strings.Repeat("─", boxWidth) + "╯")
 	empty := makeLine("", 0)
 
 	var lines []string
@@ -45,14 +37,14 @@ func WelcomeMessage() string {
 	titleText := "✨ Welcome to WTF CLI ✨"
 	rawTitleWidth := runewidth.StringWidth(titleText)
 	titleLeftPad := (boxWidth - rawTitleWidth) / 2
-	titleLine := strings.Repeat(" ", titleLeftPad) + titleStyle.Render(titleText)
+	titleLine := strings.Repeat(" ", titleLeftPad) + styles.WelcomeTitleStyle.Render(titleText)
 	lines = append(lines, makeLine(titleLine, titleLeftPad+rawTitleWidth))
 
 	lines = append(lines, empty)
 
 	// Shortcuts header
 	shortcutsHeader := "  Shortcuts:"
-	lines = append(lines, makeLine(headerStyle.Render(shortcutsHeader), runewidth.StringWidth(shortcutsHeader)))
+	lines = append(lines, makeLine(styles.WelcomeHeaderStyle.Render(shortcutsHeader), runewidth.StringWidth(shortcutsHeader)))
 
 	// Shortcuts
 	shortcuts := []struct{ key, desc string }{
@@ -64,7 +56,7 @@ func WelcomeMessage() string {
 	}
 	for _, s := range shortcuts {
 		keyFormatted := fmt.Sprintf("    %-10s", s.key)
-		line := keyStyle.Render(keyFormatted) + descStyle.Render(s.desc)
+		line := styles.WelcomeKeyStyle.Render(keyFormatted) + styles.TextStyle.Render(s.desc)
 		lineWidth := runewidth.StringWidth(keyFormatted) + runewidth.StringWidth(s.desc)
 		lines = append(lines, makeLine(line, lineWidth))
 	}
@@ -78,7 +70,7 @@ func WelcomeMessage() string {
 		versionText = utils.TruncateToWidth(versionText, maxVersionLen)
 	}
 	versionLeftPad := (boxWidth - runewidth.StringWidth(versionText)) / 2
-	versionLine := strings.Repeat(" ", versionLeftPad) + versionStyle.Render(versionText)
+	versionLine := strings.Repeat(" ", versionLeftPad) + styles.WelcomeVersionStyle.Render(versionText)
 	lines = append(lines, makeLine(versionLine, versionLeftPad+runewidth.StringWidth(versionText)))
 
 	lines = append(lines, bottom)
