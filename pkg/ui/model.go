@@ -236,6 +236,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tea.MouseMsg:
+		// Route to sidebar when visible and in chat mode
+		if m.sidebar != nil && m.sidebar.IsVisible() && m.sidebar.IsChatMode() {
+			cmd := m.sidebar.HandleMouse(msg)
+			return m, cmd
+		}
+		return m, nil
+
 	case tea.PasteMsg:
 		if msg.Content == "" {
 			return m, nil
@@ -305,6 +313,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, applyPasteToOverlay(msg.Content, m.historyPicker.Update)
 		}
 
+		// Route paste to chat input when focused
+		if m.sidebar != nil && m.sidebar.IsVisible() && m.sidebar.IsChatMode() {
+			if m.sidebar.IsFocusedOnInput() {
+				m.sidebar.HandlePaste(msg.Content)
+				return m, nil
+			}
+		}
+
 		if m.inputHandler != nil {
 			m.inputHandler.HandlePaste(msg.Content)
 		}
@@ -315,12 +331,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		// Full-screen mode: bypass all shortcuts, route to PTY
 		if m.fullScreenMode {
 			handled, cmd := m.inputHandler.HandleKey(msg)
 			if handled {
 				return m, cmd
 			}
-			return m, nil
+			return m, nil // Always return here to avoid fallthrough
 		}
 
 		if m.exitPending && msg.String() != "ctrl+d" {
@@ -338,31 +355,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
-		// If settings panel is visible, handle its keys first
-		if m.settingsPanel.IsVisible() {
+		// Priority 1: Overlays (settings, palette, history picker)
+		// These should take precedence even if sidebar is visible
+		if m.settingsPanel != nil && m.settingsPanel.IsVisible() {
 			cmd := m.settingsPanel.Update(msg)
 			return m, cmd
 		}
 
-		// If result panel is visible, handle its keys first
-		if m.resultPanel.IsVisible() {
-			cmd := m.resultPanel.Update(msg)
-			return m, cmd
-		}
-
-		// If palette is visible, handle its keys first
-		if m.palette.IsVisible() {
+		if m.palette != nil && m.palette.IsVisible() {
 			cmd := m.palette.Update(msg)
 			return m, cmd
 		}
 
-		// If history picker is visible, handle its keys first
 		if m.historyPicker != nil && m.historyPicker.IsVisible() {
 			cmd := m.historyPicker.Update(msg)
 			return m, cmd
 		}
 
-		if m.sidebar != nil && m.sidebar.IsVisible() && m.sidebar.ShouldHandleKey(msg) {
+		// Priority 2: Result panel
+		if m.resultPanel.IsVisible() {
+			cmd := m.resultPanel.Update(msg)
+			return m, cmd
+		}
+
+		// Priority 3: Sidebar chat mode (if enabled and visible)
+		// Chat mode handles keys when focused on input
+		// This runs AFTER overlays and result panel, so they take precedence
+		if m.sidebar != nil && m.sidebar.IsChatMode() && m.sidebar.IsVisible() {
+			// Handle focus toggle keys explicitly
+			switch msg.String() {
+			case "ctrl+t", "tab":
+				m.sidebar.ToggleFocus()
+				return m, nil
+			}
+
+			if cmd := m.sidebar.Update(msg); cmd != nil {
+				return m, cmd
+			}
+			// If sidebar handled key, don't fall through
+			if m.sidebar.ShouldHandleKey(msg) {
+				return m, nil
+			}
+		}
+
+		// Priority 4: Regular sidebar (non-chat mode)
+		if m.sidebar != nil && m.sidebar.IsVisible() && !m.sidebar.IsChatMode() {
 			wasVisible := m.sidebar.IsVisible()
 			cmd := m.sidebar.Update(msg)
 			if wasVisible && !m.sidebar.IsVisible() {
@@ -386,6 +423,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		slog.Info("palette_open")
 		m.palette.Show()
 		m.inputHandler.SetPaletteMode(true)
+		return m, nil
+
+	case input.ToggleChatMsg:
+		// Ctrl+T pressed - toggle chat sidebar visibility
+		if m.sidebar != nil {
+			if m.sidebar.IsVisible() {
+				// Hide sidebar
+				m.sidebar.Hide()
+				slog.Info("sidebar_close", "reason", "ctrl_t")
+				m.applyLayout()
+			} else {
+				// Show sidebar in chat mode, preserve existing title
+				m.sidebar.EnableChatMode()
+				title := m.sidebar.GetTitle()
+				if title == "" {
+					title = "WTF Analysis"
+				}
+				m.sidebar.Show(title, "")
+				m.sidebar.FocusInput()
+				slog.Info("sidebar_open", "reason", "ctrl_t", "chat_mode", true, "title", title)
+				m.applyLayout()
+			}
+		}
 		return m, nil
 
 	case palette.PaletteSelectMsg:
@@ -416,6 +476,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				return input.ShowHistoryPickerMsg{InitialFilter: ""}
 			}
+		case commands.ResultActionToggleChat:
+			// Toggle chat sidebar visibility (same as Ctrl+T)
+			if m.sidebar != nil {
+				if m.sidebar.IsVisible() {
+					m.sidebar.Hide()
+					slog.Info("sidebar_close", "reason", "chat_command")
+				} else {
+					// Preserve existing title
+					m.sidebar.EnableChatMode()
+					title := m.sidebar.GetTitle()
+					if title == "" {
+						title = "WTF Analysis"
+					}
+					m.sidebar.Show(title, "")
+					m.sidebar.FocusInput()
+					slog.Info("sidebar_open", "reason", "chat_command", "chat_mode", true, "title", title)
+				}
+				m.applyLayout()
+			}
+			return m, nil
 		}
 
 		if streamHandler, ok := handler.(commands.StreamingHandler); ok {
@@ -434,8 +514,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.sidebar != nil {
+				// Enable chat mode for interactive conversation
+				m.sidebar.EnableChatMode()
 				m.sidebar.Show(result.Title, result.Content)
-				slog.Info("sidebar_open", "title", result.Title, "streaming", true)
+				// Focus input so user can start typing immediately
+				m.sidebar.FocusInput()
+				slog.Info("sidebar_open", "title", result.Title, "streaming", true, "chat_mode", true)
 				m.applyLayout()
 			}
 			m.wtfContent = ""
@@ -623,60 +707,141 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Result panel closed
 		return m, nil
 
+	case sidebar.ChatSubmitMsg:
+		if m.sidebar == nil || !m.sidebar.IsChatMode() || msg.Content == "" {
+			return m, nil
+		}
+
+		// Guard: refuse new stream while one is active (prevents deadlock)
+		if m.wtfStream != nil {
+			return m, nil
+		}
+
+		// Add user message to sidebar history
+		m.sidebar.AppendUserMessage(msg.Content)
+		m.sidebar.RefreshView()
+
+		// Build context and start chat stream
+		ctx := commands.NewContext(m.buffer, m.session, m.currentDir)
+		chatHandler := &commands.ChatHandler{}
+
+		stream, err := chatHandler.StartChatStream(ctx, m.sidebar.GetMessages())
+		if err != nil {
+			m.sidebar.AppendErrorMessage(err.Error())
+			return m, nil
+		}
+
+		// Guard nil stream to prevent listenToWtfStream from blocking
+		if stream == nil {
+			m.sidebar.AppendErrorMessage("Failed to start chat stream")
+			return m, nil
+		}
+
+		m.wtfStream = stream
+		return m, listenToWtfStream(m.wtfStream)
+
 	case commands.WtfStreamEvent:
 		if msg.Err != nil {
 			slog.Error("wtf_stream_error", "error", msg.Err)
-			m.wtfContent = fmt.Sprintf("Error: %v", msg.Err)
-			if m.sidebar != nil && m.sidebar.IsVisible() {
-				m.sidebar.SetContent(m.wtfContent)
+			// Clear all stream state (guard nil)
+			if m.sidebar != nil {
+				m.sidebar.SetStreaming(false)
+				// Only append error in chat mode
+				if m.sidebar.IsChatMode() {
+					m.sidebar.AppendErrorMessage(msg.Err.Error())
+					m.sidebar.RefreshView() // Ensure error is visible immediately
+				} else {
+					m.wtfContent = fmt.Sprintf("Error: %v", msg.Err)
+					if m.sidebar.IsVisible() {
+						m.sidebar.SetContent(m.wtfContent)
+					}
+				}
 			}
 			m.wtfStream = nil
 			m.streamThrottlePending = false
 			return m, nil
 		}
-		if msg.Delta != "" {
-			// Accumulate content
-			if m.wtfContent == "" {
-				m.wtfContent = msg.Delta
-			} else {
-				m.wtfContent += msg.Delta
-			}
 
-			// Throttle sidebar updates
-			if !m.streamThrottlePending {
-				m.streamThrottlePending = true
-				// Immediately update on first chunk
+		// Chat mode: append to messages, don't overwrite content
+		if m.sidebar != nil && m.sidebar.IsChatMode() {
+			if msg.Delta != "" {
+				// First chunk: create new assistant message + immediate refresh
+				if !m.sidebar.IsStreaming() {
+					m.sidebar.SetStreaming(true)
+					m.sidebar.StartAssistantMessage()
+				}
+
+				// Update last message with delta
+				m.sidebar.UpdateLastMessage(msg.Delta)
+
+				// Throttle rendering
+				if !m.streamThrottlePending {
+					m.streamThrottlePending = true
+					// Immediate refresh on first chunk for responsiveness
+					m.sidebar.RefreshView()
+					return m, tea.Batch(
+						tea.Tick(m.streamThrottleDelay, func(time.Time) tea.Msg {
+							return streamThrottleFlushMsg{}
+						}),
+						listenToWtfStream(m.wtfStream),
+					)
+				}
+				// Subsequent chunks: just listen, don't schedule another tick
+				return m, listenToWtfStream(m.wtfStream)
+			}
+			if msg.Done {
+				m.sidebar.SetStreaming(false)
+				m.sidebar.RefreshView() // Final refresh
+				m.wtfStream = nil
+				m.streamThrottlePending = false
+				return m, nil
+			}
+		} else {
+			// Non-chat mode: existing behavior (SetContent)
+			if msg.Delta != "" {
+				// Accumulate content
+				if m.wtfContent == "" {
+					m.wtfContent = msg.Delta
+				} else {
+					m.wtfContent += msg.Delta
+				}
+
+				// Throttle sidebar updates
+				if !m.streamThrottlePending {
+					m.streamThrottlePending = true
+					// Immediately update on first chunk
+					if m.sidebar != nil && m.sidebar.IsVisible() {
+						m.sidebar.SetContent(m.wtfContent)
+					}
+					return m, tea.Batch(
+						tea.Tick(m.streamThrottleDelay, func(time.Time) tea.Msg {
+							return streamThrottleFlushMsg{}
+						}),
+						listenToWtfStream(m.wtfStream),
+					)
+				}
+				// Subsequent chunks: just listen, don't update sidebar yet
+				return m, listenToWtfStream(m.wtfStream)
+			}
+			if msg.Done {
+				logger := slog.Default()
+				if logger.Enabled(context.Background(), logging.LevelTrace) {
+					logger.Log(
+						context.Background(),
+						logging.LevelTrace,
+						"wtf_stream_full_response",
+						"response", m.wtfContent,
+					)
+				}
+				slog.Info("wtf_stream_done")
+				m.wtfStream = nil
+				// Final update to sidebar with all content
 				if m.sidebar != nil && m.sidebar.IsVisible() {
 					m.sidebar.SetContent(m.wtfContent)
 				}
-				return m, tea.Batch(
-					tea.Tick(m.streamThrottleDelay, func(time.Time) tea.Msg {
-						return streamThrottleFlushMsg{}
-					}),
-					listenToWtfStream(m.wtfStream),
-				)
+				m.streamThrottlePending = false
+				return m, nil
 			}
-			// Subsequent chunks: just listen, don't update sidebar yet
-			return m, listenToWtfStream(m.wtfStream)
-		}
-		if msg.Done {
-			logger := slog.Default()
-			if logger.Enabled(context.Background(), logging.LevelTrace) {
-				logger.Log(
-					context.Background(),
-					logging.LevelTrace,
-					"wtf_stream_full_response",
-					"response", m.wtfContent,
-				)
-			}
-			slog.Info("wtf_stream_done")
-			m.wtfStream = nil
-			// Final update to sidebar with all content
-			if m.sidebar != nil && m.sidebar.IsVisible() {
-				m.sidebar.SetContent(m.wtfContent)
-			}
-			m.streamThrottlePending = false
-			return m, nil
 		}
 		if m.wtfStream != nil {
 			return m, listenToWtfStream(m.wtfStream)
@@ -685,8 +850,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case streamThrottleFlushMsg:
 		m.streamThrottlePending = false
-		// Update sidebar with accumulated content
-		if m.sidebar != nil && m.sidebar.IsVisible() {
+
+		// Chat mode: re-render from messages (not SetContent)
+		if m.sidebar != nil && m.sidebar.IsChatMode() {
+			m.sidebar.RefreshView() // Re-renders viewport from messages[]
+		} else if m.sidebar != nil && m.sidebar.IsVisible() {
+			// Non-chat mode: existing SetContent behavior
 			m.sidebar.SetContent(m.wtfContent)
 		}
 		return m, nil
@@ -758,6 +927,13 @@ func (m Model) View() tea.View {
 		v.AltScreen = true
 		v.SetContent(m.fullScreenPanel.View())
 		return v
+	}
+
+	// Enable mouse wheel when chat sidebar is visible
+	if m.sidebar != nil && m.sidebar.IsVisible() && m.sidebar.IsChatMode() {
+		// Mouse mode is disabled until HandleMouse implements wheel scrolling
+		// TODO: Re-enable once mouse scrolling is properly implemented in sidebar
+		// v.MouseMode = tea.MouseModeCellMotion
 	}
 
 	v.SetContent(m.renderCanvas())

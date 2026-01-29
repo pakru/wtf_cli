@@ -350,15 +350,16 @@ func (h *HelpHandler) Execute(ctx *Context) *Result {
 Version: %s
 
 Available Commands:
+  /chat     - Toggle chat sidebar
   /explain  - Analyze last output and suggest fixes
   /history  - Show command history
   /help     - Show this help
 
 Shortcuts:
-  Ctrl+D    - Exit terminal (press twice)
-  Ctrl+C    - Cancel current command
-  Ctrl+Z    - Suspend process
+  Ctrl+T    - Toggle chat sidebar
   Ctrl+R    - Search command history
+  Ctrl+C    - Cancel current command
+  Ctrl+D    - Exit terminal (press twice)
   /         - Open command palette (at empty prompt)
   Esc       - Close command palette or result
 

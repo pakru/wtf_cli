@@ -725,3 +725,56 @@ func TestInputHandler_FullScreenMode_ArrowKeys_AppMode(t *testing.T) {
 		})
 	}
 }
+
+func TestInputHandler_HandleKey_CtrlT(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	msg := testutils.TestKeyCtrlT
+	handled, cmd := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected Ctrl+T to be handled")
+	}
+
+	// Should NOT send to PTY (triggers chat toggle instead)
+	if buf.Len() != 0 {
+		t.Errorf("Expected empty buffer (chat toggle triggered), got %v", buf.Bytes())
+	}
+
+	// Should return ToggleChatMsg
+	if cmd == nil {
+		t.Fatal("Expected command for Ctrl+T")
+	}
+
+	result := cmd()
+	if _, ok := result.(ToggleChatMsg); !ok {
+		t.Errorf("Expected ToggleChatMsg, got %T", result)
+	}
+}
+
+func TestInputHandler_FullScreenMode_BypassesCtrlT(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	// Enable full-screen mode
+	ih.SetFullScreenMode(true)
+
+	// Ctrl+T should go to PTY, not trigger chat toggle
+	msg := testutils.TestKeyCtrlT
+	handled, cmd := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected Ctrl+T to be handled in fullscreen mode")
+	}
+
+	// Should send ASCII 20 (Ctrl+T) to PTY
+	if buf.Len() != 1 || buf.Bytes()[0] != 20 {
+		t.Errorf("Expected byte 20, got %v", buf.Bytes())
+	}
+
+	// Should NOT return ToggleChatMsg
+	if cmd != nil {
+		t.Error("Should not return ToggleChatMsg in fullscreen mode")
+	}
+}

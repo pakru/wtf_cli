@@ -53,6 +53,7 @@ func NewCtrlKeyPressMsg(char rune) tea.KeyPressMsg {
 var (
 	TestKeyCtrlC = NewCtrlKeyPressMsg('c')
 	TestKeyCtrlD = NewCtrlKeyPressMsg('d')
+	TestKeyCtrlT = NewCtrlKeyPressMsg('t')
 	TestKeyCtrlW = NewCtrlKeyPressMsg('w')
 	TestKeyCtrlZ = NewCtrlKeyPressMsg('z')
 	TestKeyCtrlX = NewCtrlKeyPressMsg('x')

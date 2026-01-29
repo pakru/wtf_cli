@@ -11,6 +11,7 @@ type ResultAction string
 const (
 	ResultActionOpenHistoryPicker ResultAction = "open_history_picker"
 	ResultActionOpenSettings      ResultAction = "open_settings"
+	ResultActionToggleChat        ResultAction = "toggle_chat"
 )
 
 // Result represents the result of a command execution
@@ -40,6 +41,7 @@ func NewDispatcher() *Dispatcher {
 	}
 
 	// Register default handlers
+	d.Register(&ChatHandler{})
 	d.Register(&ExplainHandler{})
 	d.Register(&HistoryHandler{})
 	d.Register(&SettingsHandler{})

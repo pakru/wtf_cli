@@ -5,8 +5,10 @@ import (
 	"os"
 	"strings"
 
+	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/ui/styles"
 
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	osc52 "github.com/aymanbagabas/go-osc52/v2"
@@ -20,8 +22,17 @@ const (
 	sidebarFooterLabel = "Up/Down Scroll | y Copy | Esc/q Close"
 )
 
+// FocusTarget indicates which part of the chat sidebar has focus.
+type FocusTarget int
+
+const (
+	FocusViewport FocusTarget = iota
+	FocusInput
+)
+
 // Sidebar displays AI responses alongside the terminal output.
 type Sidebar struct {
+	// Existing fields
 	title   string
 	content string
 	visible bool
@@ -30,6 +41,13 @@ type Sidebar struct {
 	scrollY int
 	lines   []string
 	follow  bool
+
+	// Chat mode fields
+	chatMode  bool             // When true, show input area
+	textarea  textarea.Model   // Chat input
+	focused   FocusTarget      // Input or Viewport
+	messages  []ai.ChatMessage // Persistent conversation history
+	streaming bool             // True while assistant response streaming
 }
 
 // NewSidebar creates a new sidebar component.
@@ -43,7 +61,13 @@ func (s *Sidebar) Show(title, content string) {
 	s.visible = true
 	s.scrollY = 0
 	s.follow = true
-	s.SetContent(content)
+
+	// Chat mode: preserve message history, only refresh view
+	if s.chatMode && len(s.messages) > 0 {
+		s.RefreshView() // Re-render from existing messages
+	} else {
+		s.SetContent(content) // Non-chat or first open
+	}
 }
 
 // Hide hides the sidebar.
@@ -54,6 +78,11 @@ func (s *Sidebar) Hide() {
 // IsVisible returns whether the sidebar is visible.
 func (s *Sidebar) IsVisible() bool {
 	return s.visible
+}
+
+// GetTitle returns the current sidebar title.
+func (s *Sidebar) GetTitle() string {
+	return s.title
 }
 
 // SetSize sets the sidebar dimensions.
@@ -78,6 +107,29 @@ func (s *Sidebar) ShouldHandleKey(msg tea.KeyPressMsg) bool {
 		return false
 	}
 
+	// Chat mode: handle more keys when input is focused
+	if s.chatMode && s.focused == FocusInput {
+		// Always handle navigation and action keys
+		switch msg.String() {
+		case "esc", "enter", "up", "down", "pgup", "pgdown", "home", "end":
+			return true
+		}
+
+		// Handle printable keys when input is focused
+		if msg.Key().Text != "" {
+			return true
+		}
+
+		// Handle editing keys
+		switch msg.String() {
+		case "backspace", "delete", "ctrl+a", "ctrl+e", "ctrl+k", "ctrl+u":
+			return true
+		}
+
+		return false
+	}
+
+	// Non-chat mode: existing keys
 	keyStr := msg.String()
 	switch keyStr {
 	case "esc", "up", "down", "pgup", "pgdown", "q", "y":
@@ -93,6 +145,33 @@ func (s *Sidebar) Update(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 
+	// Chat mode: handle input focus
+	if s.chatMode && s.focused == FocusInput {
+		switch msg.String() {
+		case "enter":
+			if !s.streaming {
+				content, ok := s.SubmitMessage()
+				if ok && content != "" {
+					// Return ChatSubmitMsg to be handled by model.go
+					return func() tea.Msg {
+						return ChatSubmitMsg{Content: content}
+					}
+				}
+			}
+			return nil
+		case "esc":
+			// Esc in chat mode switches focus, not close
+			s.ToggleFocus()
+			return nil
+		default:
+			// Route to textarea
+			var cmd tea.Cmd
+			s.textarea, cmd = s.textarea.Update(msg)
+			return cmd
+		}
+	}
+
+	// Regular sidebar navigation (non-chat or viewport focused)
 	maxScroll := s.maxScroll()
 	keyStr := msg.String()
 
@@ -142,6 +221,11 @@ func (s *Sidebar) Update(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
+// ChatSubmitMsg is returned when the user submits a chat message.
+type ChatSubmitMsg struct {
+	Content string
+}
+
 // View renders the sidebar.
 func (s *Sidebar) View() string {
 	if !s.visible {
@@ -151,6 +235,12 @@ func (s *Sidebar) View() string {
 	contentWidth := s.contentWidth()
 	contentHeight := s.contentHeight()
 
+	// Chat mode: split between viewport and textarea
+	if s.chatMode {
+		return s.renderChatView(contentWidth, contentHeight)
+	}
+
+	// Non-chat mode: existing rendering
 	titleLine := truncateToWidth(s.title, contentWidth)
 	footerLine := truncateToWidth(sidebarFooterLabel, contentWidth)
 
@@ -194,12 +284,223 @@ func (s *Sidebar) View() string {
 	return box
 }
 
+func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
+	titleLine := truncateToWidth(s.title, contentWidth)
+
+	const textareaHeight = 3
+	const borderLines = 2 // title + separator
+
+	viewportHeight := contentHeight - textareaHeight - borderLines
+	if viewportHeight < 1 {
+		viewportHeight = 1
+	}
+
+	lines := make([]string, 0, contentHeight)
+
+	// Title
+	if contentHeight >= 1 {
+		lines = append(lines, padStyled(sidebarTitleStyle.Render(titleLine), contentWidth))
+	}
+
+	// Viewport (messages)
+	if viewportHeight > 0 {
+		start := s.scrollY
+		end := start + viewportHeight
+		if end > len(s.lines) {
+			end = len(s.lines)
+		}
+		for i := start; i < end; i++ {
+			lines = append(lines, padStyled(s.lines[i], contentWidth))
+		}
+		// Pad remaining viewport space
+		for len(lines) < 1+viewportHeight {
+			lines = append(lines, strings.Repeat(" ", contentWidth))
+		}
+	}
+
+	// Separator
+	lines = append(lines, strings.Repeat("─", contentWidth))
+
+	// Textarea
+	s.textarea.SetWidth(contentWidth)
+	textareaView := s.textarea.View()
+	textareaLines := strings.Split(textareaView, "\n")
+	for i, line := range textareaLines {
+		if i >= textareaHeight {
+			break
+		}
+		lines = append(lines, padStyled(line, contentWidth))
+	}
+	// Pad remaining textarea space if needed
+	for len(lines) < contentHeight {
+		lines = append(lines, strings.Repeat(" ", contentWidth))
+	}
+
+	content := strings.Join(lines, "\n")
+
+	boxWidth := s.width
+	if boxWidth < 1 {
+		boxWidth = 1
+	}
+
+	box := sidebarBoxStyle.
+		Width(boxWidth).
+		Padding(sidebarPaddingV, sidebarPaddingH).
+		Render(content)
+
+	return box
+}
+
 func (s *Sidebar) copyToClipboard() tea.Cmd {
 	text := s.content
 	return func() tea.Msg {
 		_, _ = fmt.Fprint(os.Stdout, osc52.New(text))
 		return nil
 	}
+}
+
+// Chat mode methods
+
+// EnableChatMode switches the sidebar to interactive chat mode.
+func (s *Sidebar) EnableChatMode() {
+	s.chatMode = true
+	s.focused = FocusInput
+
+	// Initialize textarea
+	s.textarea = textarea.New()
+	s.textarea.Placeholder = "Type your message..."
+	s.textarea.SetHeight(3)
+	s.textarea.Focus()
+}
+
+// IsChatMode returns true if the sidebar is in chat mode.
+func (s *Sidebar) IsChatMode() bool {
+	return s.chatMode
+}
+
+// ToggleFocus switches focus between viewport and input.
+func (s *Sidebar) ToggleFocus() {
+	if s.focused == FocusInput {
+		s.focused = FocusViewport
+		s.textarea.Blur()
+	} else {
+		s.focused = FocusInput
+		s.textarea.Focus()
+	}
+}
+
+// FocusInput switches focus to the text input.
+func (s *Sidebar) FocusInput() {
+	s.focused = FocusInput
+	s.textarea.Focus()
+}
+
+// IsFocusedOnInput returns true if the text input is focused.
+func (s *Sidebar) IsFocusedOnInput() bool {
+	return s.focused == FocusInput
+}
+
+// IsStreaming returns true if an assistant response is currently streaming.
+func (s *Sidebar) IsStreaming() bool {
+	return s.streaming
+}
+
+// SetStreaming sets the streaming state.
+func (s *Sidebar) SetStreaming(active bool) {
+	s.streaming = active
+}
+
+// AppendUserMessage adds a user message to the chat history.
+func (s *Sidebar) AppendUserMessage(content string) {
+	s.messages = append(s.messages, ai.ChatMessage{
+		Role:    "user",
+		Content: content,
+	})
+}
+
+// StartAssistantMessage creates a new empty assistant message.
+func (s *Sidebar) StartAssistantMessage() {
+	s.messages = append(s.messages, ai.ChatMessage{
+		Role:    "assistant",
+		Content: "",
+	})
+}
+
+// AppendErrorMessage adds an error message to the chat.
+func (s *Sidebar) AppendErrorMessage(errMsg string) {
+	s.messages = append(s.messages, ai.ChatMessage{
+		Role:    "assistant",
+		Content: "❌ Error: " + errMsg,
+	})
+}
+
+// UpdateLastMessage appends delta to the last assistant message.
+func (s *Sidebar) UpdateLastMessage(delta string) {
+	if len(s.messages) > 0 {
+		s.messages[len(s.messages)-1].Content += delta
+	}
+}
+
+// GetMessages returns the chat message history.
+func (s *Sidebar) GetMessages() []ai.ChatMessage {
+	return s.messages
+}
+
+// SubmitMessage returns the input content and clears the textarea.
+func (s *Sidebar) SubmitMessage() (string, bool) {
+	content := strings.TrimSpace(s.textarea.Value())
+	if content == "" {
+		return "", false
+	}
+	s.textarea.Reset()
+	return content, true
+}
+
+// RefreshView re-renders the viewport from messages.
+func (s *Sidebar) RefreshView() {
+	if s.chatMode {
+		s.content = s.RenderMessages()
+		s.reflow()
+		if s.follow {
+			s.scrollY = s.maxScroll()
+		}
+	}
+}
+
+// RenderMessages renders all messages as markdown.
+func (s *Sidebar) RenderMessages() string {
+	var sb strings.Builder
+	for i, msg := range s.messages {
+		if i > 0 {
+			sb.WriteString("\n\n")
+		}
+		if msg.Role == "user" {
+			// Add separator line before user messages for readability
+			if i > 0 {
+				sb.WriteString("───────────────────────\n\n")
+			}
+			sb.WriteString("👤 **You:** ")
+		} else {
+			sb.WriteString("🖥️ **Assistant:** ")
+		}
+		sb.WriteString(msg.Content)
+	}
+	return sb.String()
+}
+
+// HandlePaste routes paste content to the textarea.
+func (s *Sidebar) HandlePaste(content string) {
+	if s.focused == FocusInput {
+		s.textarea.InsertString(content)
+	}
+}
+
+// HandleMouse handles mouse wheel scrolling.
+// TODO: Implement mouse scrolling once correct Bubble Tea mouse API is confirmed
+func (s *Sidebar) HandleMouse(msg tea.MouseMsg) tea.Cmd {
+	// Mouse event support can be tested and implemented in follow-up
+	// The Bubble Tea MouseMsg API varies by version
+	return nil
 }
 
 func (s *Sidebar) reflow() {
@@ -243,11 +544,20 @@ func (s *Sidebar) bodyHeight() int {
 }
 
 func (s *Sidebar) maxScroll() int {
-	body := s.bodyHeight()
-	if body <= 0 {
-		return 0
+	// Calculate effective viewport height based on mode
+	// Default: contentHeight - 2 (title + separator)
+	viewportHeight := s.contentHeight() - 2
+
+	if s.chatMode {
+		// Chat: contentHeight - 2 (title/sep) - 3 (textarea)
+		viewportHeight = s.contentHeight() - 5
 	}
-	max := len(s.lines) - body
+
+	if viewportHeight < 1 {
+		viewportHeight = 1
+	}
+
+	max := len(s.lines) - viewportHeight
 	if max < 0 {
 		return 0
 	}

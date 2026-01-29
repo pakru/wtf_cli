@@ -29,6 +29,7 @@ type CommandPalette struct {
 func NewCommandPalette() *CommandPalette {
 	return &CommandPalette{
 		commands: []Command{
+			{Name: "/chat", Description: "Toggle chat sidebar"},
 			{Name: "/explain", Description: "Analyze last output and suggest fixes"},
 			{Name: "/history", Description: "Show command history"},
 			{Name: "/settings", Description: "Open settings panel"},

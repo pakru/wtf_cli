@@ -31,7 +31,7 @@ func TestNewDispatcher(t *testing.T) {
 	}
 
 	// Check all commands are registered
-	commands := []string{"/explain", "/history", "/settings", "/help"}
+	commands := []string{"/chat", "/explain", "/history", "/settings", "/help"}
 	for _, cmd := range commands {
 		if _, ok := d.GetHandler(cmd); !ok {
 			t.Errorf("Expected handler for %s to be registered", cmd)
@@ -103,5 +103,22 @@ func TestContext_GetLastNLines_WithBuffer(t *testing.T) {
 
 	if len(lines) != 2 {
 		t.Errorf("Expected 2 lines, got %d", len(lines))
+	}
+}
+
+func TestDispatcher_Dispatch_ChatCommand(t *testing.T) {
+	d := NewDispatcher()
+	ctx := NewContext(nil, nil, "")
+
+	result := d.Dispatch("/chat", ctx)
+
+	if result == nil {
+		t.Fatal("Expected result for /chat command")
+	}
+	if result.Title != "Chat" {
+		t.Errorf("Expected title 'Chat', got %q", result.Title)
+	}
+	if result.Action != ResultActionToggleChat {
+		t.Errorf("Expected action ResultActionToggleChat, got %q", result.Action)
 	}
 }

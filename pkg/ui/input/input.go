@@ -74,6 +74,9 @@ type CommandSubmittedMsg struct {
 	Command string
 }
 
+// ToggleChatMsg is sent when Ctrl+T is pressed to toggle chat sidebar
+type ToggleChatMsg struct{}
+
 type CtrlDPressedMsg struct{}
 
 // HandleKey processes a key message and returns whether it was handled
@@ -117,6 +120,12 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 	case "ctrl+d":
 		return true, func() tea.Msg {
 			return CtrlDPressedMsg{}
+		}
+
+	case "ctrl+t":
+		// Ctrl+T - toggle chat sidebar
+		return true, func() tea.Msg {
+			return ToggleChatMsg{}
 		}
 
 	case "ctrl+r":
