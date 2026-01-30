@@ -89,6 +89,31 @@ func (l *lineBuffer) insertZeroWidthAt(col int, seq string) {
 	l.insertCell(idx, lineCell{text: seq, width: 0})
 }
 
+func (l *lineBuffer) insertSpacesAtCol(col int, count int) int {
+	if count < 1 {
+		return 0
+	}
+	if col < 0 {
+		col = 0
+	}
+	l.padToCol(col)
+	idx, _ := l.indexForCol(col)
+	for i := 0; i < count; i++ {
+		l.insertCell(idx+i, lineCell{text: " ", width: 1})
+	}
+	return idx
+}
+
+func (l *lineBuffer) deleteCellsAtIndex(idx int, count int) {
+	if count < 1 || idx < 0 || idx >= len(l.cells) {
+		return
+	}
+	if idx+count > len(l.cells) {
+		count = len(l.cells) - idx
+	}
+	l.cells = append(l.cells[:idx], l.cells[idx+count:]...)
+}
+
 func (l *lineBuffer) deleteCellsAtCol(col int, count int) {
 	if count < 1 || len(l.cells) == 0 {
 		return
@@ -135,16 +160,17 @@ func (l *lineBuffer) String() string {
 // LineRenderer tracks a minimal terminal line buffer for normal shell output.
 // It supports cursor movement and overwriting without deleting visible text.
 type LineRenderer struct {
-	lines     []lineBuffer
-	row       int
-	col       int
-	inEscape  bool
-	inCSI     bool
-	inOSC     bool
-	oscEsc    bool
-	csiParam  int
-	csiHas    bool
-	csiParams []int
+	lines      []lineBuffer
+	row        int
+	col        int
+	insertMode bool
+	inEscape   bool
+	inCSI      bool
+	inOSC      bool
+	oscEsc     bool
+	csiParam   int
+	csiHas     bool
+	csiParams  []int
 }
 
 // NewLineRenderer creates a new line renderer.
@@ -157,6 +183,7 @@ func (r *LineRenderer) Reset() {
 	r.lines = nil
 	r.row = 0
 	r.col = 0
+	r.insertMode = false
 	r.inEscape = false
 	r.inCSI = false
 	r.inOSC = false
@@ -316,6 +343,9 @@ func (r *LineRenderer) Append(data []byte) {
 				r.ensureLine(r.row)
 				rn, size := utf8.DecodeRune(data[i:])
 				if rn == utf8.RuneError && size == 1 {
+					if r.insertMode {
+						r.lines[r.row].insertSpacesAtCol(r.col, 1)
+					}
 					r.lines[r.row].setCellAt(r.col, string(rune(b)), 1)
 					r.col++
 					i++
@@ -325,7 +355,15 @@ func (r *LineRenderer) Append(data []byte) {
 				if width < 1 {
 					width = 1
 				}
-				r.lines[r.row].setCellAt(r.col, string(rn), width)
+				if r.insertMode {
+					insertIdx := r.lines[r.row].insertSpacesAtCol(r.col, width)
+					r.lines[r.row].setCellAt(r.col, string(rn), width)
+					if width > 1 {
+						r.lines[r.row].deleteCellsAtIndex(insertIdx+1, width-1)
+					}
+				} else {
+					r.lines[r.row].setCellAt(r.col, string(rn), width)
+				}
 				r.col += width
 				i += size
 			} else {
@@ -374,6 +412,13 @@ func (r *LineRenderer) handleCSI(final byte) {
 		}
 		r.ensureLine(r.row)
 		r.lines[r.row].deleteCellsAtCol(r.col, n)
+	case '@':
+		n := 1
+		if len(r.csiParams) > 0 && r.csiParams[0] > 0 {
+			n = r.csiParams[0]
+		}
+		r.ensureLine(r.row)
+		r.lines[r.row].insertSpacesAtCol(r.col, n)
 	case 'X':
 		n := 1
 		if len(r.csiParams) > 0 && r.csiParams[0] > 0 {
@@ -382,6 +427,14 @@ func (r *LineRenderer) handleCSI(final byte) {
 		r.ensureLine(r.row)
 		for i := 0; i < n; i++ {
 			r.lines[r.row].setCellAt(r.col+i, " ", 1)
+		}
+	case 'h':
+		if hasCSIParam(r.csiParams, 4) {
+			r.insertMode = true
+		}
+	case 'l':
+		if hasCSIParam(r.csiParams, 4) {
+			r.insertMode = false
 		}
 	case 'H', 'f':
 		if len(r.csiParams) == 0 {
@@ -406,6 +459,15 @@ func (r *LineRenderer) handleCSI(final byte) {
 		}
 		r.ensureLine(r.row)
 	}
+}
+
+func hasCSIParam(params []int, target int) bool {
+	for _, p := range params {
+		if p == target {
+			return true
+		}
+	}
+	return false
 }
 
 // Content returns the current rendered content.

@@ -368,3 +368,25 @@ func TestLineRenderer_DeleteCharacterCSI(t *testing.T) {
 		t.Fatalf("expected cursor at (0,3), got (%d,%d)", row, col)
 	}
 }
+
+func TestLineRenderer_InsertCharacterCSI(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("abcdef\x1b[3D\x1b[@X"))
+
+	if got := r.Content(); got != "abcXdef" {
+		t.Fatalf("expected %q, got %q", "abcXdef", got)
+	}
+	row, col := r.CursorPosition()
+	if row != 0 || col != 4 {
+		t.Fatalf("expected cursor at (0,4), got (%d,%d)", row, col)
+	}
+}
+
+func TestLineRenderer_InsertMode(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("abcdef\x1b[3D\x1b[4hX\x1b[4l"))
+
+	if got := r.Content(); got != "abcXdef" {
+		t.Fatalf("expected %q, got %q", "abcXdef", got)
+	}
+}

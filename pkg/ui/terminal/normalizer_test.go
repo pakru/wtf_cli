@@ -179,6 +179,30 @@ func TestNormalizer_DeleteCharacterCSI(t *testing.T) {
 	}
 }
 
+func TestNormalizer_InsertCharacterCSI(t *testing.T) {
+	n := NewNormalizer()
+	lines := n.Append([]byte("abcdef\x1b[3D\x1b[@X\n"))
+
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
+	}
+	if string(lines[0]) != "abcXdef" {
+		t.Fatalf("expected %q, got %q", "abcXdef", string(lines[0]))
+	}
+}
+
+func TestNormalizer_InsertMode(t *testing.T) {
+	n := NewNormalizer()
+	lines := n.Append([]byte("abcdef\x1b[3D\x1b[4hX\x1b[4l\n"))
+
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
+	}
+	if string(lines[0]) != "abcXdef" {
+		t.Fatalf("expected %q, got %q", "abcXdef", string(lines[0]))
+	}
+}
+
 func TestNormalizer_ClearToEOL_BeyondLine(t *testing.T) {
 	n := NewNormalizer()
 	lines := n.Append([]byte("ab\x1b[10C\x1b[K\n"))

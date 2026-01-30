@@ -9,6 +9,7 @@ type Normalizer struct {
 	pendingCR      bool
 	pendingBS      bool
 	pendingBSSpace bool
+	insertMode     bool
 	inEscape       bool
 	inCSI          bool
 	csiParam       int
@@ -112,12 +113,26 @@ func (n *Normalizer) Append(data []byte) [][]byte {
 					for i := 0; i < count; i++ {
 						n.deleteAtCursor()
 					}
+				case '@':
+					count := 1
+					if n.csiHasParam && n.csiParam > 0 {
+						count = n.csiParam
+					}
+					n.insertSpacesAtCursor(count)
 				case 'X':
 					count := 1
 					if n.csiHasParam && n.csiParam > 0 {
 						count = n.csiParam
 					}
 					n.eraseAtCursor(count)
+				case 'h':
+					if n.csiHasParam && n.csiParam == 4 {
+						n.insertMode = true
+					}
+				case 'l':
+					if n.csiHasParam && n.csiParam == 4 {
+						n.insertMode = false
+					}
 				}
 				n.inCSI = false
 				n.csiParam = 0
@@ -216,6 +231,10 @@ func (n *Normalizer) writeByte(b byte) {
 	if n.col < 0 {
 		n.col = 0
 	}
+	if n.insertMode {
+		n.insertByteAtCursor(b)
+		return
+	}
 	if n.col < len(n.line) {
 		n.line[n.col] = b
 		n.col++
@@ -261,5 +280,45 @@ func (n *Normalizer) eraseAtCursor(count int) {
 	}
 	for i := n.col; i < n.col+count; i++ {
 		n.line[i] = ' '
+	}
+}
+
+func (n *Normalizer) insertByteAtCursor(b byte) {
+	if n.col < 0 {
+		n.col = 0
+	}
+	if n.col > len(n.line) {
+		padding := n.col - len(n.line)
+		n.line = append(n.line, make([]byte, padding)...)
+		for i := len(n.line) - padding; i < len(n.line); i++ {
+			n.line[i] = ' '
+		}
+	}
+	oldLen := len(n.line)
+	n.line = append(n.line, 0)
+	copy(n.line[n.col+1:], n.line[n.col:oldLen])
+	n.line[n.col] = b
+	n.col++
+}
+
+func (n *Normalizer) insertSpacesAtCursor(count int) {
+	if count < 1 {
+		return
+	}
+	if n.col < 0 {
+		n.col = 0
+	}
+	if n.col > len(n.line) {
+		padding := n.col - len(n.line)
+		n.line = append(n.line, make([]byte, padding)...)
+		for i := len(n.line) - padding; i < len(n.line); i++ {
+			n.line[i] = ' '
+		}
+	}
+	oldLen := len(n.line)
+	n.line = append(n.line, make([]byte, count)...)
+	copy(n.line[n.col+count:], n.line[n.col:oldLen])
+	for i := 0; i < count; i++ {
+		n.line[n.col+i] = ' '
 	}
 }
