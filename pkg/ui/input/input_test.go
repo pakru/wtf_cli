@@ -156,6 +156,22 @@ func TestInputHandler_HandleKey_Backspace(t *testing.T) {
 	}
 }
 
+func TestInputHandler_HandleKey_Delete(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	msg := testutils.TestKeyDelete
+	handled, _ := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected Delete to be handled")
+	}
+
+	if buf.String() != "\x1b[3~" {
+		t.Errorf("Expected %q, got %q", "\x1b[3~", buf.String())
+	}
+}
+
 func TestInputHandler_HandleKey_ArrowKeys(t *testing.T) {
 	tests := []struct {
 		name     string

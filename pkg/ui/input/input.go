@@ -166,6 +166,11 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 		}
 		return true, nil
 
+	case "delete":
+		// Delete - send to PTY
+		ih.ptyWriter.Write([]byte("\x1b[3~"))
+		return true, nil
+
 	case " ":
 		// Space - send to PTY
 		ih.ptyWriter.Write([]byte{32}) // ASCII SPACE
