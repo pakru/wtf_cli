@@ -132,8 +132,10 @@ func buildUserPrompt(meta TerminalMetadata, ctx TerminalContext) string {
 }
 
 func wtfSystemPrompt() string {
+	platform := GetPlatformInfo()
 	return strings.Join([]string{
 		"You are a terminal assistant.",
+		platform.PromptText(),
 		"Use the provided terminal output and metadata to diagnose issues.",
 		"If last_command is provided, focus on that command and its output first.",
 		"If a metadata field is missing, do not assume or invent it.",
