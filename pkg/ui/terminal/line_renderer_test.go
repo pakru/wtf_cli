@@ -355,3 +355,16 @@ func TestLineRenderer_ClearToEOLInMiddle(t *testing.T) {
 		t.Fatalf("expected %q, got %q", "hello", content)
 	}
 }
+
+func TestLineRenderer_DeleteCharacterCSI(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("abcdef\x1b[3D\x1b[P"))
+
+	if got := r.Content(); got != "abcef" {
+		t.Fatalf("expected %q, got %q", "abcef", got)
+	}
+	row, col := r.CursorPosition()
+	if row != 0 || col != 3 {
+		t.Fatalf("expected cursor at (0,3), got (%d,%d)", row, col)
+	}
+}

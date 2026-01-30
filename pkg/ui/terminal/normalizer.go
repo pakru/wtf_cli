@@ -104,6 +104,20 @@ func (n *Normalizer) Append(data []byte) [][]byte {
 					if n.col < len(n.line) {
 						n.line = n.line[:n.col]
 					}
+				case 'P':
+					count := 1
+					if n.csiHasParam && n.csiParam > 0 {
+						count = n.csiParam
+					}
+					for i := 0; i < count; i++ {
+						n.deleteAtCursor()
+					}
+				case 'X':
+					count := 1
+					if n.csiHasParam && n.csiParam > 0 {
+						count = n.csiParam
+					}
+					n.eraseAtCursor(count)
 				}
 				n.inCSI = false
 				n.csiParam = 0
@@ -226,4 +240,26 @@ func (n *Normalizer) deleteAtCursor() {
 		return
 	}
 	n.line = append(n.line[:n.col], n.line[n.col+1:]...)
+}
+
+func (n *Normalizer) eraseAtCursor(count int) {
+	if count < 1 {
+		return
+	}
+	if n.col < 0 {
+		n.col = 0
+	}
+	if n.col > len(n.line) {
+		padding := n.col - len(n.line)
+		n.line = append(n.line, make([]byte, padding)...)
+		for i := len(n.line) - padding; i < len(n.line); i++ {
+			n.line[i] = ' '
+		}
+	}
+	if n.col+count > len(n.line) {
+		n.line = append(n.line, make([]byte, n.col+count-len(n.line))...)
+	}
+	for i := n.col; i < n.col+count; i++ {
+		n.line[i] = ' '
+	}
 }

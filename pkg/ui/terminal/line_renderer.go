@@ -89,6 +89,31 @@ func (l *lineBuffer) insertZeroWidthAt(col int, seq string) {
 	l.insertCell(idx, lineCell{text: seq, width: 0})
 }
 
+func (l *lineBuffer) deleteCellsAtCol(col int, count int) {
+	if count < 1 || len(l.cells) == 0 {
+		return
+	}
+	if col < 0 {
+		col = 0
+	}
+	visible := 0
+	i := 0
+	for i < len(l.cells) && count > 0 {
+		c := l.cells[i]
+		if c.width == 0 {
+			i++
+			continue
+		}
+		if visible+c.width <= col {
+			visible += c.width
+			i++
+			continue
+		}
+		l.cells = append(l.cells[:i], l.cells[i+1:]...)
+		count -= c.width
+	}
+}
+
 func (l *lineBuffer) truncateFromCol(col int) {
 	idx, _ := l.indexForCol(col)
 	if idx < len(l.cells) {
@@ -342,6 +367,22 @@ func (r *LineRenderer) handleCSI(final byte) {
 	case 'K':
 		r.ensureLine(r.row)
 		r.lines[r.row].truncateFromCol(r.col)
+	case 'P':
+		n := 1
+		if len(r.csiParams) > 0 && r.csiParams[0] > 0 {
+			n = r.csiParams[0]
+		}
+		r.ensureLine(r.row)
+		r.lines[r.row].deleteCellsAtCol(r.col, n)
+	case 'X':
+		n := 1
+		if len(r.csiParams) > 0 && r.csiParams[0] > 0 {
+			n = r.csiParams[0]
+		}
+		r.ensureLine(r.row)
+		for i := 0; i < n; i++ {
+			r.lines[r.row].setCellAt(r.col+i, " ", 1)
+		}
 	case 'H', 'f':
 		if len(r.csiParams) == 0 {
 			r.col = 0
