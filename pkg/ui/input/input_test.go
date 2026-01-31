@@ -794,3 +794,85 @@ func TestInputHandler_FullScreenMode_BypassesCtrlT(t *testing.T) {
 		t.Error("Should not return ToggleChatMsg in fullscreen mode")
 	}
 }
+
+func TestInputHandler_ClearLineBuffer(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	// Type some characters to populate lineBuffer
+	ih.HandleKey(testutils.NewTextKeyPressMsg("p"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("a"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("s"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("s"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("w"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("o"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("r"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("d"))
+
+	if ih.lineBuffer != "password" {
+		t.Fatalf("Expected lineBuffer 'password', got %q", ih.lineBuffer)
+	}
+	if ih.atLineStart {
+		t.Error("Expected atLineStart to be false after typing")
+	}
+
+	// Clear the buffer (simulating echo-off detection)
+	ih.ClearLineBuffer()
+
+	if ih.lineBuffer != "" {
+		t.Errorf("Expected empty lineBuffer after ClearLineBuffer, got %q", ih.lineBuffer)
+	}
+	if !ih.atLineStart {
+		t.Error("Expected atLineStart to be true after ClearLineBuffer")
+	}
+}
+
+func TestInputHandler_ClearLineBuffer_PreservesLastCommand(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	// Type a command and submit it
+	ih.HandleKey(testutils.NewTextKeyPressMsg("s"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("u"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("d"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("o"))
+
+	// Submit with Enter
+	_, cmd := ih.HandleKey(testutils.TestKeyEnter)
+	if cmd == nil {
+		t.Fatal("Expected command from Enter")
+	}
+	msg := cmd()
+	submitted, ok := msg.(CommandSubmittedMsg)
+	if !ok {
+		t.Fatalf("Expected CommandSubmittedMsg, got %T", msg)
+	}
+	if submitted.Command != "sudo" {
+		t.Errorf("Expected 'sudo', got %q", submitted.Command)
+	}
+
+	// Now type password
+	ih.HandleKey(testutils.NewTextKeyPressMsg("s"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("e"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("c"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("r"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("e"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("t"))
+
+	// Clear before Enter (simulating echo-off detection)
+	ih.ClearLineBuffer()
+
+	// Submit - should be empty
+	_, cmd = ih.HandleKey(testutils.TestKeyEnter)
+	if cmd == nil {
+		t.Fatal("Expected command from Enter")
+	}
+	msg = cmd()
+	submitted, ok = msg.(CommandSubmittedMsg)
+	if !ok {
+		t.Fatalf("Expected CommandSubmittedMsg, got %T", msg)
+	}
+	if submitted.Command != "" {
+		t.Errorf("Expected empty command after ClearLineBuffer, got %q", submitted.Command)
+	}
+}

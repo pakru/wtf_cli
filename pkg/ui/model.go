@@ -14,6 +14,7 @@ import (
 	"wtf_cli/pkg/commands"
 	"wtf_cli/pkg/config"
 	"wtf_cli/pkg/logging"
+	"wtf_cli/pkg/pty"
 	"wtf_cli/pkg/ui/components/fullscreen"
 	"wtf_cli/pkg/ui/components/historypicker"
 	"wtf_cli/pkg/ui/components/palette"
@@ -333,6 +334,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		// Full-screen mode: bypass all shortcuts, route to PTY
 		if m.fullScreenMode {
+			// Clear input buffer if echo is disabled (password entry)
+			if m.ptyFile != nil && pty.IsEchoDisabled(m.ptyFile) {
+				m.inputHandler.ClearLineBuffer()
+			}
 			handled, cmd := m.inputHandler.HandleKey(msg)
 			if handled {
 				return m, cmd
@@ -410,6 +415,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Use input handler to route keys to PTY
+		// Clear input buffer if echo is disabled (password entry)
+		if m.ptyFile != nil && pty.IsEchoDisabled(m.ptyFile) {
+			m.inputHandler.ClearLineBuffer()
+		}
 		handled, cmd := m.inputHandler.HandleKey(msg)
 		if handled {
 			return m, cmd

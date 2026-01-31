@@ -61,6 +61,13 @@ func (ih *InputHandler) SetLineBuffer(text string) {
 	ih.atLineStart = len(text) == 0
 }
 
+// ClearLineBuffer clears the internal line buffer.
+// Used when echo is disabled (password entry) to prevent capturing secrets.
+func (ih *InputHandler) ClearLineBuffer() {
+	ih.lineBuffer = ""
+	ih.atLineStart = true
+}
+
 // ShowPaletteMsg is sent when / is pressed at line start
 type ShowPaletteMsg struct{}
 

@@ -514,3 +514,84 @@ func TestModel_Update_PTYOutput_NotSuppressedAfterDelay(t *testing.T) {
 		t.Error("Expected PTY output to appear after resize delay")
 	}
 }
+
+// TestModel_PasswordProtection_ClearLineBufferPreventsCapture verifies that
+// calling ClearLineBuffer before HandleKey prevents password accumulation.
+// This tests the mechanism used when echo is disabled (password entry mode).
+func TestModel_PasswordProtection_ClearLineBufferPreventsCapture(t *testing.T) {
+	tmpDir := t.TempDir()
+	ptyFile, err := os.CreateTemp(tmpDir, "pty")
+	if err != nil {
+		t.Fatalf("Failed to create temp PTY file: %v", err)
+	}
+	defer ptyFile.Close()
+
+	m := NewModel(ptyFile, buffer.New(100), capture.NewSessionContext(), nil)
+
+	// Step 1: Type a command and submit it
+	m.inputHandler.HandleKey(testutils.NewTextKeyPressMsg("s"))
+	m.inputHandler.HandleKey(testutils.NewTextKeyPressMsg("u"))
+	m.inputHandler.HandleKey(testutils.NewTextKeyPressMsg("d"))
+	m.inputHandler.HandleKey(testutils.NewTextKeyPressMsg("o"))
+
+	_, submitCmd := m.inputHandler.HandleKey(testutils.TestKeyEnter)
+	if submitCmd == nil {
+		t.Fatal("Expected command from Enter")
+	}
+	msg := submitCmd()
+	submitted, ok := msg.(input.CommandSubmittedMsg)
+	if !ok {
+		t.Fatalf("Expected CommandSubmittedMsg, got %T", msg)
+	}
+	if submitted.Command != "sudo" {
+		t.Errorf("Expected 'sudo', got %q", submitted.Command)
+	}
+
+	// Process the submission in model
+	newModel, _ := m.Update(submitted)
+	m = newModel.(Model)
+
+	// Verify command was captured
+	last := m.session.GetLastN(1)
+	if len(last) != 1 || last[0].Command != "sudo" {
+		t.Fatalf("Expected last command 'sudo', got %+v", last)
+	}
+
+	// Step 2: Simulate password entry with ClearLineBuffer (echo-off protection)
+	// Type password characters
+	m.inputHandler.HandleKey(testutils.NewTextKeyPressMsg("s"))
+	m.inputHandler.HandleKey(testutils.NewTextKeyPressMsg("e"))
+	m.inputHandler.HandleKey(testutils.NewTextKeyPressMsg("c"))
+	m.inputHandler.HandleKey(testutils.NewTextKeyPressMsg("r"))
+	m.inputHandler.HandleKey(testutils.NewTextKeyPressMsg("e"))
+	m.inputHandler.HandleKey(testutils.NewTextKeyPressMsg("t"))
+
+	// Simulate echo-off detection: clear buffer before Enter
+	m.inputHandler.ClearLineBuffer()
+
+	// Submit with Enter
+	_, submitCmd = m.inputHandler.HandleKey(testutils.TestKeyEnter)
+	if submitCmd == nil {
+		t.Fatal("Expected command from Enter")
+	}
+	msg = submitCmd()
+	submitted, ok = msg.(input.CommandSubmittedMsg)
+	if !ok {
+		t.Fatalf("Expected CommandSubmittedMsg, got %T", msg)
+	}
+
+	// Password should NOT be captured (empty command)
+	if submitted.Command != "" {
+		t.Errorf("Expected empty command (password protected), got %q", submitted.Command)
+	}
+
+	// Process the empty submission
+	newModel, _ = m.Update(submitted)
+	m = newModel.(Model)
+
+	// Last command should STILL be "sudo", NOT the password
+	last = m.session.GetLastN(1)
+	if len(last) != 1 || last[0].Command != "sudo" {
+		t.Fatalf("Expected last command to remain 'sudo', got %+v", last)
+	}
+}
