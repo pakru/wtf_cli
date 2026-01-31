@@ -3,6 +3,7 @@ package sidebar
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"wtf_cli/pkg/ai"
@@ -430,7 +431,7 @@ func (s *Sidebar) StartAssistantMessage() {
 func (s *Sidebar) AppendErrorMessage(errMsg string) {
 	s.messages = append(s.messages, ai.ChatMessage{
 		Role:    "assistant",
-		Content: "❌ Error: " + errMsg,
+		Content: errorPrefix() + errMsg,
 	})
 }
 
@@ -479,9 +480,9 @@ func (s *Sidebar) RenderMessages() string {
 			if i > 0 {
 				sb.WriteString("───────────────────────\n\n")
 			}
-			sb.WriteString("👤 **You:** ")
+			sb.WriteString(messagePrefix("user"))
 		} else {
-			sb.WriteString("🖥️ **Assistant:** ")
+			sb.WriteString(messagePrefix("assistant"))
 		}
 		sb.WriteString(msg.Content)
 	}
@@ -571,6 +572,8 @@ type markdownToken struct {
 
 func renderMarkdown(content string, width int) []string {
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	normalized = sanitizeContent(normalized)
 	normalized = strings.ReplaceAll(normalized, "<br>", "\n")
 	normalized = strings.ReplaceAll(normalized, "<br/>", "\n")
 	normalized = strings.ReplaceAll(normalized, "<br />", "\n")
@@ -1029,6 +1032,49 @@ func padStyled(text string, width int) string {
 		return text
 	}
 	return text + strings.Repeat(" ", width-textWidth)
+}
+
+func sanitizeContent(content string) string {
+	if content == "" {
+		return content
+	}
+	var sb strings.Builder
+	sb.Grow(len(content))
+	for _, r := range content {
+		switch r {
+		case '\n', '\t':
+			sb.WriteRune(r)
+			continue
+		}
+		if r < 0x20 || r == 0x7f {
+			continue
+		}
+		sb.WriteRune(r)
+	}
+	return sb.String()
+}
+
+func messagePrefix(role string) string {
+	useEmoji := runtime.GOOS != "darwin"
+	switch role {
+	case "user":
+		if useEmoji {
+			return "👤 **You:** "
+		}
+		return "**You:** "
+	default:
+		if useEmoji {
+			return "🖥️ **Assistant:** "
+		}
+		return "**Assistant:** "
+	}
+}
+
+func errorPrefix() string {
+	if runtime.GOOS == "darwin" {
+		return "Error: "
+	}
+	return "❌ Error: "
 }
 
 var (

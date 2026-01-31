@@ -1,6 +1,7 @@
 package sidebar
 
 import (
+	"runtime"
 	"testing"
 
 	"wtf_cli/pkg/ai"
@@ -88,8 +89,12 @@ func TestSidebar_AppendErrorMessage(t *testing.T) {
 	if messages[0].Role != "assistant" {
 		t.Errorf("Expected role 'assistant', got %q", messages[0].Role)
 	}
-	if messages[0].Content != "❌ Error: Connection failed" {
-		t.Errorf("Expected '❌ Error: Connection failed', got %q", messages[0].Content)
+	expected := "❌ Error: Connection failed"
+	if runtime.GOOS == "darwin" {
+		expected = "Error: Connection failed"
+	}
+	if messages[0].Content != expected {
+		t.Errorf("Expected %q, got %q", expected, messages[0].Content)
 	}
 }
 
