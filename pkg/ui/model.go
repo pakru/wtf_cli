@@ -387,13 +387,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Chat mode handles keys when focused on input
 		// This runs AFTER overlays and result panel, so they take precedence
 		if m.sidebar != nil && m.sidebar.IsChatMode() && m.sidebar.IsVisible() {
-			// Handle focus toggle keys explicitly
-			switch msg.String() {
-			case "ctrl+t", "tab":
-				m.sidebar.ToggleFocus()
-				return m, nil
-			}
-
 			if cmd := m.sidebar.Update(msg); cmd != nil {
 				return m, cmd
 			}

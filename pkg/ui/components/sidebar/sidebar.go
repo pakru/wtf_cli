@@ -161,9 +161,11 @@ func (s *Sidebar) Update(msg tea.KeyPressMsg) tea.Cmd {
 			}
 			return nil
 		case "esc":
-			// Esc in chat mode switches focus, not close
-			s.ToggleFocus()
+			// Esc closes the sidebar
+			s.Hide()
 			return nil
+		case "up", "down", "pgup", "pgdown":
+			return s.handleScroll(msg.String())
 		default:
 			// Route to textarea
 			var cmd tea.Cmd
@@ -173,50 +175,50 @@ func (s *Sidebar) Update(msg tea.KeyPressMsg) tea.Cmd {
 	}
 
 	// Regular sidebar navigation (non-chat or viewport focused)
-	maxScroll := s.maxScroll()
 	keyStr := msg.String()
 
 	switch keyStr {
-	case "esc":
+	case "esc", "q":
 		s.Hide()
 		return nil
 
+	case "up", "down", "pgup", "pgdown":
+		return s.handleScroll(keyStr)
+
+	case "y":
+		return s.copyToClipboard()
+	}
+
+	return nil
+}
+
+// handleScroll processes scroll key events and returns nil command.
+func (s *Sidebar) handleScroll(key string) tea.Cmd {
+	maxScroll := s.maxScroll()
+
+	switch key {
 	case "up":
 		if s.scrollY > 0 {
 			s.scrollY--
 			s.follow = false
 		}
-		return nil
-
 	case "down":
 		if s.scrollY < maxScroll {
 			s.scrollY++
 		}
 		s.follow = s.scrollY >= maxScroll
-		return nil
-
 	case "pgup":
 		s.scrollY -= 10
 		if s.scrollY < 0 {
 			s.scrollY = 0
 		}
 		s.follow = false
-		return nil
-
 	case "pgdown":
 		s.scrollY += 10
 		if s.scrollY > maxScroll {
 			s.scrollY = maxScroll
 		}
 		s.follow = s.scrollY >= maxScroll
-		return nil
-
-	case "q":
-		s.Hide()
-		return nil
-
-	case "y":
-		return s.copyToClipboard()
 	}
 
 	return nil

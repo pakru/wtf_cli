@@ -1,10 +1,13 @@
 package sidebar
 
 import (
+	"fmt"
 	"runtime"
+	"strings"
 	"testing"
 
 	"wtf_cli/pkg/ai"
+	"wtf_cli/pkg/ui/components/testutils"
 )
 
 func TestSidebar_ChatMode(t *testing.T) {
@@ -262,5 +265,47 @@ func TestSidebar_GetTitle(t *testing.T) {
 	s.Hide()
 	if s.GetTitle() != "WTF Analysis" {
 		t.Errorf("Expected title to persist after Hide(), got %q", s.GetTitle())
+	}
+}
+
+func TestSidebar_ChatMode_ScrollKeysScrollViewport(t *testing.T) {
+	s := NewSidebar()
+	s.EnableChatMode()
+	s.SetSize(40, 15)
+
+	lines := make([]string, 0, 20)
+	for i := 0; i < 20; i++ {
+		lines = append(lines, fmt.Sprintf("Line %d", i))
+	}
+	s.Show("WTF Analysis", strings.Join(lines, "\n"))
+	s.FocusInput()
+
+	s.scrollY = 5
+	s.follow = true
+
+	s.Update(testutils.TestKeyUp)
+	if s.scrollY != 4 {
+		t.Errorf("Expected scrollY to decrement to 4, got %d", s.scrollY)
+	}
+	if s.follow {
+		t.Error("Expected follow to be false after scrolling up")
+	}
+
+	s.Update(testutils.TestKeyDown)
+	if s.scrollY != 5 {
+		t.Errorf("Expected scrollY to increment to 5, got %d", s.scrollY)
+	}
+	if s.follow {
+		t.Error("Expected follow to remain false when not at bottom")
+	}
+
+	s.scrollY = s.maxScroll() - 1
+	s.follow = false
+	s.Update(testutils.TestKeyDown)
+	if s.scrollY != s.maxScroll() {
+		t.Errorf("Expected scrollY to reach maxScroll, got %d", s.scrollY)
+	}
+	if !s.follow {
+		t.Error("Expected follow to be true at bottom after scrolling down")
 	}
 }
