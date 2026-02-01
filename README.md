@@ -1,6 +1,6 @@
-# WTF CLI - AI Assisted terminal
+# WTF CLI - AI Assisted Terminal
 
-A transparent PTY-based terminal with AI-powered assistance.
+A transparent PTY-based terminal wrapper with AI-powered assistance. Get instant explanations for errors, suggestions for fixes, and interactive chat with an AI that sees your terminal context.
 
 ![WTF CLI Interface](docs/images/wtf_cli_interface.png)
 
@@ -10,6 +10,7 @@ A transparent PTY-based terminal with AI-powered assistance.
 
 - Go 1.24+
 - Linux or macOS
+- OpenRouter API key (for AI features)
 
 ### Installation
 
@@ -24,7 +25,7 @@ tar -xzf wtf_cli_<version>_<os>_<arch>.tar.gz
 chmod +x wtf_cli
 ./wtf_cli --version
 
-# Optionally move to PATH
+# Optionally install to PATH
 sudo mv wtf_cli /usr/local/bin/
 ```
 
@@ -60,6 +61,9 @@ cd ~/projects
 
 # Press Ctrl+R to search command history
 # Type to filter, use Up/Down/Tab to select
+
+# Press Ctrl+T to toggle the AI chat sidebar
+# Type questions and get context-aware responses
 ```
 
 ## ✨ Features
@@ -75,26 +79,35 @@ cd ~/projects
 - **Command Palette**: Press `/` to access AI commands
 - **History Search**: Press `Ctrl+R` to search command history
 - **Welcome Banner**: Helpful shortcut reference on startup
+- **AI Chat Sidebar**: Interactive chat with context-aware AI assistant
+- **Streaming Responses**: Real-time AI response streaming
+- **Password Protection**: Automatic detection of password prompts - sensitive input is never captured or sent to the LLM
+- **Clipboard Paste**: Full paste support into the terminal
+- **Cursor Navigation**: Left/Right arrow keys, Home/End support in command line
 
 ### Commands (Available)
 
 | Command | Description |
 |---------|-------------|
+| `/chat` | Toggle AI chat sidebar |
 | `/explain` | Analyze last output and suggest fixes |
 | `/history` | Show command history |
+| `/settings` | Open settings panel |
 | `/help` | Show help |
 
 ### Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+D` | Exit terminal |
+| `Ctrl+D` | Exit terminal (press twice) |
 | `Ctrl+C` | Cancel current command |
 | `Ctrl+Z` | Suspend process |
 | `Ctrl+R` | Search command history |
+| `Ctrl+T` | Toggle AI chat sidebar |
 | `/` | Open command palette (at empty prompt) |
-| `Esc` | Close palette/panel |
-
+| `Esc` | Close palette/panel/sidebar |
+| `←`/`→` | Move cursor in command line |
+| `Home`/`End` | Jump to start/end of command line |
 
 ### Tech Stack
 
@@ -102,7 +115,7 @@ cd ~/projects
 - **[creack/pty](https://github.com/creack/pty)** - Pseudo-terminal management
 - **[Bubble Tea](https://github.com/charmbracelet/bubbletea)** - TUI framework
 - **[Lipgloss](https://github.com/charmbracelet/lipgloss)** - Styling
-- **OpenRouter API** - LLM integration (coming soon)
+- **OpenRouter API** - LLM integration (supports 400+ models)
 
 
 ## 🧪 Development
@@ -190,7 +203,7 @@ git add .
 git commit -m "Your changes"
 
 # Create and push tag (version comes from the tag)
-git tag v0.2.0
+git tag v0.4.0
 git push origin main --tags
 
 # GitHub Actions will automatically build and create the release
@@ -207,7 +220,8 @@ Configuration file: `~/.wtf_cli/config.json`
     "api_key": "<your_api_key>",
     "model": "google/gemini-2.0-flash-exp:free",
     "temperature": 0.7,
-    "max_tokens": 2000
+    "max_tokens": 2000,
+    "api_timeout_seconds": 30
   },
   "buffer_size": 2000,
   "context_window": 1000,
