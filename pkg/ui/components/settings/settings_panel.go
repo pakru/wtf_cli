@@ -61,18 +61,78 @@ func (sp *SettingsPanel) Show(cfg config.Config, configPath string) {
 // buildFields creates the field list from config
 func (sp *SettingsPanel) buildFields() {
 	sp.fields = []SettingField{
-		{Label: "API Key", Key: "api_key", Value: sp.config.OpenRouter.APIKey, Type: "string", Masked: true},
-		{Label: "API URL", Key: "api_url", Value: sp.config.OpenRouter.APIURL, Type: "string"},
-		{Label: "Model", Key: "model", Value: sp.config.OpenRouter.Model, Type: "string"},
-		{Label: "Temperature", Key: "temperature", Value: fmt.Sprintf("%.1f", sp.config.OpenRouter.Temperature), Type: "float"},
-		{Label: "Max Tokens", Key: "max_tokens", Value: fmt.Sprintf("%d", sp.config.OpenRouter.MaxTokens), Type: "int"},
-		{Label: "API Timeout (sec)", Key: "api_timeout", Value: fmt.Sprintf("%d", sp.config.OpenRouter.APITimeoutSeconds), Type: "int"},
-		{Label: "Buffer Size", Key: "buffer_size", Value: fmt.Sprintf("%d", sp.config.BufferSize), Type: "int"},
-		{Label: "Context Window", Key: "context_window", Value: fmt.Sprintf("%d", sp.config.ContextWindow), Type: "int"},
-		{Label: "Log Level", Key: "log_level", Value: normalizeLogLevel(sp.config.LogLevel), Type: "string"},
-		{Label: "Log Format", Key: "log_format", Value: strings.ToLower(strings.TrimSpace(sp.config.LogFormat)), Type: "string"},
-		{Label: "Log File", Key: "log_file", Value: sp.config.LogFile, Type: "string"},
+		{Label: "LLM Provider", Key: "llm_provider", Value: sp.config.LLMProvider, Type: "string"},
 	}
+
+	// Add provider-specific fields based on selected provider
+	switch sp.config.LLMProvider {
+	case "openrouter":
+		sp.fields = append(sp.fields,
+			SettingField{Label: "API Key", Key: "api_key", Value: sp.config.OpenRouter.APIKey, Type: "string", Masked: true},
+			SettingField{Label: "API URL", Key: "api_url", Value: sp.config.OpenRouter.APIURL, Type: "string"},
+			SettingField{Label: "Model", Key: "model", Value: sp.config.OpenRouter.Model, Type: "string"},
+			SettingField{Label: "Temperature", Key: "temperature", Value: fmt.Sprintf("%.1f", sp.config.OpenRouter.Temperature), Type: "float"},
+			SettingField{Label: "Max Tokens", Key: "max_tokens", Value: fmt.Sprintf("%d", sp.config.OpenRouter.MaxTokens), Type: "int"},
+			SettingField{Label: "API Timeout (sec)", Key: "api_timeout", Value: fmt.Sprintf("%d", sp.config.OpenRouter.APITimeoutSeconds), Type: "int"},
+		)
+	case "openai":
+		sp.fields = append(sp.fields,
+			SettingField{Label: "API Key", Key: "openai_api_key", Value: sp.config.Providers.OpenAI.APIKey, Type: "string", Masked: true},
+			SettingField{Label: "Model", Key: "openai_model", Value: sp.getOpenAIModel(), Type: "string"},
+			SettingField{Label: "Temperature", Key: "openai_temperature", Value: fmt.Sprintf("%.1f", sp.config.Providers.OpenAI.Temperature), Type: "float"},
+			SettingField{Label: "Max Tokens", Key: "openai_max_tokens", Value: fmt.Sprintf("%d", sp.config.Providers.OpenAI.MaxTokens), Type: "int"},
+		)
+	case "copilot":
+		sp.fields = append(sp.fields,
+			SettingField{Label: "Auth Status", Key: "copilot_auth", Value: sp.getCopilotAuthStatus(), Type: "info"},
+			SettingField{Label: "Model", Key: "copilot_model", Value: sp.getCopilotModel(), Type: "string"},
+			SettingField{Label: "Temperature", Key: "copilot_temperature", Value: fmt.Sprintf("%.1f", sp.config.Providers.Copilot.Temperature), Type: "float"},
+			SettingField{Label: "Max Tokens", Key: "copilot_max_tokens", Value: fmt.Sprintf("%d", sp.config.Providers.Copilot.MaxTokens), Type: "int"},
+		)
+	case "anthropic":
+		sp.fields = append(sp.fields,
+			SettingField{Label: "API Key", Key: "anthropic_api_key", Value: sp.config.Providers.Anthropic.APIKey, Type: "string", Masked: true},
+			SettingField{Label: "Model", Key: "anthropic_model", Value: sp.getAnthropicModel(), Type: "string"},
+			SettingField{Label: "Temperature", Key: "anthropic_temperature", Value: fmt.Sprintf("%.1f", sp.config.Providers.Anthropic.Temperature), Type: "float"},
+			SettingField{Label: "Max Tokens", Key: "anthropic_max_tokens", Value: fmt.Sprintf("%d", sp.config.Providers.Anthropic.MaxTokens), Type: "int"},
+		)
+	}
+
+	// Common fields
+	sp.fields = append(sp.fields,
+		SettingField{Label: "Buffer Size", Key: "buffer_size", Value: fmt.Sprintf("%d", sp.config.BufferSize), Type: "int"},
+		SettingField{Label: "Context Window", Key: "context_window", Value: fmt.Sprintf("%d", sp.config.ContextWindow), Type: "int"},
+		SettingField{Label: "Log Level", Key: "log_level", Value: normalizeLogLevel(sp.config.LogLevel), Type: "string"},
+		SettingField{Label: "Log Format", Key: "log_format", Value: strings.ToLower(strings.TrimSpace(sp.config.LogFormat)), Type: "string"},
+		SettingField{Label: "Log File", Key: "log_file", Value: sp.config.LogFile, Type: "string"},
+	)
+}
+
+func (sp *SettingsPanel) getOpenAIModel() string {
+	if sp.config.Providers.OpenAI.Model != "" {
+		return sp.config.Providers.OpenAI.Model
+	}
+	return "gpt-4o"
+}
+
+func (sp *SettingsPanel) getCopilotModel() string {
+	if sp.config.Providers.Copilot.Model != "" {
+		return sp.config.Providers.Copilot.Model
+	}
+	return "gpt-4o"
+}
+
+func (sp *SettingsPanel) getAnthropicModel() string {
+	if sp.config.Providers.Anthropic.Model != "" {
+		return sp.config.Providers.Anthropic.Model
+	}
+	return "claude-3-5-sonnet-20241022"
+}
+
+func (sp *SettingsPanel) getCopilotAuthStatus() string {
+	// This would check auth.json for copilot credentials
+	// For now, return a placeholder
+	return "Not connected (Enter to connect)"
 }
 
 // Hide hides the settings panel
@@ -106,6 +166,14 @@ type SettingsSaveMsg struct {
 // SettingsCloseMsg is sent when settings panel closes
 type SettingsCloseMsg struct{}
 
+// StartCopilotAuthMsg is sent when user wants to authenticate with GitHub Copilot
+type StartCopilotAuthMsg struct{}
+
+// ProviderChangedMsg is sent when the LLM provider is changed
+type ProviderChangedMsg struct {
+	Provider string
+}
+
 // Update handles keyboard input for the settings panel
 func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 	// Editing mode
@@ -133,7 +201,24 @@ func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 		// Enter edit mode for current field
 		field := &sp.fields[sp.selected]
 		if field.Type == "info" {
+			// Handle special info fields like copilot auth
+			if field.Key == "copilot_auth" {
+				return func() tea.Msg {
+					return StartCopilotAuthMsg{}
+				}
+			}
 			return nil
+		}
+		if field.Key == "llm_provider" {
+			options := config.SupportedProviders()
+			return func() tea.Msg {
+				return picker.OpenOptionPickerMsg{
+					Title:    "LLM Provider",
+					FieldKey: "llm_provider",
+					Options:  options,
+					Current:  sp.config.LLMProvider,
+				}
+			}
 		}
 		if field.Key == "model" {
 			options := make([]ai.ModelInfo, len(sp.modelCache.Models))
@@ -329,6 +414,7 @@ func (sp *SettingsPanel) validateValue(fieldType, value string) bool {
 // applyField updates the config with the field value
 func (sp *SettingsPanel) applyField(field *SettingField) {
 	switch field.Key {
+	// OpenRouter fields
 	case "api_key":
 		sp.config.OpenRouter.APIKey = field.Value
 	case "api_url":
@@ -347,6 +433,48 @@ func (sp *SettingsPanel) applyField(field *SettingField) {
 		if v, err := strconv.Atoi(field.Value); err == nil {
 			sp.config.OpenRouter.APITimeoutSeconds = v
 		}
+
+	// OpenAI fields
+	case "openai_api_key":
+		sp.config.Providers.OpenAI.APIKey = field.Value
+	case "openai_model":
+		sp.config.Providers.OpenAI.Model = field.Value
+	case "openai_temperature":
+		if v, err := strconv.ParseFloat(field.Value, 64); err == nil {
+			sp.config.Providers.OpenAI.Temperature = v
+		}
+	case "openai_max_tokens":
+		if v, err := strconv.Atoi(field.Value); err == nil {
+			sp.config.Providers.OpenAI.MaxTokens = v
+		}
+
+	// Copilot fields
+	case "copilot_model":
+		sp.config.Providers.Copilot.Model = field.Value
+	case "copilot_temperature":
+		if v, err := strconv.ParseFloat(field.Value, 64); err == nil {
+			sp.config.Providers.Copilot.Temperature = v
+		}
+	case "copilot_max_tokens":
+		if v, err := strconv.Atoi(field.Value); err == nil {
+			sp.config.Providers.Copilot.MaxTokens = v
+		}
+
+	// Anthropic fields
+	case "anthropic_api_key":
+		sp.config.Providers.Anthropic.APIKey = field.Value
+	case "anthropic_model":
+		sp.config.Providers.Anthropic.Model = field.Value
+	case "anthropic_temperature":
+		if v, err := strconv.ParseFloat(field.Value, 64); err == nil {
+			sp.config.Providers.Anthropic.Temperature = v
+		}
+	case "anthropic_max_tokens":
+		if v, err := strconv.Atoi(field.Value); err == nil {
+			sp.config.Providers.Anthropic.MaxTokens = v
+		}
+
+	// Common fields
 	case "buffer_size":
 		if v, err := strconv.Atoi(field.Value); err == nil {
 			sp.config.BufferSize = v
@@ -478,11 +606,17 @@ func (sp *SettingsPanel) View() string {
 			} else {
 				hint = "↑↓ Navigate • Enter: Pick • e: Edit • Esc: Close"
 			}
-		} else if selectedKey == "log_level" || selectedKey == "log_format" {
+		} else if selectedKey == "llm_provider" || selectedKey == "log_level" || selectedKey == "log_format" {
 			if sp.changed {
 				hint = "↑↓ Navigate • Enter: Pick • s: Save • Esc: Save & Close"
 			} else {
 				hint = "↑↓ Navigate • Enter: Pick • Esc: Close"
+			}
+		} else if selectedKey == "copilot_auth" {
+			if sp.changed {
+				hint = "↑↓ Navigate • Enter: Connect • s: Save • Esc: Save & Close"
+			} else {
+				hint = "↑↓ Navigate • Enter: Connect • Esc: Close"
 			}
 		}
 		content.WriteString(footerStyle.Render(hint))
@@ -512,6 +646,13 @@ func (sp *SettingsPanel) SetLogLevelValue(value string) {
 func (sp *SettingsPanel) SetLogFormatValue(value string) {
 	sp.setLogFormatValue(value)
 	sp.changed = true
+}
+
+// SetProviderValue updates the LLM provider and rebuilds fields.
+func (sp *SettingsPanel) SetProviderValue(value string) {
+	sp.config.LLMProvider = value
+	sp.changed = true
+	sp.buildFields()
 }
 
 func (sp *SettingsPanel) setModelValue(value string) {

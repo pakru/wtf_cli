@@ -55,11 +55,13 @@ func (h *ChatHandler) StartChatStream(
 	}
 
 	// Create provider
-	provider, err := ai.NewOpenRouterProvider(cfg.OpenRouter)
+	provider, err := ai.GetProviderFromConfig(cfg)
 	if err != nil {
 		slog.Error("chat_stream_provider_error", "error", err)
 		return nil, err
 	}
+
+	model, temperature, maxTokens, timeout := getProviderSettings(cfg)
 
 	// Log request (trace level)
 	logger := slog.Default()
@@ -68,31 +70,29 @@ func (h *ChatHandler) StartChatStream(
 			context.Background(),
 			logging.LevelTrace,
 			"chat_stream_prompt",
-			"model", cfg.OpenRouter.Model,
+			"model", model,
 			"message_count", len(aiMessages),
 			"messages_full", buildMessageDump(aiMessages),
 		)
 	}
 
 	// Build request (same as ExplainHandler pattern)
-	temperature := cfg.OpenRouter.Temperature
-	maxTokens := cfg.OpenRouter.MaxTokens
 	req := ai.ChatRequest{
-		Model:       cfg.OpenRouter.Model,
+		Model:       model,
 		Messages:    aiMessages,
 		Temperature: &temperature,
 		MaxTokens:   &maxTokens,
 	}
 
 	slog.Info("chat_stream_start",
-		"model", cfg.OpenRouter.Model,
+		"model", model,
 		"message_count", len(aiMessages),
 		"history_messages", len(messages),
 		"capped_history", len(capped),
 	)
 
 	// Start streaming with timeout to prevent hanging
-	streamCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	streamCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	stream, err := provider.CreateChatCompletionStream(streamCtx, req)
 	if err != nil {
 		cancel()

@@ -123,7 +123,8 @@ func TestSettingsPanel_EditMode(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	// Move to Model field (index 2)
+	// Move to Model field (index 3 for openrouter: llm_provider, api_key, api_url, model)
+	sp.Update(testutils.TestKeyDown)
 	sp.Update(testutils.TestKeyDown)
 	sp.Update(testutils.TestKeyDown)
 
@@ -163,10 +164,19 @@ func TestSettingsPanel_EditModeCursorNavigation(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
+	// Move to API URL field (index 2) to test text editing (API Key at index 1 is masked)
+	sp.Update(testutils.TestKeyDown)
+	sp.Update(testutils.TestKeyDown)
+
+	// Use Enter key to enter edit mode for text field
 	sp.Update(testutils.TestKeyEnter)
 	if !sp.editing {
 		t.Fatal("Should be in editing mode after Enter")
 	}
+
+	// Clear and start fresh for predictable testing
+	sp.editValue = ""
+	sp.editCursor = 0
 
 	sp.Update(testutils.NewTextKeyPressMsg("abcd"))
 	if sp.editValue != "abcd" {
@@ -206,10 +216,17 @@ func TestSettingsPanel_EditModePasteUsesText(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
+	// Move to API URL field (index 2) and use Enter to enter edit mode
+	sp.Update(testutils.TestKeyDown)
+	sp.Update(testutils.TestKeyDown)
 	sp.Update(testutils.TestKeyEnter)
 	if !sp.editing {
 		t.Fatal("Should be in editing mode after Enter")
 	}
+
+	// Clear existing value for clean test
+	sp.editValue = ""
+	sp.editCursor = 0
 
 	// Simulate paste by sending text (newlines should be filtered)
 	sp.Update(testutils.NewTextKeyPressMsg("sk-or-v1-123"))
@@ -259,25 +276,29 @@ func TestSettingsPanel_ApplyField(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	// Modify model field
-	sp.fields[2].Value = "new-model"
-	sp.applyField(&sp.fields[2])
+	// Field indices for openrouter provider:
+	// 0: llm_provider, 1: api_key, 2: api_url, 3: model, 4: temperature, 5: max_tokens, 6: api_timeout
+	// 7: buffer_size, 8: context_window, 9: log_level, 10: log_format, 11: log_file
+
+	// Modify model field (index 3)
+	sp.fields[3].Value = "new-model"
+	sp.applyField(&sp.fields[3])
 
 	if sp.config.OpenRouter.Model != "new-model" {
 		t.Errorf("Expected model 'new-model', got %q", sp.config.OpenRouter.Model)
 	}
 
-	// Modify temperature
-	sp.fields[3].Value = "0.9"
-	sp.applyField(&sp.fields[3])
+	// Modify temperature (index 4)
+	sp.fields[4].Value = "0.9"
+	sp.applyField(&sp.fields[4])
 
 	if sp.config.OpenRouter.Temperature != 0.9 {
 		t.Errorf("Expected temperature 0.9, got %f", sp.config.OpenRouter.Temperature)
 	}
 
-	// Modify buffer size
-	sp.fields[6].Value = "5000"
-	sp.applyField(&sp.fields[6])
+	// Modify buffer size (index 7)
+	sp.fields[7].Value = "5000"
+	sp.applyField(&sp.fields[7])
 
 	if sp.config.BufferSize != 5000 {
 		t.Errorf("Expected buffer size 5000, got %d", sp.config.BufferSize)
@@ -343,7 +364,8 @@ func TestSettingsPanel_ModelPicker(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	// Move to Model field (index 2)
+	// Move to Model field (index 3 for openrouter: llm_provider, api_key, api_url, model)
+	sp.Update(testutils.TestKeyDown)
 	sp.Update(testutils.TestKeyDown)
 	sp.Update(testutils.TestKeyDown)
 
@@ -396,8 +418,10 @@ func TestSettingsPanel_OpenLogLevelPicker(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	// Move to Log Level field (index 8)
-	for i := 0; i < 8; i++ {
+	// Move to Log Level field (index 9 for openrouter provider)
+	// 0: llm_provider, 1: api_key, 2: api_url, 3: model, 4: temperature, 5: max_tokens, 6: api_timeout
+	// 7: buffer_size, 8: context_window, 9: log_level
+	for i := 0; i < 9; i++ {
 		sp.Update(testutils.TestKeyDown)
 	}
 
@@ -422,8 +446,10 @@ func TestSettingsPanel_OpenLogFormatPicker(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	// Move to Log Format field (index 9)
-	for i := 0; i < 9; i++ {
+	// Move to Log Format field (index 10 for openrouter provider)
+	// 0: llm_provider, 1: api_key, 2: api_url, 3: model, 4: temperature, 5: max_tokens, 6: api_timeout
+	// 7: buffer_size, 8: context_window, 9: log_level, 10: log_format
+	for i := 0; i < 10; i++ {
 		sp.Update(testutils.TestKeyDown)
 	}
 

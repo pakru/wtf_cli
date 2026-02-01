@@ -67,7 +67,7 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 		return nil, err
 	}
 
-	provider, err := ai.NewOpenRouterProvider(cfg.OpenRouter)
+	provider, err := ai.GetProviderFromConfig(cfg)
 	if err != nil {
 		slog.Error("wtf_stream_provider_error", "error", err)
 		return nil, err
@@ -76,36 +76,36 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 	meta := buildTerminalMetadata(ctx)
 	messages, termCtx := ai.BuildWtfMessages(lines, meta)
 
+	model, temperature, maxTokens, timeout := getProviderSettings(cfg)
+
 	logger := slog.Default()
 	if logger.Enabled(context.Background(), logging.LevelTrace) {
 		logger.Log(
 			context.Background(),
 			logging.LevelTrace,
 			"wtf_stream_prompt",
-			"model", cfg.OpenRouter.Model,
+			"model", model,
 			"message_count", len(messages),
 			"messages_full", buildMessageDump(messages),
 		)
 	}
 
-	temperature := cfg.OpenRouter.Temperature
-	maxTokens := cfg.OpenRouter.MaxTokens
 	req := ai.ChatRequest{
-		Model:       cfg.OpenRouter.Model,
+		Model:       model,
 		Messages:    messages,
 		Temperature: &temperature,
 		MaxTokens:   &maxTokens,
 	}
 
 	slog.Info("wtf_stream_start",
-		"model", cfg.OpenRouter.Model,
+		"model", model,
 		"lines", len(lines),
 		"cwd", ctx.CurrentDir,
 		"temperature", temperature,
 		"max_tokens", maxTokens,
 	)
 	slog.Debug("wtf_stream_request",
-		"model", cfg.OpenRouter.Model,
+		"model", model,
 		"message_count", len(messages),
 		"messages_preview", buildMessagePreview(messages, llmLogMaxMessages, llmLogMessagePreviewChars),
 		"messages_omitted", omittedCount(len(messages), llmLogMaxMessages),
@@ -115,7 +115,7 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 		"max_tokens", maxTokens,
 	)
 
-	reqCtx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.OpenRouter.APITimeoutSeconds)*time.Second)
+	reqCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	stream, err := provider.CreateChatCompletionStream(reqCtx, req)
 	if err != nil {
 		cancel()
@@ -123,7 +123,7 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 		return nil, err
 	}
 
-	slog.Info("wtf_stream_ready", "model", cfg.OpenRouter.Model)
+	slog.Info("wtf_stream_ready", "model", model)
 
 	ch := make(chan WtfStreamEvent, 8)
 	go func() {
@@ -145,7 +145,7 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 
 		if err := stream.Err(); err != nil {
 			slog.Debug("wtf_stream_response",
-				"model", cfg.OpenRouter.Model,
+				"model", model,
 				"response_chars", totalRunes,
 				"response_preview", sanitizeForLog(responsePreview.String()),
 				"response_truncated", responsePreview.Truncated(),
@@ -155,7 +155,7 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 			return
 		}
 		slog.Debug("wtf_stream_response",
-			"model", cfg.OpenRouter.Model,
+			"model", model,
 			"response_chars", totalRunes,
 			"response_preview", sanitizeForLog(responsePreview.String()),
 			"response_truncated", responsePreview.Truncated(),
@@ -164,6 +164,50 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 	}()
 
 	return ch, nil
+}
+
+func getProviderSettings(cfg config.Config) (model string, temperature float64, maxTokens int, timeout int) {
+	switch cfg.LLMProvider {
+	case "openai":
+		model = cfg.Providers.OpenAI.Model
+		if model == "" {
+			model = "gpt-4o"
+		}
+		temperature = cfg.Providers.OpenAI.Temperature
+		maxTokens = cfg.Providers.OpenAI.MaxTokens
+		timeout = cfg.Providers.OpenAI.APITimeoutSeconds
+		if timeout <= 0 {
+			timeout = 30
+		}
+	case "copilot":
+		model = cfg.Providers.Copilot.Model
+		if model == "" {
+			model = "gpt-4o"
+		}
+		temperature = cfg.Providers.Copilot.Temperature
+		maxTokens = cfg.Providers.Copilot.MaxTokens
+		timeout = cfg.Providers.Copilot.APITimeoutSeconds
+		if timeout <= 0 {
+			timeout = 30
+		}
+	case "anthropic":
+		model = cfg.Providers.Anthropic.Model
+		if model == "" {
+			model = "claude-3-5-sonnet-20241022"
+		}
+		temperature = cfg.Providers.Anthropic.Temperature
+		maxTokens = cfg.Providers.Anthropic.MaxTokens
+		timeout = cfg.Providers.Anthropic.APITimeoutSeconds
+		if timeout <= 0 {
+			timeout = 60
+		}
+	default:
+		model = cfg.OpenRouter.Model
+		temperature = cfg.OpenRouter.Temperature
+		maxTokens = cfg.OpenRouter.MaxTokens
+		timeout = cfg.OpenRouter.APITimeoutSeconds
+	}
+	return
 }
 
 func buildTerminalMetadata(ctx *Context) ai.TerminalMetadata {

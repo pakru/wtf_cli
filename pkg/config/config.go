@@ -13,12 +13,48 @@ import (
 type Config struct {
 	LLMProvider   string           `json:"llm_provider"`
 	OpenRouter    OpenRouterConfig `json:"openrouter"`
+	Providers     ProvidersConfig  `json:"providers"`
 	BufferSize    int              `json:"buffer_size"`
 	ContextWindow int              `json:"context_window"`
 	StatusBar     StatusBarConfig  `json:"status_bar"`
 	LogFile       string           `json:"log_file"`
 	LogFormat     string           `json:"log_format"`
 	LogLevel      string           `json:"log_level"`
+}
+
+// ProvidersConfig holds configuration for all LLM providers.
+type ProvidersConfig struct {
+	OpenAI    OpenAIConfig    `json:"openai"`
+	Copilot   CopilotConfig   `json:"copilot"`
+	Anthropic AnthropicConfig `json:"anthropic"`
+}
+
+// OpenAIConfig holds OpenAI API configuration.
+type OpenAIConfig struct {
+	APIKey            string  `json:"api_key"`
+	APIURL            string  `json:"api_url"`
+	Model             string  `json:"model"`
+	Temperature       float64 `json:"temperature"`
+	MaxTokens         int     `json:"max_tokens"`
+	APITimeoutSeconds int     `json:"api_timeout_seconds"`
+}
+
+// CopilotConfig holds GitHub Copilot configuration.
+type CopilotConfig struct {
+	Model             string  `json:"model"`
+	Temperature       float64 `json:"temperature"`
+	MaxTokens         int     `json:"max_tokens"`
+	APITimeoutSeconds int     `json:"api_timeout_seconds"`
+}
+
+// AnthropicConfig holds Anthropic API configuration.
+type AnthropicConfig struct {
+	APIKey            string  `json:"api_key"`
+	APIURL            string  `json:"api_url"`
+	Model             string  `json:"model"`
+	Temperature       float64 `json:"temperature"`
+	MaxTokens         int     `json:"max_tokens"`
+	APITimeoutSeconds int     `json:"api_timeout_seconds"`
 }
 
 // OpenRouterConfig holds the OpenRouter API configuration
@@ -113,46 +149,44 @@ func Save(configPath string, cfg Config) error {
 	return nil
 }
 
+// SupportedProviders returns a list of supported LLM provider names.
+func SupportedProviders() []string {
+	return []string{"openrouter", "openai", "copilot", "anthropic"}
+}
+
+// IsValidProvider checks if a provider name is supported.
+func IsValidProvider(provider string) bool {
+	for _, p := range SupportedProviders() {
+		if p == provider {
+			return true
+		}
+	}
+	return false
+}
+
 // Validate checks if the configuration is valid
 func (c Config) Validate() error {
 	// Check LLM provider
-	if c.LLMProvider != "openrouter" {
-		return fmt.Errorf("unsupported LLM provider: %s", c.LLMProvider)
+	if !IsValidProvider(c.LLMProvider) {
+		return fmt.Errorf("unsupported LLM provider: %s (supported: %v)", c.LLMProvider, SupportedProviders())
 	}
 
-	// API key required
-	if c.OpenRouter.APIKey == "" {
-		return fmt.Errorf("OpenRouter API key is required (set in config file)")
-	}
-
-	// Validate API URL
-	apiURL := strings.TrimSpace(c.OpenRouter.APIURL)
-	if apiURL == "" {
-		return fmt.Errorf("OpenRouter api_url is required (set in config file)")
-	}
-	parsedURL, err := url.Parse(apiURL)
-	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
-		return fmt.Errorf("OpenRouter api_url must be a valid URL, got: %s", c.OpenRouter.APIURL)
-	}
-
-	// Validate model
-	if strings.TrimSpace(c.OpenRouter.Model) == "" {
-		return fmt.Errorf("OpenRouter model is required (set in config file)")
-	}
-
-	// Validate temperature
-	if c.OpenRouter.Temperature < 0 || c.OpenRouter.Temperature > 2 {
-		return fmt.Errorf("temperature must be between 0 and 2, got: %f", c.OpenRouter.Temperature)
-	}
-
-	// Validate max tokens
-	if c.OpenRouter.MaxTokens <= 0 {
-		return fmt.Errorf("max_tokens must be positive, got: %d", c.OpenRouter.MaxTokens)
-	}
-
-	// Validate API timeout
-	if c.OpenRouter.APITimeoutSeconds <= 0 {
-		return fmt.Errorf("api_timeout_seconds must be positive, got: %d", c.OpenRouter.APITimeoutSeconds)
+	// Validate provider-specific config based on selected provider
+	switch c.LLMProvider {
+	case "openrouter":
+		if err := c.validateOpenRouter(); err != nil {
+			return err
+		}
+	case "openai":
+		if err := c.validateOpenAI(); err != nil {
+			return err
+		}
+	case "copilot":
+		// Copilot uses OAuth, no API key validation needed here
+	case "anthropic":
+		if err := c.validateAnthropic(); err != nil {
+			return err
+		}
 	}
 
 	// Validate buffer sizes
@@ -180,6 +214,54 @@ func (c Config) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+func (c Config) validateOpenRouter() error {
+	if c.OpenRouter.APIKey == "" {
+		return fmt.Errorf("OpenRouter API key is required (set in config file)")
+	}
+
+	apiURL := strings.TrimSpace(c.OpenRouter.APIURL)
+	if apiURL == "" {
+		return fmt.Errorf("OpenRouter api_url is required (set in config file)")
+	}
+	parsedURL, err := url.Parse(apiURL)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return fmt.Errorf("OpenRouter api_url must be a valid URL, got: %s", c.OpenRouter.APIURL)
+	}
+
+	if strings.TrimSpace(c.OpenRouter.Model) == "" {
+		return fmt.Errorf("OpenRouter model is required (set in config file)")
+	}
+
+	if c.OpenRouter.Temperature < 0 || c.OpenRouter.Temperature > 2 {
+		return fmt.Errorf("temperature must be between 0 and 2, got: %f", c.OpenRouter.Temperature)
+	}
+
+	if c.OpenRouter.MaxTokens <= 0 {
+		return fmt.Errorf("max_tokens must be positive, got: %d", c.OpenRouter.MaxTokens)
+	}
+
+	if c.OpenRouter.APITimeoutSeconds <= 0 {
+		return fmt.Errorf("api_timeout_seconds must be positive, got: %d", c.OpenRouter.APITimeoutSeconds)
+	}
+
+	return nil
+}
+
+func (c Config) validateOpenAI() error {
+	// API key can be empty if using OAuth
+	if strings.TrimSpace(c.Providers.OpenAI.Model) == "" {
+		// Will use default model
+	}
+	return nil
+}
+
+func (c Config) validateAnthropic() error {
+	if c.Providers.Anthropic.APIKey == "" {
+		return fmt.Errorf("Anthropic API key is required (set in config file)")
+	}
 	return nil
 }
 
