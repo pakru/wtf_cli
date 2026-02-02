@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"wtf_cli/pkg/ai"
+	"wtf_cli/pkg/ai/auth"
 	"wtf_cli/pkg/config"
 	"wtf_cli/pkg/ui/components/picker"
 	"wtf_cli/pkg/ui/styles"
@@ -130,8 +131,16 @@ func (sp *SettingsPanel) getAnthropicModel() string {
 }
 
 func (sp *SettingsPanel) getCopilotAuthStatus() string {
-	// This would check auth.json for copilot credentials
-	// For now, return a placeholder
+	authMgr := auth.NewAuthManager(auth.DefaultAuthPath())
+	if authMgr.HasCredentials("copilot") {
+		creds, err := authMgr.Load("copilot")
+		if err == nil && !creds.IsExpired() {
+			return "Connected (Enter to reconnect)"
+		}
+		if err == nil && creds.IsExpired() {
+			return "Expired (Enter to reconnect)"
+		}
+	}
 	return "Not connected (Enter to connect)"
 }
 
@@ -695,6 +704,17 @@ func (sp *SettingsPanel) selectedFieldKey() string {
 // SetModelCache updates the cached model list for picker use.
 func (sp *SettingsPanel) SetModelCache(cache ai.ModelCache) {
 	sp.modelCache = cache
+}
+
+// RefreshCopilotAuthStatus updates only the Copilot auth status field
+// without resetting other panel state or discarding unsaved edits.
+func (sp *SettingsPanel) RefreshCopilotAuthStatus() {
+	for i := range sp.fields {
+		if sp.fields[i].Key == "copilot_auth" {
+			sp.fields[i].Value = sp.getCopilotAuthStatus()
+			break
+		}
+	}
 }
 
 func renderEditValue(value string, cursor int) string {

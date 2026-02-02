@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,8 +14,10 @@ import (
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/commands"
+	"wtf_cli/pkg/config"
 	"wtf_cli/pkg/ui/components/historypicker"
 	"wtf_cli/pkg/ui/components/palette"
+	"wtf_cli/pkg/ui/components/settings"
 	"wtf_cli/pkg/ui/components/testutils"
 	"wtf_cli/pkg/ui/input"
 
@@ -593,5 +596,138 @@ func TestModel_PasswordProtection_ClearLineBufferPreventsCapture(t *testing.T) {
 	last = m.session.GetLastN(1)
 	if len(last) != 1 || last[0].Command != "sudo" {
 		t.Fatalf("Expected last command to remain 'sudo', got %+v", last)
+	}
+}
+
+func TestModel_Update_StartCopilotAuthMsg(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	// Send StartCopilotAuthMsg
+	newModel, cmd := m.Update(settings.StartCopilotAuthMsg{})
+	m = newModel.(Model)
+
+	// Should return a command to start the auth flow
+	if cmd == nil {
+		t.Error("Expected cmd to start Copilot auth flow")
+	}
+}
+
+func TestModel_Update_CopilotAuthStartedMsg(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	// Send copilotAuthStartedMsg with device code info
+	msg := copilotAuthStartedMsg{
+		DeviceCode:      "ABC123",
+		UserCode:        "ABCD-1234",
+		VerificationURI: "https://github.com/login/device",
+		Interval:        5,
+	}
+	newModel, cmd := m.Update(msg)
+	m = newModel.(Model)
+
+	// Should set status bar message with user code
+	statusMsg := m.statusBar.GetMessage()
+	if !strings.Contains(statusMsg, "ABCD-1234") {
+		t.Errorf("Expected status bar to contain user code, got %q", statusMsg)
+	}
+	if !strings.Contains(statusMsg, "github.com/login/device") {
+		t.Errorf("Expected status bar to contain verification URI, got %q", statusMsg)
+	}
+
+	// Should return a command to poll for token
+	if cmd == nil {
+		t.Error("Expected cmd to poll for token")
+	}
+}
+
+func TestModel_Update_CopilotAuthCompleteMsg(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	// Send copilotAuthCompleteMsg
+	newModel, cmd := m.Update(copilotAuthCompleteMsg{})
+	m = newModel.(Model)
+
+	// Should set success message
+	statusMsg := m.statusBar.GetMessage()
+	if !strings.Contains(statusMsg, "connected") && !strings.Contains(statusMsg, "Connected") {
+		t.Errorf("Expected status bar to show connected message, got %q", statusMsg)
+	}
+
+	// Should return a command to clear status after delay
+	if cmd == nil {
+		t.Error("Expected cmd to clear status after delay")
+	}
+}
+
+func TestModel_Update_CopilotAuthErrorMsg(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	// Send copilotAuthErrorMsg
+	testErr := fmt.Errorf("test auth error")
+	newModel, cmd := m.Update(copilotAuthErrorMsg{Err: testErr})
+	m = newModel.(Model)
+
+	// Should set error message
+	statusMsg := m.statusBar.GetMessage()
+	if !strings.Contains(statusMsg, "failed") && !strings.Contains(statusMsg, "error") {
+		t.Errorf("Expected status bar to show error message, got %q", statusMsg)
+	}
+	if !strings.Contains(statusMsg, "test auth error") {
+		t.Errorf("Expected status bar to contain error details, got %q", statusMsg)
+	}
+
+	// Should return a command to clear status after delay
+	if cmd == nil {
+		t.Error("Expected cmd to clear status after delay")
+	}
+}
+
+func TestModel_Update_ClearStatusMsg(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.statusBar.SetMessage("Test message")
+
+	// Send clearStatusMsg
+	newModel, cmd := m.Update(clearStatusMsg{})
+	m = newModel.(Model)
+
+	// Should clear the status message
+	statusMsg := m.statusBar.GetMessage()
+	if statusMsg != "" {
+		t.Errorf("Expected status bar to be cleared, got %q", statusMsg)
+	}
+
+	// Should return nil command
+	if cmd != nil {
+		t.Error("Expected nil cmd after clearing status")
+	}
+}
+
+func TestModel_Update_CopilotAuthComplete_RefreshesSettingsPanel(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	// Show settings panel
+	m.settingsPanel.Show(config.Default(), config.GetConfigPath())
+	if !m.settingsPanel.IsVisible() {
+		t.Fatal("Expected settings panel to be visible")
+	}
+
+	// Make an edit to simulate unsaved changes
+	m.settingsPanel.SetProviderValue("copilot")
+	if !m.settingsPanel.HasChanges() {
+		t.Fatal("Expected settings panel to have changes")
+	}
+
+	// Send copilotAuthCompleteMsg
+	newModel, _ := m.Update(copilotAuthCompleteMsg{})
+	m = newModel.(Model)
+
+	// Settings panel should still be visible
+	if !m.settingsPanel.IsVisible() {
+		t.Error("Expected settings panel to remain visible after auth complete")
+	}
+
+	// Unsaved changes should be preserved (not reset by Show())
+	if !m.settingsPanel.HasChanges() {
+		t.Error("Expected unsaved changes to be preserved after auth complete")
 	}
 }

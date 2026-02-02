@@ -623,10 +623,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Auth complete, save credentials
 		slog.Info("copilot_auth_complete")
 		m.statusBar.SetMessage("GitHub Copilot connected!")
-		// Reload settings panel to show updated auth status
+		// Refresh only the auth status field to preserve unsaved edits
 		if m.settingsPanel != nil && m.settingsPanel.IsVisible() {
-			cfg, _ := config.Load(config.GetConfigPath())
-			m.settingsPanel.Show(cfg, config.GetConfigPath())
+			m.settingsPanel.RefreshCopilotAuthStatus()
 		}
 		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
 			return clearStatusMsg{}

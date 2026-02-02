@@ -39,6 +39,11 @@ func (s *StatusBarView) SetMessage(msg string) {
 	s.message = msg
 }
 
+// GetMessage returns the current message
+func (s *StatusBarView) GetMessage() string {
+	return s.message
+}
+
 // SetModel updates the active model displayed.
 func (s *StatusBarView) SetModel(model string) {
 	s.model = strings.TrimSpace(model)
