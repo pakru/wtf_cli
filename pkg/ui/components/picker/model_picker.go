@@ -16,6 +16,7 @@ type OpenModelPickerMsg struct {
 	Current  string
 	APIURL   string
 	FieldKey string // Which model field this picker is for (e.g., "model", "openai_model", "copilot_model", "anthropic_model")
+	APIKey   string // API key for dynamic model fetching (OpenAI, Anthropic)
 }
 
 type ModelPickerSelectMsg struct {

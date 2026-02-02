@@ -691,10 +691,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.modelPicker.SetSize(m.width, m.height)
 			m.modelPicker.Show(msg.Options, msg.Current, msg.FieldKey)
 		}
-		// Only refresh cache for OpenRouter (which has dynamic model list)
+		// Fetch dynamic model list based on provider
 		var cmd tea.Cmd
-		if msg.FieldKey == "model" && msg.APIURL != "" {
-			cmd = refreshModelCacheCmd(msg.APIURL)
+		switch msg.FieldKey {
+		case "model":
+			if msg.APIURL != "" {
+				cmd = refreshModelCacheCmd(msg.APIURL)
+			}
+		case "openai_model":
+			if msg.APIKey != "" {
+				cmd = fetchOpenAIModelsCmd(msg.APIKey)
+			}
+		case "anthropic_model":
+			if msg.APIKey != "" {
+				cmd = fetchAnthropicModelsCmd(msg.APIKey)
+			}
 		}
 		return m, cmd
 
@@ -757,6 +768,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.settingsPanel.SetModelCache(msg.Cache)
 		}
 		slog.Info("model_picker_refresh_done", "models", len(msg.Cache.Models))
+		return m, nil
+
+	case providerModelsRefreshMsg:
+		if msg.Err != nil {
+			slog.Error("provider_models_refresh_error", "field_key", msg.FieldKey, "error", msg.Err)
+			return m, nil
+		}
+		if m.modelPicker != nil && m.modelPicker.IsVisible() {
+			m.modelPicker.UpdateOptions(msg.Models)
+		}
+		slog.Info("provider_models_refresh_done", "field_key", msg.FieldKey, "models", len(msg.Models))
 		return m, nil
 
 	case result.ResultPanelCloseMsg:
@@ -1191,6 +1213,43 @@ func refreshModelCacheCmd(apiURL string) tea.Cmd {
 
 		cache, err := ai.RefreshOpenRouterModelCache(ctx, trimmed, ai.DefaultModelCachePath())
 		return picker.ModelPickerRefreshMsg{Cache: cache, Err: err}
+	}
+}
+
+// providerModelsRefreshMsg is sent when dynamic model fetching completes
+type providerModelsRefreshMsg struct {
+	Models   []ai.ModelInfo
+	FieldKey string
+	Err      error
+}
+
+func fetchOpenAIModelsCmd(apiKey string) tea.Cmd {
+	if apiKey == "" {
+		return nil
+	}
+
+	return func() tea.Msg {
+		slog.Info("openai_models_fetch_start")
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		models, err := ai.FetchOpenAIModels(ctx, apiKey)
+		return providerModelsRefreshMsg{Models: models, FieldKey: "openai_model", Err: err}
+	}
+}
+
+func fetchAnthropicModelsCmd(apiKey string) tea.Cmd {
+	if apiKey == "" {
+		return nil
+	}
+
+	return func() tea.Msg {
+		slog.Info("anthropic_models_fetch_start")
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		models, err := ai.FetchAnthropicModels(ctx, apiKey)
+		return providerModelsRefreshMsg{Models: models, FieldKey: "anthropic_model", Err: err}
 	}
 }
 

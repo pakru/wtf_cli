@@ -243,16 +243,18 @@ func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		if field.Key == "openai_model" {
 			options := ai.GetProviderModels("openai")
+			apiKey := sp.config.Providers.OpenAI.APIKey
 			return func() tea.Msg {
 				return picker.OpenModelPickerMsg{
 					Options:  options,
 					Current:  sp.config.Providers.OpenAI.Model,
 					FieldKey: "openai_model",
+					APIKey:   apiKey,
 				}
 			}
 		}
 		if field.Key == "copilot_model" {
-			options := ai.GetProviderModels("copilot")
+			options := ai.GetCopilotModels()
 			return func() tea.Msg {
 				return picker.OpenModelPickerMsg{
 					Options:  options,
@@ -263,11 +265,13 @@ func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		if field.Key == "anthropic_model" {
 			options := ai.GetProviderModels("anthropic")
+			apiKey := sp.config.Providers.Anthropic.APIKey
 			return func() tea.Msg {
 				return picker.OpenModelPickerMsg{
 					Options:  options,
 					Current:  sp.config.Providers.Anthropic.Model,
 					FieldKey: "anthropic_model",
+					APIKey:   apiKey,
 				}
 			}
 		}

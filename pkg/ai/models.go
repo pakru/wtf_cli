@@ -143,12 +143,148 @@ func SaveModelCache(path string, cache ModelCache) error {
 	return nil
 }
 
-// GetProviderModels returns the available models for a given provider.
-// For OpenRouter, this returns an empty list (use FetchOpenRouterModels instead).
-// For other providers, this returns a static list of commonly available models.
+// FetchOpenAIModels retrieves the model list from OpenAI API.
+// Endpoint: GET https://api.openai.com/v1/models
+func FetchOpenAIModels(ctx context.Context, apiKey string) ([]ModelInfo, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	return fetchOpenAIModels(ctx, apiKey, client)
+}
+
+func fetchOpenAIModels(ctx context.Context, apiKey string, client httpDoer) ([]ModelInfo, error) {
+	if client == nil {
+		return nil, fmt.Errorf("http client is required")
+	}
+	if apiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.openai.com/v1/models", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create models request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch models: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("models request failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payload struct {
+		Data []struct {
+			ID      string `json:"id"`
+			OwnedBy string `json:"owned_by"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode models response: %w", err)
+	}
+
+	// Filter to only include chat-capable models (gpt-*, o1-*, chatgpt-*)
+	var models []ModelInfo
+	for _, m := range payload.Data {
+		if strings.HasPrefix(m.ID, "gpt-") || strings.HasPrefix(m.ID, "o1-") || strings.HasPrefix(m.ID, "chatgpt-") {
+			models = append(models, ModelInfo{
+				ID:   m.ID,
+				Name: m.ID,
+			})
+		}
+	}
+
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].ID < models[j].ID
+	})
+
+	return models, nil
+}
+
+// FetchAnthropicModels retrieves the model list from Anthropic API.
+// Endpoint: GET https://api.anthropic.com/v1/models
+func FetchAnthropicModels(ctx context.Context, apiKey string) ([]ModelInfo, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	return fetchAnthropicModels(ctx, apiKey, client)
+}
+
+func fetchAnthropicModels(ctx context.Context, apiKey string, client httpDoer) ([]ModelInfo, error) {
+	if client == nil {
+		return nil, fmt.Errorf("http client is required")
+	}
+	if apiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.anthropic.com/v1/models", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create models request: %w", err)
+	}
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch models: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("models request failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payload struct {
+		Data []struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"display_name"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode models response: %w", err)
+	}
+
+	var models []ModelInfo
+	for _, m := range payload.Data {
+		name := m.DisplayName
+		if name == "" {
+			name = m.ID
+		}
+		models = append(models, ModelInfo{
+			ID:   m.ID,
+			Name: name,
+		})
+	}
+
+	// Sort by ID (most recent models first since they have dates in IDs)
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].ID > models[j].ID
+	})
+
+	return models, nil
+}
+
+// GetCopilotModels returns the available models for GitHub Copilot.
+// Copilot uses a fixed set of models that are documented but don't have a listing API.
+func GetCopilotModels() []ModelInfo {
+	return []ModelInfo{
+		{ID: "gpt-4o", Name: "GPT-4o", Description: "Default Copilot model"},
+		{ID: "gpt-4o-mini", Name: "GPT-4o Mini", Description: "Faster Copilot model"},
+		{ID: "gpt-4", Name: "GPT-4", Description: "GPT-4 via Copilot"},
+		{ID: "gpt-3.5-turbo", Name: "GPT-3.5 Turbo", Description: "Fast model via Copilot"},
+	}
+}
+
+// GetProviderModels returns a static fallback list of models for a given provider.
+// Use FetchOpenAIModels or FetchAnthropicModels for dynamic lists when API keys are available.
 func GetProviderModels(provider string) []ModelInfo {
 	switch provider {
 	case "openai":
+		// Fallback static list when API key is not available
 		return []ModelInfo{
 			{ID: "gpt-4o", Name: "GPT-4o", Description: "Most capable GPT-4 model"},
 			{ID: "gpt-4o-mini", Name: "GPT-4o Mini", Description: "Smaller, faster GPT-4o"},
@@ -159,13 +295,9 @@ func GetProviderModels(provider string) []ModelInfo {
 			{ID: "o1-mini", Name: "o1 Mini", Description: "Smaller reasoning model"},
 		}
 	case "copilot":
-		return []ModelInfo{
-			{ID: "gpt-4o", Name: "GPT-4o", Description: "Default Copilot model"},
-			{ID: "gpt-4o-mini", Name: "GPT-4o Mini", Description: "Faster Copilot model"},
-			{ID: "gpt-4", Name: "GPT-4", Description: "GPT-4 via Copilot"},
-			{ID: "gpt-3.5-turbo", Name: "GPT-3.5 Turbo", Description: "Fast model via Copilot"},
-		}
+		return GetCopilotModels()
 	case "anthropic":
+		// Fallback static list when API key is not available
 		return []ModelInfo{
 			{ID: "claude-3-5-sonnet-20241022", Name: "Claude 3.5 Sonnet", Description: "Latest Claude 3.5 Sonnet"},
 			{ID: "claude-3-5-haiku-20241022", Name: "Claude 3.5 Haiku", Description: "Fast Claude 3.5 model"},
