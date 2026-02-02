@@ -78,6 +78,40 @@ func TestSidebar_UpdateLastMessage(t *testing.T) {
 	}
 }
 
+func TestSidebar_SetLastMessageContent(t *testing.T) {
+	s := NewSidebar()
+	s.EnableChatMode()
+
+	s.StartAssistantMessage()
+	s.UpdateLastMessage("Hello")
+	s.SetLastMessageContent("Replaced")
+
+	messages := s.GetMessages()
+	if len(messages) != 1 {
+		t.Fatalf("Expected 1 message, got %d", len(messages))
+	}
+	if messages[0].Content != "Replaced" {
+		t.Errorf("Expected 'Replaced', got %q", messages[0].Content)
+	}
+}
+
+func TestSidebar_RemoveLastMessage(t *testing.T) {
+	s := NewSidebar()
+	s.EnableChatMode()
+
+	s.AppendUserMessage("First")
+	s.StartAssistantMessage()
+	s.RemoveLastMessage()
+
+	messages := s.GetMessages()
+	if len(messages) != 1 {
+		t.Fatalf("Expected 1 message, got %d", len(messages))
+	}
+	if messages[0].Role != "user" {
+		t.Errorf("Expected role 'user', got %q", messages[0].Role)
+	}
+}
+
 func TestSidebar_AppendErrorMessage(t *testing.T) {
 	s := NewSidebar()
 	s.EnableChatMode()

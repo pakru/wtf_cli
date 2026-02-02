@@ -12,13 +12,16 @@ import (
 )
 
 type OpenModelPickerMsg struct {
-	Options []ai.ModelInfo
-	Current string
-	APIURL  string
+	Options  []ai.ModelInfo
+	Current  string
+	APIURL   string
+	FieldKey string // Which model field this picker is for (e.g., "model", "openai_model", "copilot_model", "anthropic_model")
+	APIKey   string // API key for dynamic model fetching (OpenAI, Anthropic)
 }
 
 type ModelPickerSelectMsg struct {
-	ModelID string
+	ModelID  string
+	FieldKey string // Which model field was selected (e.g., "model", "openai_model", "copilot_model", "anthropic_model")
 }
 
 type ModelPickerRefreshMsg struct {
@@ -36,6 +39,7 @@ type ModelPickerPanel struct {
 	width    int
 	height   int
 	current  string
+	fieldKey string // Which model field this picker is for
 }
 
 // NewModelPickerPanel creates a new model picker panel.
@@ -44,13 +48,14 @@ func NewModelPickerPanel() *ModelPickerPanel {
 }
 
 // Show displays the model picker with available options.
-func (p *ModelPickerPanel) Show(options []ai.ModelInfo, current string) {
+func (p *ModelPickerPanel) Show(options []ai.ModelInfo, current string, fieldKey string) {
 	p.visible = true
 	p.filter = ""
 	p.selected = 0
 	p.scroll = 0
 	p.options = append([]ai.ModelInfo(nil), options...)
 	p.current = current
+	p.fieldKey = fieldKey
 
 	if current != "" {
 		for i, option := range p.options {
@@ -168,9 +173,10 @@ func (p *ModelPickerPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 	case "enter":
 		if len(filtered) > 0 && p.selected < len(filtered) {
 			modelID := filtered[p.selected].ID
+			fieldKey := p.fieldKey
 			p.Hide()
 			return func() tea.Msg {
-				return ModelPickerSelectMsg{ModelID: modelID}
+				return ModelPickerSelectMsg{ModelID: modelID, FieldKey: fieldKey}
 			}
 		}
 		return nil

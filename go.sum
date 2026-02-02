@@ -44,6 +44,12 @@ github.com/danielgatis/go-vte v1.0.8 h1:ot/fnUB7dMag0lMurMCei4mjRI8KyxpLeA7lhTtd
 github.com/danielgatis/go-vte v1.0.8/go.mod h1:HBeSBT/XiLQRNEoYpBYrBeK2mSUkOfHvsVtb8LPmexQ=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/github/copilot-sdk/go v0.1.19 h1:kCjamonJdPF0kE/oV16H4PX4xpmf2Vt3rSGG6KUR9KM=
+github.com/github/copilot-sdk/go v0.1.19/go.mod h1:0SYT+64k347IDT0Trn4JHVFlUhPtGSE6ab479tU/+tY=
+github.com/github/copilot-sdk/go v0.1.20 h1:r2+Nzr0DS7abF4499PAjsbdc9170OUEeZkic7sUR7BU=
+github.com/github/copilot-sdk/go v0.1.20/go.mod h1:0SYT+64k347IDT0Trn4JHVFlUhPtGSE6ab479tU/+tY=
+github.com/google/jsonschema-go v0.4.2 h1:tmrUohrwoLZZS/P3x7ex0WAVknEkBZM46iALbcqoRA8=
+github.com/google/jsonschema-go v0.4.2/go.mod h1:r5quNTdLOYEz95Ru18zA0ydNbBuYoo9tgaYcxEYhJVE=
 github.com/lucasb-eyer/go-colorful v1.3.0 h1:2/yBRLdWBZKrf7gB40FoiKfAWYQ0lqNcbuQwVHXptag=
 github.com/lucasb-eyer/go-colorful v1.3.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=

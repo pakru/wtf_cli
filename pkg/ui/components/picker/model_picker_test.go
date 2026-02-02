@@ -18,7 +18,7 @@ func TestModelPicker_ShowSelectCurrent(t *testing.T) {
 		{ID: "model-a", Name: "Alpha"},
 		{ID: "model-b", Name: "Beta"},
 	}
-	picker.Show(options, "model-b")
+	picker.Show(options, "model-b", "model")
 
 	if !picker.visible {
 		t.Fatal("Expected picker to be visible after Show")
@@ -39,7 +39,7 @@ func TestModelPicker_FilterAndSelect(t *testing.T) {
 		{ID: "model-a", Name: "Alpha"},
 		{ID: "model-b", Name: "Beta"},
 	}
-	picker.Show(options, "model-a")
+	picker.Show(options, "model-a", "model")
 
 	picker.Update(testutils.NewTextKeyPressMsg("b"))
 	picker.Update(testutils.NewTextKeyPressMsg("e"))
@@ -88,7 +88,7 @@ func TestModelPicker_ScrollsWithNavigation(t *testing.T) {
 			Name: fmt.Sprintf("Model %d", i),
 		}
 	}
-	picker.Show(options, "")
+	picker.Show(options, "", "model")
 
 	if picker.listHeight() != 1 {
 		t.Fatalf("Expected listHeight=1, got %d", picker.listHeight())
@@ -115,7 +115,7 @@ func TestModelPicker_EscCloses(t *testing.T) {
 	options := []ai.ModelInfo{
 		{ID: "model-a", Name: "Alpha"},
 	}
-	picker.Show(options, "model-a")
+	picker.Show(options, "model-a", "model")
 
 	cmd := picker.Update(testutils.TestKeyEsc)
 	if cmd != nil {
@@ -134,7 +134,7 @@ func TestModelPicker_ClampsToSmallWidth(t *testing.T) {
 		{ID: "model-a", Name: "Alpha"},
 		{ID: "model-b", Name: "Beta"},
 	}
-	picker.Show(options, "model-a")
+	picker.Show(options, "model-a", "model")
 
 	view := picker.View()
 	if view == "" {

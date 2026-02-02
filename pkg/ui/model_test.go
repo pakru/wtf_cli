@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,8 +14,10 @@ import (
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/commands"
+	"wtf_cli/pkg/config"
 	"wtf_cli/pkg/ui/components/historypicker"
 	"wtf_cli/pkg/ui/components/palette"
+	"wtf_cli/pkg/ui/components/settings"
 	"wtf_cli/pkg/ui/components/testutils"
 	"wtf_cli/pkg/ui/input"
 
@@ -283,6 +286,81 @@ func TestModel_Update_PTYOutput_SuppressedAfterResize(t *testing.T) {
 	// But cmd should schedule next read
 	if cmd == nil {
 		t.Error("Expected cmd to schedule next PTY read")
+	}
+}
+
+func TestModel_BuildExplainUserMessage(t *testing.T) {
+	buf := buffer.New(100)
+	buf.Write([]byte("line one"))
+	buf.Write([]byte("line two"))
+	buf.Write([]byte("line three"))
+
+	sess := capture.NewSessionContext()
+	sess.AddCommand(capture.CommandRecord{Command: "git status"})
+
+	m := NewModel(nil, buf, sess, nil)
+	ctx := commands.NewContext(buf, sess, "/tmp")
+
+	got := m.buildExplainUserMessage(ctx)
+	expected := "[Asked to explain last 3 lines from terminal. Last command: `git status`]"
+	if got != expected {
+		t.Errorf("Expected %q, got %q", expected, got)
+	}
+}
+
+func TestModel_BuildExplainUserMessage_NoCommand(t *testing.T) {
+	buf := buffer.New(100)
+	sess := capture.NewSessionContext()
+	m := NewModel(nil, buf, sess, nil)
+	ctx := commands.NewContext(buf, sess, "/tmp")
+
+	got := m.buildExplainUserMessage(ctx)
+	expected := "[Asked to explain last 0 lines from terminal. Last command: `N/A`]"
+	if got != expected {
+		t.Errorf("Expected %q, got %q", expected, got)
+	}
+}
+
+func TestModel_ExplainAddsUserPrompt(t *testing.T) {
+	buf := buffer.New(100)
+	buf.Write([]byte("line one"))
+	buf.Write([]byte("line two"))
+
+	sess := capture.NewSessionContext()
+	sess.AddCommand(capture.CommandRecord{Command: "ls -la"})
+
+	m := NewModel(nil, buf, sess, nil)
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = newModel.(Model)
+
+	newModel, cmd := m.Update(palette.PaletteSelectMsg{Command: "/explain"})
+	if cmd == nil {
+		t.Fatal("Expected command to start explain stream")
+	}
+	m = newModel.(Model)
+
+	if m.sidebar == nil || !m.sidebar.IsVisible() {
+		t.Fatal("Expected sidebar to be visible for /explain")
+	}
+
+	messages := m.sidebar.GetMessages()
+	if len(messages) < 2 {
+		t.Fatalf("Expected at least 2 messages, got %d", len(messages))
+	}
+
+	expected := "[Asked to explain last 2 lines from terminal. Last command: `ls -la`]"
+	if messages[0].Role != "user" {
+		t.Fatalf("Expected first message role 'user', got %q", messages[0].Role)
+	}
+	if messages[0].Content != expected {
+		t.Errorf("Expected %q, got %q", expected, messages[0].Content)
+	}
+
+	if messages[1].Role != "assistant" {
+		t.Fatalf("Expected second message role 'assistant', got %q", messages[1].Role)
+	}
+	if messages[1].Content != streamThinkingPlaceholder {
+		t.Errorf("Expected placeholder %q, got %q", streamThinkingPlaceholder, messages[1].Content)
 	}
 }
 
@@ -593,5 +671,87 @@ func TestModel_PasswordProtection_ClearLineBufferPreventsCapture(t *testing.T) {
 	last = m.session.GetLastN(1)
 	if len(last) != 1 || last[0].Command != "sudo" {
 		t.Fatalf("Expected last command to remain 'sudo', got %+v", last)
+	}
+}
+
+func TestModel_Update_StartCopilotAuthMsg(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	// Send StartCopilotAuthMsg
+	newModel, cmd := m.Update(settings.StartCopilotAuthMsg{})
+	m = newModel.(Model)
+
+	// Should return a command to start the auth flow
+	if cmd == nil {
+		t.Error("Expected cmd to start Copilot auth flow")
+	}
+}
+
+func TestModel_Update_CopilotAuthStatusMsg_ShowsPrompt(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	m.settingsPanel.Show(config.Default(), config.GetConfigPath())
+
+	msg := copilotAuthStatusMsg{
+		Status: ai.CopilotAuthStatus{
+			Authenticated: true,
+			Login:         "octo",
+			StatusMessage: "Authenticated",
+		},
+		ShowPrompt: true,
+	}
+	newModel, cmd := m.Update(msg)
+	m = newModel.(Model)
+
+	if cmd != nil {
+		t.Error("Expected nil cmd after auth status update")
+	}
+
+	panelView := m.settingsPanel.View()
+	if !strings.Contains(panelView, "GitHub Copilot Status") {
+		t.Errorf("Expected settings panel to show status box, got %q", panelView)
+	}
+	if !strings.Contains(panelView, "octo") {
+		t.Errorf("Expected settings panel to include login, got %q", panelView)
+	}
+	if m.statusBar.GetMessage() != "" {
+		t.Errorf("Expected status bar to be empty, got %q", m.statusBar.GetMessage())
+	}
+}
+
+func TestModel_Update_CopilotAuthStatusMsg_Error(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	m.settingsPanel.Show(config.Default(), config.GetConfigPath())
+
+	testErr := fmt.Errorf("test auth error")
+	msg := copilotAuthStatusMsg{Err: testErr, ShowPrompt: true}
+	newModel, _ := m.Update(msg)
+	m = newModel.(Model)
+
+	panelView := m.settingsPanel.View()
+	if !strings.Contains(panelView, "test auth error") {
+		t.Errorf("Expected settings panel to include error, got %q", panelView)
+	}
+}
+
+func TestModel_Update_CopilotAuthStatusMsg_PreservesSettingsPanelEdits(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	m.settingsPanel.Show(config.Default(), config.GetConfigPath())
+	m.settingsPanel.SetProviderValue("copilot")
+	if !m.settingsPanel.HasChanges() {
+		t.Fatal("Expected settings panel to have changes")
+	}
+
+	msg := copilotAuthStatusMsg{Status: ai.CopilotAuthStatus{Authenticated: true}}
+	newModel, _ := m.Update(msg)
+	m = newModel.(Model)
+
+	if !m.settingsPanel.IsVisible() {
+		t.Error("Expected settings panel to remain visible after auth status update")
+	}
+	if !m.settingsPanel.HasChanges() {
+		t.Error("Expected unsaved changes to be preserved after auth status update")
 	}
 }

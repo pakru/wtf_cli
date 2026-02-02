@@ -123,9 +123,7 @@ func TestSettingsPanel_EditMode(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	// Move to Model field (index 2)
-	sp.Update(testutils.TestKeyDown)
-	sp.Update(testutils.TestKeyDown)
+	sp.selected = findFieldIndex(t, sp, "model")
 
 	// Enter edit mode using 'e' key
 	sp.Update(testutils.NewTextKeyPressMsg("e"))
@@ -163,10 +161,17 @@ func TestSettingsPanel_EditModeCursorNavigation(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
+	sp.selected = findFieldIndex(t, sp, "api_url")
+
+	// Use Enter key to enter edit mode for text field
 	sp.Update(testutils.TestKeyEnter)
 	if !sp.editing {
 		t.Fatal("Should be in editing mode after Enter")
 	}
+
+	// Clear and start fresh for predictable testing
+	sp.editValue = ""
+	sp.editCursor = 0
 
 	sp.Update(testutils.NewTextKeyPressMsg("abcd"))
 	if sp.editValue != "abcd" {
@@ -206,10 +211,15 @@ func TestSettingsPanel_EditModePasteUsesText(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
+	sp.selected = findFieldIndex(t, sp, "api_url")
 	sp.Update(testutils.TestKeyEnter)
 	if !sp.editing {
 		t.Fatal("Should be in editing mode after Enter")
 	}
+
+	// Clear existing value for clean test
+	sp.editValue = ""
+	sp.editCursor = 0
 
 	// Simulate paste by sending text (newlines should be filtered)
 	sp.Update(testutils.NewTextKeyPressMsg("sk-or-v1-123"))
@@ -259,25 +269,25 @@ func TestSettingsPanel_ApplyField(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	// Modify model field
-	sp.fields[2].Value = "new-model"
-	sp.applyField(&sp.fields[2])
+	modelIdx := findFieldIndex(t, sp, "model")
+	sp.fields[modelIdx].Value = "new-model"
+	sp.applyField(&sp.fields[modelIdx])
 
 	if sp.config.OpenRouter.Model != "new-model" {
 		t.Errorf("Expected model 'new-model', got %q", sp.config.OpenRouter.Model)
 	}
 
-	// Modify temperature
-	sp.fields[3].Value = "0.9"
-	sp.applyField(&sp.fields[3])
+	tempIdx := findFieldIndex(t, sp, "temperature")
+	sp.fields[tempIdx].Value = "0.9"
+	sp.applyField(&sp.fields[tempIdx])
 
 	if sp.config.OpenRouter.Temperature != 0.9 {
 		t.Errorf("Expected temperature 0.9, got %f", sp.config.OpenRouter.Temperature)
 	}
 
-	// Modify buffer size
-	sp.fields[6].Value = "5000"
-	sp.applyField(&sp.fields[6])
+	bufferIdx := findFieldIndex(t, sp, "buffer_size")
+	sp.fields[bufferIdx].Value = "5000"
+	sp.applyField(&sp.fields[bufferIdx])
 
 	if sp.config.BufferSize != 5000 {
 		t.Errorf("Expected buffer size 5000, got %d", sp.config.BufferSize)
@@ -343,9 +353,7 @@ func TestSettingsPanel_ModelPicker(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	// Move to Model field (index 2)
-	sp.Update(testutils.TestKeyDown)
-	sp.Update(testutils.TestKeyDown)
+	sp.selected = findFieldIndex(t, sp, "model")
 
 	// Open model picker
 	cmd := sp.Update(testutils.TestKeyEnter)
@@ -366,7 +374,7 @@ func TestSettingsPanel_ModelPicker(t *testing.T) {
 
 	modelPicker := picker.NewModelPickerPanel()
 	modelPicker.SetSize(80, 24)
-	modelPicker.Show(openMsg.Options, openMsg.Current)
+	modelPicker.Show(openMsg.Options, openMsg.Current, openMsg.FieldKey)
 
 	// Select second model
 	modelPicker.Update(testutils.TestKeyDown)
@@ -396,10 +404,7 @@ func TestSettingsPanel_OpenLogLevelPicker(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	// Move to Log Level field (index 8)
-	for i := 0; i < 8; i++ {
-		sp.Update(testutils.TestKeyDown)
-	}
+	sp.selected = findFieldIndex(t, sp, "log_level")
 
 	cmd := sp.Update(testutils.TestKeyEnter)
 	if cmd == nil {
@@ -422,10 +427,7 @@ func TestSettingsPanel_OpenLogFormatPicker(t *testing.T) {
 	cfg := config.Default()
 	sp.Show(cfg, "/tmp/test_config.json")
 
-	// Move to Log Format field (index 9)
-	for i := 0; i < 9; i++ {
-		sp.Update(testutils.TestKeyDown)
-	}
+	sp.selected = findFieldIndex(t, sp, "log_format")
 
 	cmd := sp.Update(testutils.TestKeyEnter)
 	if cmd == nil {
@@ -445,6 +447,17 @@ func containsString(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 &&
 		(s == substr || len(s) > len(substr) &&
 			(s[:len(substr)] == substr || containsString(s[1:], substr)))
+}
+
+func findFieldIndex(t *testing.T, sp *SettingsPanel, key string) int {
+	t.Helper()
+	for i, field := range sp.fields {
+		if field.Key == key {
+			return i
+		}
+	}
+	t.Fatalf("field %q not found", key)
+	return -1
 }
 
 func withTempHome(t *testing.T, setup func(string)) {
