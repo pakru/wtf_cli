@@ -67,6 +67,7 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 		return nil, err
 	}
 
+	slog.Debug("wtf_stream_provider_config", "llm_provider", cfg.LLMProvider)
 	provider, err := ai.GetProviderFromConfig(cfg)
 	if err != nil {
 		slog.Error("wtf_stream_provider_error", "error", err)

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"wtf_cli/pkg/ai"
-	"wtf_cli/pkg/ai/auth"
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/commands"
@@ -33,6 +32,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
+
+const streamThinkingPlaceholder = "Thinking..."
 
 // Model represents the Bubble Tea application state
 type Model struct {
@@ -61,8 +62,10 @@ type Model struct {
 	currentDir string
 
 	// Streaming state
-	wtfStream  <-chan commands.WtfStreamEvent
-	wtfContent string
+	wtfStream               <-chan commands.WtfStreamEvent
+	wtfContent              string
+	streamPlaceholderActive bool
+	streamStartPending      bool
 
 	// UI state
 	width  int
@@ -472,6 +475,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.settingsPanel.SetSize(m.width, m.height)
 			m.settingsPanel.Show(cfg, config.GetConfigPath())
 			m.statusBar.SetModel(cfg.OpenRouter.Model)
+			if cfg.LLMProvider == "copilot" {
+				return m, fetchCopilotAuthStatusCmd(false)
+			}
 			return m, nil
 		case commands.ResultActionOpenHistoryPicker:
 			slog.Info("history_picker_from_command")
@@ -502,32 +508,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if streamHandler, ok := handler.(commands.StreamingHandler); ok {
-			stream, err := streamHandler.StartStream(ctx)
-			if err != nil {
-				if m.sidebar != nil {
-					slog.Error("sidebar_open_error", "error", err)
-					m.sidebar.Show(result.Title, fmt.Sprintf("Error: %v", err))
-					m.applyLayout()
-				}
-				return m, nil
-			}
-			if stream == nil {
-				m.resultPanel.Show(result.Title, result.Content)
-				m.wtfContent = ""
-				return m, nil
-			}
+			isExplain := handler.Name() == "/explain"
 			if m.sidebar != nil {
 				// Enable chat mode for interactive conversation
 				m.sidebar.EnableChatMode()
-				m.sidebar.Show(result.Title, result.Content)
+				m.sidebar.Show(result.Title, "")
 				// Focus input so user can start typing immediately
 				m.sidebar.FocusInput()
 				slog.Info("sidebar_open", "title", result.Title, "streaming", true, "chat_mode", true)
 				m.applyLayout()
 			}
 			m.wtfContent = ""
-			m.wtfStream = stream
-			return m, listenToWtfStream(stream)
+			m.streamPlaceholderActive = false
+			if isExplain && m.sidebar != nil {
+				m.sidebar.AppendUserMessage(m.buildExplainUserMessage(ctx))
+				m.sidebar.RefreshView()
+			}
+			m.startStreamPlaceholder()
+			m.streamStartPending = true
+			return m, startExplainStreamCmd(ctx, streamHandler, result)
 		}
 
 		// Show result in panel
@@ -609,37 +608,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case settings.StartCopilotAuthMsg:
-		// Start GitHub Copilot OAuth device flow
-		slog.Info("copilot_auth_start")
-		return m, startCopilotAuthCmd()
+		slog.Info("copilot_auth_status_request")
+		return m, fetchCopilotAuthStatusCmd(true)
 
-	case copilotAuthStartedMsg:
-		// Device flow started, show user code to user
-		slog.Info("copilot_auth_device_code", "user_code", msg.UserCode, "verification_uri", msg.VerificationURI)
-		m.statusBar.SetMessage(fmt.Sprintf("Go to %s and enter code: %s", msg.VerificationURI, msg.UserCode))
-		return m, pollCopilotTokenCmd(msg.DeviceCode, msg.Interval)
-
-	case copilotAuthCompleteMsg:
-		// Auth complete, save credentials
-		slog.Info("copilot_auth_complete")
-		m.statusBar.SetMessage("GitHub Copilot connected!")
-		// Refresh only the auth status field to preserve unsaved edits
-		if m.settingsPanel != nil && m.settingsPanel.IsVisible() {
-			m.settingsPanel.RefreshCopilotAuthStatus()
+	case copilotAuthStatusMsg:
+		summary, detail, message := formatCopilotAuthStatus(msg.Status, msg.Err)
+		if m.settingsPanel != nil {
+			m.settingsPanel.UpdateCopilotAuthStatus(summary, detail)
+			if msg.ShowPrompt {
+				m.settingsPanel.SetCopilotAuthMessage(message)
+			}
 		}
-		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
-			return clearStatusMsg{}
-		})
-
-	case copilotAuthErrorMsg:
-		slog.Error("copilot_auth_error", "error", msg.Err)
-		m.statusBar.SetMessage(fmt.Sprintf("Copilot auth failed: %v", msg.Err))
-		return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg {
-			return clearStatusMsg{}
-		})
-
-	case clearStatusMsg:
-		m.statusBar.SetMessage("")
 		return m, nil
 
 	case settings.SettingsSaveMsg:
@@ -687,6 +666,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case picker.OpenModelPickerMsg:
 		slog.Info("model_picker_open", "current", msg.Current, "field_key", msg.FieldKey, "cached_models", len(msg.Options))
+		slog.Debug("model_picker_open_details",
+			"field_key", msg.FieldKey,
+			"api_url", msg.APIURL,
+			"has_api_key", msg.APIKey != "",
+		)
 		if m.modelPicker != nil {
 			m.modelPicker.SetSize(m.width, m.height)
 			m.modelPicker.Show(msg.Options, msg.Current, msg.FieldKey)
@@ -697,18 +681,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "model":
 			if msg.APIURL != "" {
 				cmd = refreshModelCacheCmd(msg.APIURL)
+			} else {
+				slog.Debug("model_picker_no_api_url")
 			}
 		case "openai_model":
 			if msg.APIKey != "" {
 				cmd = fetchOpenAIModelsCmd(msg.APIKey)
+			} else {
+				slog.Debug("openai_models_fetch_skipped", "reason", "missing_api_key")
 			}
 		case "copilot_model":
-			if msg.APIKey != "" {
-				cmd = fetchCopilotModelsCmd(msg.APIKey)
-			}
+			cmd = fetchCopilotModelsCmd()
 		case "anthropic_model":
 			if msg.APIKey != "" {
 				cmd = fetchAnthropicModelsCmd(msg.APIKey)
+			} else {
+				slog.Debug("anthropic_models_fetch_skipped", "reason", "missing_api_key")
 			}
 		}
 		return m, cmd
@@ -752,6 +740,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.FieldKey {
 			case "llm_provider":
 				m.settingsPanel.SetProviderValue(msg.Value)
+				if msg.Value == "copilot" {
+					return m, fetchCopilotAuthStatusCmd(false)
+				}
 			case "log_level":
 				m.settingsPanel.SetLogLevelValue(msg.Value)
 			case "log_format":
@@ -785,6 +776,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		slog.Info("provider_models_refresh_done", "field_key", msg.FieldKey, "models", len(msg.Models))
 		return m, nil
 
+	case streamStartResultMsg:
+		m.streamStartPending = false
+		if msg.err != nil {
+			slog.Error("wtf_stream_start_error", "error", msg.err)
+			if m.sidebar != nil {
+				m.sidebar.SetStreaming(false)
+				if m.sidebar.IsChatMode() {
+					m.clearStreamPlaceholder()
+					m.sidebar.AppendErrorMessage(msg.err.Error())
+					m.sidebar.RefreshView()
+				} else if m.sidebar.IsVisible() {
+					m.sidebar.SetContent(fmt.Sprintf("Error: %v", msg.err))
+				}
+			} else {
+				m.resultPanel.Show("Error", fmt.Sprintf("Error: %v", msg.err))
+			}
+			m.wtfStream = nil
+			m.streamPlaceholderActive = false
+			return m, nil
+		}
+
+		if msg.stream == nil {
+			if m.sidebar != nil {
+				m.sidebar.SetStreaming(false)
+				m.clearStreamPlaceholder()
+				if msg.origin == streamOriginExplain && msg.result != nil {
+					if m.sidebar.IsChatMode() {
+						m.sidebar.StartAssistantMessageWithContent(msg.result.Content)
+						m.sidebar.RefreshView()
+					} else {
+						m.sidebar.SetContent(msg.result.Content)
+					}
+				}
+			} else if msg.origin == streamOriginExplain && msg.result != nil {
+				m.resultPanel.Show(msg.result.Title, msg.result.Content)
+			}
+			m.wtfStream = nil
+			m.streamPlaceholderActive = false
+			return m, nil
+		}
+
+		m.wtfStream = msg.stream
+		return m, listenToWtfStream(m.wtfStream)
+
 	case result.ResultPanelCloseMsg:
 		// Result panel closed
 		return m, nil
@@ -795,7 +830,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Guard: refuse new stream while one is active (prevents deadlock)
-		if m.wtfStream != nil {
+		if m.wtfStream != nil || m.streamStartPending {
 			return m, nil
 		}
 
@@ -805,22 +840,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Build context and start chat stream
 		ctx := commands.NewContext(m.buffer, m.session, m.currentDir)
-		chatHandler := &commands.ChatHandler{}
-
-		stream, err := chatHandler.StartChatStream(ctx, m.sidebar.GetMessages())
-		if err != nil {
-			m.sidebar.AppendErrorMessage(err.Error())
-			return m, nil
-		}
-
-		// Guard nil stream to prevent listenToWtfStream from blocking
-		if stream == nil {
-			m.sidebar.AppendErrorMessage("Failed to start chat stream")
-			return m, nil
-		}
-
-		m.wtfStream = stream
-		return m, listenToWtfStream(m.wtfStream)
+		m.streamStartPending = true
+		m.streamPlaceholderActive = false
+		m.startStreamPlaceholder()
+		return m, startChatStreamCmd(ctx, m.sidebar.GetMessages())
 
 	case commands.WtfStreamEvent:
 		if msg.Err != nil {
@@ -830,6 +853,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sidebar.SetStreaming(false)
 				// Only append error in chat mode
 				if m.sidebar.IsChatMode() {
+					m.clearStreamPlaceholder()
 					m.sidebar.AppendErrorMessage(msg.Err.Error())
 					m.sidebar.RefreshView() // Ensure error is visible immediately
 				} else {
@@ -841,20 +865,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.wtfStream = nil
 			m.streamThrottlePending = false
+			m.streamPlaceholderActive = false
 			return m, nil
 		}
 
 		// Chat mode: append to messages, don't overwrite content
 		if m.sidebar != nil && m.sidebar.IsChatMode() {
 			if msg.Delta != "" {
-				// First chunk: create new assistant message + immediate refresh
+				// Ensure streaming state is active
 				if !m.sidebar.IsStreaming() {
 					m.sidebar.SetStreaming(true)
-					m.sidebar.StartAssistantMessage()
 				}
 
-				// Update last message with delta
-				m.sidebar.UpdateLastMessage(msg.Delta)
+				// Replace placeholder on first real delta
+				if !m.replaceStreamPlaceholder(msg.Delta) {
+					m.sidebar.UpdateLastMessage(msg.Delta)
+				}
 
 				// Throttle rendering
 				if !m.streamThrottlePending {
@@ -872,10 +898,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, listenToWtfStream(m.wtfStream)
 			}
 			if msg.Done {
+				m.clearStreamPlaceholder()
 				m.sidebar.SetStreaming(false)
 				m.sidebar.RefreshView() // Final refresh
 				m.wtfStream = nil
 				m.streamThrottlePending = false
+				m.streamPlaceholderActive = false
 				return m, nil
 			}
 		} else {
@@ -922,6 +950,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.sidebar.SetContent(m.wtfContent)
 				}
 				m.streamThrottlePending = false
+				m.streamPlaceholderActive = false
 				return m, nil
 			}
 		}
@@ -1257,17 +1286,13 @@ func fetchAnthropicModelsCmd(apiKey string) tea.Cmd {
 	}
 }
 
-func fetchCopilotModelsCmd(githubToken string) tea.Cmd {
-	if githubToken == "" {
-		return nil
-	}
-
+func fetchCopilotModelsCmd() tea.Cmd {
 	return func() tea.Msg {
 		slog.Info("copilot_models_fetch_start")
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 
-		models, err := ai.FetchCopilotModels(ctx, githubToken)
+		models, err := ai.FetchCopilotModels(ctx)
 		return providerModelsRefreshMsg{Models: models, FieldKey: "copilot_model", Err: err}
 	}
 }
@@ -1370,6 +1395,41 @@ type ptyErrorMsg struct {
 	err error
 }
 
+type streamStartOrigin int
+
+const (
+	streamOriginExplain streamStartOrigin = iota
+	streamOriginChat
+)
+
+type streamStartResultMsg struct {
+	origin streamStartOrigin
+	stream <-chan commands.WtfStreamEvent
+	err    error
+	result *commands.Result
+}
+
+func (m *Model) buildExplainUserMessage(ctx *commands.Context) string {
+	if ctx == nil {
+		return "[Asked to explain output from terminal. Last command: N/A]"
+	}
+	lineCount := 0
+	lines := ctx.GetLastNLines(ai.DefaultContextLines)
+	if len(lines) > 0 {
+		lineCount = len(lines)
+	}
+
+	command := "N/A"
+	if ctx.Session != nil {
+		last := ctx.Session.GetLastN(1)
+		if len(last) > 0 && strings.TrimSpace(last[0].Command) != "" {
+			command = strings.TrimSpace(last[0].Command)
+		}
+	}
+
+	return fmt.Sprintf("[Asked to explain last %d lines from terminal. Last command: `%s`]", lineCount, command)
+}
+
 // listenToPTY creates a command that reads from PTY
 func listenToPTY(ptyFile *os.File) tea.Cmd {
 	return func() tea.Msg {
@@ -1389,6 +1449,65 @@ func listenToWtfStream(stream <-chan commands.WtfStreamEvent) tea.Cmd {
 			return commands.WtfStreamEvent{Done: true}
 		}
 		return event
+	}
+}
+
+func startExplainStreamCmd(ctx *commands.Context, handler commands.StreamingHandler, result *commands.Result) tea.Cmd {
+	return func() tea.Msg {
+		stream, err := handler.StartStream(ctx)
+		return streamStartResultMsg{
+			origin: streamOriginExplain,
+			stream: stream,
+			err:    err,
+			result: result,
+		}
+	}
+}
+
+func startChatStreamCmd(ctx *commands.Context, messages []ai.ChatMessage) tea.Cmd {
+	return func() tea.Msg {
+		chatHandler := &commands.ChatHandler{}
+		stream, err := chatHandler.StartChatStream(ctx, messages)
+		return streamStartResultMsg{
+			origin: streamOriginChat,
+			stream: stream,
+			err:    err,
+		}
+	}
+}
+
+func (m *Model) startStreamPlaceholder() {
+	if m.sidebar == nil || !m.sidebar.IsChatMode() {
+		return
+	}
+	if m.streamPlaceholderActive {
+		return
+	}
+	m.sidebar.SetStreaming(true)
+	m.sidebar.StartAssistantMessageWithContent(streamThinkingPlaceholder)
+	m.streamPlaceholderActive = true
+	m.sidebar.RefreshView()
+}
+
+func (m *Model) replaceStreamPlaceholder(delta string) bool {
+	if m.sidebar == nil || !m.sidebar.IsChatMode() {
+		return false
+	}
+	if !m.streamPlaceholderActive {
+		return false
+	}
+	m.sidebar.SetLastMessageContent(delta)
+	m.streamPlaceholderActive = false
+	return true
+}
+
+func (m *Model) clearStreamPlaceholder() {
+	if m.sidebar == nil || !m.sidebar.IsChatMode() {
+		return
+	}
+	if m.streamPlaceholderActive {
+		m.sidebar.RemoveLastMessage()
+		m.streamPlaceholderActive = false
 	}
 }
 
@@ -1447,74 +1566,59 @@ func applyPasteToOverlay(content string, update func(tea.KeyPressMsg) tea.Cmd) t
 	return tea.Batch(cmds...)
 }
 
-// Copilot auth message types
-type copilotAuthStartedMsg struct {
-	DeviceCode      string
-	UserCode        string
-	VerificationURI string
-	Interval        int
+// Copilot auth status message type.
+type copilotAuthStatusMsg struct {
+	Status     ai.CopilotAuthStatus
+	Err        error
+	ShowPrompt bool
 }
 
-type copilotAuthCompleteMsg struct{}
-
-type copilotAuthErrorMsg struct {
-	Err error
-}
-
-type clearStatusMsg struct{}
-
-// startCopilotAuthCmd initiates the GitHub Copilot OAuth device flow
-func startCopilotAuthCmd() tea.Cmd {
+// fetchCopilotAuthStatusCmd queries the Copilot CLI auth status using the SDK.
+func fetchCopilotAuthStatusCmd(showPrompt bool) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 
-		cfg := auth.GitHubCopilotDeviceFlowConfig()
-		resp, err := auth.StartDeviceFlow(ctx, cfg)
+		slog.Info("copilot_auth_status_start")
+		status, err := ai.FetchCopilotAuthStatus(ctx)
 		if err != nil {
-			return copilotAuthErrorMsg{Err: err}
+			slog.Error("copilot_auth_status_error", "error", err)
+			return copilotAuthStatusMsg{Err: err, ShowPrompt: showPrompt}
 		}
 
-		return copilotAuthStartedMsg{
-			DeviceCode:      resp.DeviceCode,
-			UserCode:        resp.UserCode,
-			VerificationURI: resp.VerificationURI,
-			Interval:        resp.Interval,
-		}
+		slog.Info("copilot_auth_status_done", "authenticated", status.Authenticated)
+		return copilotAuthStatusMsg{Status: status, ShowPrompt: showPrompt}
 	}
 }
 
-// pollCopilotTokenCmd polls for the OAuth token after user authorization
-func pollCopilotTokenCmd(deviceCode string, interval int) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-
-		cfg := auth.GitHubCopilotDeviceFlowConfig()
-		token, err := auth.PollForToken(ctx, cfg, deviceCode, interval)
-		if err != nil {
-			return copilotAuthErrorMsg{Err: err}
-		}
-
-		// Save the token
-		authMgr := auth.NewAuthManager(auth.DefaultAuthPath())
-
-		expiresAt := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
-		if token.ExpiresIn == 0 {
-			// GitHub tokens don't expire by default, set a long expiry
-			expiresAt = time.Now().Add(365 * 24 * time.Hour)
-		}
-
-		err = authMgr.Save(auth.StoredCredentials{
-			Provider:     string(ai.ProviderCopilot),
-			AccessToken:  token.AccessToken,
-			RefreshToken: token.RefreshToken,
-			ExpiresAt:    expiresAt,
-		})
-		if err != nil {
-			return copilotAuthErrorMsg{Err: fmt.Errorf("failed to save credentials: %w", err)}
-		}
-
-		return copilotAuthCompleteMsg{}
+func formatCopilotAuthStatus(status ai.CopilotAuthStatus, err error) (string, string, string) {
+	summary := "❌ Not connected"
+	detail := "❌ Not connected (Enter for details)"
+	statusLabel := "Not connected"
+	if err != nil {
+		message := fmt.Sprintf("Status: %s\nError: %v", statusLabel, err)
+		return summary, detail, message
 	}
+
+	if status.Authenticated {
+		summary = "✅ Connected"
+		detail = "✅ Connected (Enter for details)"
+		statusLabel = "Connected"
+	}
+
+	lines := []string{fmt.Sprintf("Status: %s", statusLabel)}
+	if status.Login != "" {
+		lines = append(lines, fmt.Sprintf("User: %s", status.Login))
+	}
+	if status.AuthType != "" {
+		lines = append(lines, fmt.Sprintf("Auth: %s", status.AuthType))
+	}
+	if status.Host != "" {
+		lines = append(lines, fmt.Sprintf("Host: %s", status.Host))
+	}
+	if status.StatusMessage != "" {
+		lines = append(lines, status.StatusMessage)
+	}
+
+	return summary, detail, strings.Join(lines, "\n")
 }

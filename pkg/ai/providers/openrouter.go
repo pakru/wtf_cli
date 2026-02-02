@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -49,6 +50,7 @@ func NewOpenRouterProviderFromConfig(cfg config.OpenRouterConfig) (*OpenRouterPr
 
 func newOpenRouterProviderWithHTTPClient(cfg config.OpenRouterConfig, httpClient *http.Client) (*OpenRouterProvider, error) {
 	if strings.TrimSpace(cfg.APIKey) == "" {
+		slog.Debug("openrouter_provider_missing_key")
 		return nil, fmt.Errorf("openrouter api_key is required")
 	}
 	if strings.TrimSpace(cfg.APIURL) == "" {
@@ -80,6 +82,11 @@ func newOpenRouterProviderWithHTTPClient(cfg config.OpenRouterConfig, httpClient
 
 	client := openai.NewClient(opts...)
 
+	slog.Debug("openrouter_provider_ready",
+		"api_url", cfg.APIURL,
+		"model", cfg.Model,
+		"timeout_seconds", cfg.APITimeoutSeconds,
+	)
 	return &OpenRouterProvider{
 		client:             client,
 		defaultModel:       cfg.Model,
@@ -95,6 +102,12 @@ func (p *OpenRouterProvider) CreateChatCompletion(ctx context.Context, req ai.Ch
 		return ai.ChatResponse{}, err
 	}
 
+	slog.Debug("openrouter_chat_request",
+		"model", string(params.Model),
+		"message_count", len(req.Messages),
+		"has_temperature", req.Temperature != nil,
+		"has_max_tokens", req.MaxTokens != nil,
+	)
 	resp, err := p.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return ai.ChatResponse{}, err
@@ -118,6 +131,12 @@ func (p *OpenRouterProvider) CreateChatCompletionStream(ctx context.Context, req
 		return nil, err
 	}
 
+	slog.Debug("openrouter_chat_stream_request",
+		"model", string(params.Model),
+		"message_count", len(req.Messages),
+		"has_temperature", req.Temperature != nil,
+		"has_max_tokens", req.MaxTokens != nil,
+	)
 	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
 	if err := stream.Err(); err != nil {
 		return nil, err

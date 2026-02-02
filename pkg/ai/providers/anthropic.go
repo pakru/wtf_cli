@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -46,15 +47,18 @@ type AnthropicProvider struct {
 func NewAnthropicProvider(cfg ai.ProviderConfig) (ai.Provider, error) {
 	providerCfg := cfg.Config.Providers.Anthropic
 
+	authSource := "api_key"
 	apiKey := providerCfg.APIKey
 	if apiKey == "" && cfg.AuthManager != nil {
 		creds, err := cfg.AuthManager.Load(string(ai.ProviderAnthropic))
 		if err == nil && creds != nil {
 			apiKey = creds.AccessToken
+			authSource = "oauth"
 		}
 	}
 
 	if strings.TrimSpace(apiKey) == "" {
+		slog.Debug("anthropic_provider_missing_key")
 		return nil, fmt.Errorf("anthropic api_key is required")
 	}
 
@@ -75,6 +79,12 @@ func NewAnthropicProvider(cfg ai.ProviderConfig) (ai.Provider, error) {
 
 	httpClient := &http.Client{Timeout: time.Duration(timeout) * time.Second}
 
+	slog.Debug("anthropic_provider_ready",
+		"auth_source", authSource,
+		"api_url", apiURL,
+		"model", model,
+		"timeout_seconds", timeout,
+	)
 	return &AnthropicProvider{
 		apiKey:             apiKey,
 		apiURL:             apiURL,
@@ -139,6 +149,13 @@ func (p *AnthropicProvider) CreateChatCompletion(ctx context.Context, req ai.Cha
 		return ai.ChatResponse{}, err
 	}
 
+	slog.Debug("anthropic_chat_request",
+		"model", anthropicReq.Model,
+		"message_count", len(anthropicReq.Messages),
+		"has_system", anthropicReq.System != "",
+		"has_temperature", req.Temperature != nil,
+		"has_max_tokens", req.MaxTokens != nil,
+	)
 	body, err := json.Marshal(anthropicReq)
 	if err != nil {
 		return ai.ChatResponse{}, fmt.Errorf("failed to marshal request: %w", err)
@@ -191,6 +208,13 @@ func (p *AnthropicProvider) CreateChatCompletionStream(ctx context.Context, req 
 		return nil, err
 	}
 
+	slog.Debug("anthropic_chat_stream_request",
+		"model", anthropicReq.Model,
+		"message_count", len(anthropicReq.Messages),
+		"has_system", anthropicReq.System != "",
+		"has_temperature", req.Temperature != nil,
+		"has_max_tokens", req.MaxTokens != nil,
+	)
 	body, err := json.Marshal(anthropicReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)

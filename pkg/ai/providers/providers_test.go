@@ -9,13 +9,10 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"wtf_cli/pkg/ai"
-	"wtf_cli/pkg/ai/auth"
 	"wtf_cli/pkg/config"
 )
 
@@ -560,65 +557,32 @@ func TestOpenAIProvider_ValidationErrors(t *testing.T) {
 	}
 }
 
-func TestCopilotProvider_RequiresAuthManager(t *testing.T) {
-	providerCfg := ai.ProviderConfig{
-		Type:        ai.ProviderCopilot,
-		Config:      config.Config{},
-		AuthManager: nil,
+func TestCopilotProvider_BuildCopilotPrompt(t *testing.T) {
+	req := ai.ChatRequest{
+		Messages: []ai.Message{
+			{Role: "system", Content: "system rules"},
+			{Role: "developer", Content: "developer notes"},
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "hi"},
+		},
 	}
-	_, err := NewCopilotProvider(providerCfg)
-	if err == nil {
-		t.Fatal("expected error, got nil")
+
+	systemMsg, prompt, err := buildCopilotPrompt(req)
+	if err != nil {
+		t.Fatalf("buildCopilotPrompt() error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "requires AuthManager") {
-		t.Fatalf("expected error about AuthManager, got %q", err.Error())
+	if !strings.Contains(systemMsg, "SYSTEM") || !strings.Contains(systemMsg, "DEVELOPER") {
+		t.Fatalf("expected system content to include roles, got %q", systemMsg)
+	}
+	if !strings.Contains(prompt, "User: hello") || !strings.Contains(prompt, "Assistant: hi") {
+		t.Fatalf("expected prompt to include conversation, got %q", prompt)
 	}
 }
 
-func TestCopilotProvider_RequiresCredentials(t *testing.T) {
-	tmpDir := t.TempDir()
-	authPath := filepath.Join(tmpDir, "auth.json")
-	authMgr := auth.NewAuthManager(authPath)
-
-	providerCfg := ai.ProviderConfig{
-		Type:        ai.ProviderCopilot,
-		Config:      config.Config{},
-		AuthManager: authMgr,
-	}
-	_, err := NewCopilotProvider(providerCfg)
+func TestCopilotProvider_BuildCopilotPrompt_EmptyMessages(t *testing.T) {
+	_, _, err := buildCopilotPrompt(ai.ChatRequest{})
 	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "credentials not found") {
-		t.Fatalf("expected error about credentials, got %q", err.Error())
-	}
-}
-
-func TestCopilotProvider_ExpiredCredentials(t *testing.T) {
-	tmpDir := t.TempDir()
-	authPath := filepath.Join(tmpDir, "auth.json")
-	authMgr := auth.NewAuthManager(authPath)
-
-	expiredCreds := auth.StoredCredentials{
-		Provider:    string(ai.ProviderCopilot),
-		AccessToken: "expired-token",
-		ExpiresAt:   time.Now().Add(-1 * time.Hour),
-	}
-	if err := authMgr.Save(expiredCreds); err != nil {
-		t.Fatalf("failed to save credentials: %v", err)
-	}
-
-	providerCfg := ai.ProviderConfig{
-		Type:        ai.ProviderCopilot,
-		Config:      config.Config{},
-		AuthManager: authMgr,
-	}
-	_, err := NewCopilotProvider(providerCfg)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "expired") {
-		t.Fatalf("expected error about expired credentials, got %q", err.Error())
+		t.Fatal("expected error for empty messages")
 	}
 }
 

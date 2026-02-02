@@ -12,6 +12,7 @@ import (
 	"wtf_cli/pkg/ui/styles"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // SettingField represents a single editable setting
@@ -39,6 +40,11 @@ type SettingsPanel struct {
 	errorMsg   string
 
 	modelCache ai.ModelCache
+
+	copilotAuthMessage string
+	copilotAuthOpen    bool
+	copilotAuthSummary string
+	copilotAuthDetail  string
 }
 
 // NewSettingsPanel creates a new settings panel
@@ -56,6 +62,7 @@ func (sp *SettingsPanel) Show(cfg config.Config, configPath string) {
 	sp.changed = false
 	sp.errorMsg = ""
 	sp.loadModelCache()
+	sp.resetCopilotAuthStatus()
 	sp.buildFields()
 }
 
@@ -63,6 +70,7 @@ func (sp *SettingsPanel) Show(cfg config.Config, configPath string) {
 func (sp *SettingsPanel) buildFields() {
 	sp.fields = []SettingField{
 		{Label: "LLM Provider", Key: "llm_provider", Value: sp.config.LLMProvider, Type: "string"},
+		{Label: "Status", Key: "provider_status", Value: sp.getSelectedProviderStatus(), Type: "info"},
 	}
 
 	// Add provider-specific fields based on selected provider
@@ -131,17 +139,61 @@ func (sp *SettingsPanel) getAnthropicModel() string {
 }
 
 func (sp *SettingsPanel) getCopilotAuthStatus() string {
+	if strings.TrimSpace(sp.copilotAuthDetail) != "" {
+		return sp.copilotAuthDetail
+	}
+	return "Not checked (Enter to refresh)"
+}
+
+func (sp *SettingsPanel) getCopilotStatus() string {
+	if strings.TrimSpace(sp.copilotAuthSummary) != "" {
+		return sp.copilotAuthSummary
+	}
+	return "Not checked"
+}
+
+func (sp *SettingsPanel) getOpenAIStatus() string {
+	if strings.TrimSpace(sp.config.Providers.OpenAI.APIKey) != "" {
+		return "✅ API key set"
+	}
 	authMgr := auth.NewAuthManager(auth.DefaultAuthPath())
-	if authMgr.HasCredentials("copilot") {
-		creds, err := authMgr.Load("copilot")
+	if authMgr.HasCredentials("openai") {
+		creds, err := authMgr.Load("openai")
 		if err == nil && !creds.IsExpired() {
-			return "Connected (Enter to reconnect)"
+			return "✅ OAuth connected"
 		}
 		if err == nil && creds.IsExpired() {
-			return "Expired (Enter to reconnect)"
+			return "❌ OAuth expired"
 		}
 	}
-	return "Not connected (Enter to connect)"
+	return "❌ Not connected"
+}
+
+func (sp *SettingsPanel) getOpenRouterStatus() string {
+	if strings.TrimSpace(sp.config.OpenRouter.APIKey) != "" {
+		return "✅ Ready"
+	}
+	return "❌ Missing API key"
+}
+
+func (sp *SettingsPanel) getAnthropicStatus() string {
+	if strings.TrimSpace(sp.config.Providers.Anthropic.APIKey) != "" {
+		return "✅ Ready"
+	}
+	return "❌ Missing API key"
+}
+
+func (sp *SettingsPanel) getSelectedProviderStatus() string {
+	switch sp.config.LLMProvider {
+	case "openai":
+		return sp.getOpenAIStatus()
+	case "copilot":
+		return sp.getCopilotStatus()
+	case "anthropic":
+		return sp.getAnthropicStatus()
+	default:
+		return sp.getOpenRouterStatus()
+	}
 }
 
 // Hide hides the settings panel
@@ -191,6 +243,15 @@ func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 	}
 
 	keyStr := msg.String()
+
+	// Modal mode: Copilot auth prompt
+	if sp.copilotAuthOpen {
+		switch keyStr {
+		case "enter", "esc":
+			sp.ClearCopilotAuthMessage()
+		}
+		return nil
+	}
 
 	// Navigation mode
 	switch keyStr {
@@ -255,18 +316,11 @@ func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		if field.Key == "copilot_model" {
 			options := ai.GetCopilotModels()
-			// Try to get the GitHub token from auth.json for dynamic model fetching
-			var githubToken string
-			authMgr := auth.NewAuthManager(auth.DefaultAuthPath())
-			if creds, err := authMgr.Load("copilot"); err == nil && !creds.IsExpired() {
-				githubToken = creds.AccessToken
-			}
 			return func() tea.Msg {
 				return picker.OpenModelPickerMsg{
 					Options:  options,
 					Current:  sp.config.Providers.Copilot.Model,
 					FieldKey: "copilot_model",
-					APIKey:   githubToken, // GitHub OAuth token for Copilot
 				}
 			}
 		}
@@ -468,6 +522,7 @@ func (sp *SettingsPanel) applyField(field *SettingField) {
 	// OpenRouter fields
 	case "api_key":
 		sp.config.OpenRouter.APIKey = field.Value
+		sp.refreshProviderStatusFields()
 	case "api_url":
 		sp.config.OpenRouter.APIURL = field.Value
 	case "model":
@@ -488,6 +543,7 @@ func (sp *SettingsPanel) applyField(field *SettingField) {
 	// OpenAI fields
 	case "openai_api_key":
 		sp.config.Providers.OpenAI.APIKey = field.Value
+		sp.refreshProviderStatusFields()
 	case "openai_model":
 		sp.config.Providers.OpenAI.Model = field.Value
 	case "openai_temperature":
@@ -514,6 +570,7 @@ func (sp *SettingsPanel) applyField(field *SettingField) {
 	// Anthropic fields
 	case "anthropic_api_key":
 		sp.config.Providers.Anthropic.APIKey = field.Value
+		sp.refreshProviderStatusFields()
 	case "anthropic_model":
 		sp.config.Providers.Anthropic.Model = field.Value
 	case "anthropic_temperature":
@@ -645,6 +702,8 @@ func (sp *SettingsPanel) View() string {
 	content.WriteString("\n\n")
 	if sp.editing {
 		content.WriteString(footerStyle.Render("Enter: Confirm • Esc: Cancel"))
+	} else if sp.copilotAuthOpen {
+		content.WriteString(footerStyle.Render("Enter: OK • Esc: Close"))
 	} else {
 		hint := "↑↓ Navigate • Enter: Edit • Esc: Close"
 		if sp.changed {
@@ -665,15 +724,24 @@ func (sp *SettingsPanel) View() string {
 			}
 		} else if selectedKey == "copilot_auth" {
 			if sp.changed {
-				hint = "↑↓ Navigate • Enter: Connect • s: Save • Esc: Save & Close"
+				hint = "↑↓ Navigate • Enter: Details • s: Save • Esc: Save & Close"
 			} else {
-				hint = "↑↓ Navigate • Enter: Connect • Esc: Close"
+				hint = "↑↓ Navigate • Enter: Details • Esc: Close"
 			}
 		}
 		content.WriteString(footerStyle.Render(hint))
 	}
 
-	return boxStyle.Render(content.String())
+	panel := boxStyle.Render(content.String())
+	if sp.copilotAuthOpen {
+		panelWidth := lipgloss.Width(panel)
+		authBox := sp.renderCopilotAuthBox(panelWidth - 6)
+		if authBox != "" {
+			panel = panel + "\n\n" + lipgloss.PlaceHorizontal(panelWidth, lipgloss.Center, authBox)
+		}
+	}
+
+	return panel
 }
 
 // GetConfig returns the current config
@@ -703,6 +771,11 @@ func (sp *SettingsPanel) SetLogFormatValue(value string) {
 func (sp *SettingsPanel) SetProviderValue(value string) {
 	sp.config.LLMProvider = value
 	sp.changed = true
+	if value == "copilot" {
+		sp.resetCopilotAuthStatus()
+	} else {
+		sp.clearCopilotAuthPrompt()
+	}
 	sp.buildFields()
 }
 
@@ -787,12 +860,79 @@ func (sp *SettingsPanel) SetModelCache(cache ai.ModelCache) {
 // RefreshCopilotAuthStatus updates only the Copilot auth status field
 // without resetting other panel state or discarding unsaved edits.
 func (sp *SettingsPanel) RefreshCopilotAuthStatus() {
+	sp.refreshProviderStatusFields()
 	for i := range sp.fields {
 		if sp.fields[i].Key == "copilot_auth" {
 			sp.fields[i].Value = sp.getCopilotAuthStatus()
 			break
 		}
 	}
+}
+
+// UpdateCopilotAuthStatus sets the cached Copilot status values and refreshes fields.
+func (sp *SettingsPanel) UpdateCopilotAuthStatus(summary, detail string) {
+	if strings.TrimSpace(summary) != "" {
+		sp.copilotAuthSummary = summary
+	}
+	if strings.TrimSpace(detail) != "" {
+		sp.copilotAuthDetail = detail
+	}
+	sp.RefreshCopilotAuthStatus()
+}
+
+// SetCopilotAuthMessage updates the displayed Copilot auth message prompt.
+func (sp *SettingsPanel) SetCopilotAuthMessage(message string) {
+	sp.copilotAuthMessage = strings.TrimSpace(message)
+	sp.copilotAuthOpen = sp.copilotAuthMessage != ""
+}
+
+// ClearCopilotAuthMessage hides the Copilot auth message prompt.
+func (sp *SettingsPanel) ClearCopilotAuthMessage() {
+	sp.clearCopilotAuthPrompt()
+}
+
+func (sp *SettingsPanel) clearCopilotAuthPrompt() {
+	sp.copilotAuthMessage = ""
+	sp.copilotAuthOpen = false
+}
+
+func (sp *SettingsPanel) refreshProviderStatusFields() {
+	for i := range sp.fields {
+		if sp.fields[i].Key == "provider_status" {
+			sp.fields[i].Value = sp.getSelectedProviderStatus()
+			break
+		}
+	}
+}
+
+func (sp *SettingsPanel) resetCopilotAuthStatus() {
+	sp.copilotAuthSummary = "Not checked"
+	sp.copilotAuthDetail = "Not checked (Enter to refresh)"
+}
+
+func (sp *SettingsPanel) renderCopilotAuthBox(maxWidth int) string {
+	if !sp.copilotAuthOpen {
+		return ""
+	}
+	boxWidth := maxWidth
+	if boxWidth > 70 {
+		boxWidth = 70
+	}
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
+
+	var body strings.Builder
+	body.WriteString(styles.TitleStyle.Render("GitHub Copilot Status"))
+	body.WriteString("\n\n")
+	body.WriteString(styles.TextStyle.Render(sp.copilotAuthMessage))
+	body.WriteString("\n\n")
+
+	okButton := styles.SelectedStyle.Render("  OK  ")
+	okLine := lipgloss.PlaceHorizontal(boxWidth-4, lipgloss.Center, okButton)
+	body.WriteString(okLine)
+
+	return styles.BoxStyleCompact.Width(boxWidth).Render(body.String())
 }
 
 func renderEditValue(value string, cursor int) string {

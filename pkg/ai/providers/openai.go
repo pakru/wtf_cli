@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -42,15 +43,18 @@ type OpenAIProvider struct {
 func NewOpenAIProvider(cfg ai.ProviderConfig) (ai.Provider, error) {
 	providerCfg := cfg.Config.Providers.OpenAI
 
+	authSource := "api_key"
 	apiKey := providerCfg.APIKey
 	if apiKey == "" && cfg.AuthManager != nil {
 		creds, err := cfg.AuthManager.Load(string(ai.ProviderOpenAI))
 		if err == nil && creds != nil {
 			apiKey = creds.AccessToken
+			authSource = "oauth"
 		}
 	}
 
 	if strings.TrimSpace(apiKey) == "" {
+		slog.Debug("openai_provider_missing_key")
 		return nil, fmt.Errorf("openai api_key is required (set in config or authenticate via OAuth)")
 	}
 
@@ -79,6 +83,12 @@ func NewOpenAIProvider(cfg ai.ProviderConfig) (ai.Provider, error) {
 
 	client := openai.NewClient(opts...)
 
+	slog.Debug("openai_provider_ready",
+		"auth_source", authSource,
+		"api_url", apiURL,
+		"model", model,
+		"timeout_seconds", timeout,
+	)
 	return &OpenAIProvider{
 		client:             client,
 		defaultModel:       model,
@@ -94,6 +104,12 @@ func (p *OpenAIProvider) CreateChatCompletion(ctx context.Context, req ai.ChatRe
 		return ai.ChatResponse{}, err
 	}
 
+	slog.Debug("openai_chat_request",
+		"model", string(params.Model),
+		"message_count", len(req.Messages),
+		"has_temperature", req.Temperature != nil,
+		"has_max_tokens", req.MaxTokens != nil,
+	)
 	resp, err := p.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return ai.ChatResponse{}, err
@@ -117,6 +133,12 @@ func (p *OpenAIProvider) CreateChatCompletionStream(ctx context.Context, req ai.
 		return nil, err
 	}
 
+	slog.Debug("openai_chat_stream_request",
+		"model", string(params.Model),
+		"message_count", len(req.Messages),
+		"has_temperature", req.Temperature != nil,
+		"has_max_tokens", req.MaxTokens != nil,
+	)
 	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
 	if err := stream.Err(); err != nil {
 		return nil, err

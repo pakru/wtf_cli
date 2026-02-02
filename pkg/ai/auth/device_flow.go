@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -45,6 +46,10 @@ type DeviceFlowError struct {
 
 // StartDeviceFlow initiates the device authorization flow.
 func StartDeviceFlow(ctx context.Context, cfg DeviceFlowConfig) (*DeviceCodeResponse, error) {
+	slog.Debug("device_flow_start",
+		"device_code_url", cfg.DeviceCodeURL,
+		"scopes", strings.Join(cfg.Scopes, " "),
+	)
 	data := url.Values{}
 	data.Set("client_id", cfg.ClientID)
 	if len(cfg.Scopes) > 0 {
@@ -72,8 +77,13 @@ func StartDeviceFlow(ctx context.Context, cfg DeviceFlowConfig) (*DeviceCodeResp
 	if resp.StatusCode != http.StatusOK {
 		var errResp DeviceFlowError
 		if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
+			slog.Debug("device_flow_error",
+				"status", resp.StatusCode,
+				"error", errResp.Error,
+			)
 			return nil, fmt.Errorf("device code error: %s - %s", errResp.Error, errResp.ErrorDescription)
 		}
+		slog.Debug("device_flow_error", "status", resp.StatusCode)
 		return nil, fmt.Errorf("device code request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -86,6 +96,11 @@ func StartDeviceFlow(ctx context.Context, cfg DeviceFlowConfig) (*DeviceCodeResp
 		dcResp.Interval = 5
 	}
 
+	slog.Debug("device_flow_started",
+		"verification_uri", dcResp.VerificationURI,
+		"expires_in", dcResp.ExpiresIn,
+		"interval", dcResp.Interval,
+	)
 	return &dcResp, nil
 }
 
@@ -95,6 +110,7 @@ func PollForToken(ctx context.Context, cfg DeviceFlowConfig, deviceCode string, 
 		interval = 5
 	}
 
+	slog.Debug("device_flow_poll_start", "interval_seconds", interval, "token_url", cfg.TokenURL)
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
 
@@ -105,6 +121,7 @@ func PollForToken(ctx context.Context, cfg DeviceFlowConfig, deviceCode string, 
 		case <-ticker.C:
 			token, err := requestToken(ctx, cfg, deviceCode)
 			if err == nil {
+				slog.Debug("device_flow_poll_success")
 				return token, nil
 			}
 
@@ -113,10 +130,12 @@ func PollForToken(ctx context.Context, cfg DeviceFlowConfig, deviceCode string, 
 			}
 
 			if isSlowDownError(err) {
+				slog.Debug("device_flow_poll_slow_down")
 				ticker.Reset(time.Duration(interval+5) * time.Second)
 				continue
 			}
 
+			slog.Debug("device_flow_poll_error", "error", err)
 			return nil, err
 		}
 	}
@@ -146,17 +165,26 @@ func requestToken(ctx context.Context, cfg DeviceFlowConfig, deviceCode string) 
 		return nil, fmt.Errorf("failed to read token response: %w", err)
 	}
 
+	var errResp DeviceFlowError
+	if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
+		return nil, &oauthError{code: errResp.Error, description: errResp.ErrorDescription}
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		var errResp DeviceFlowError
-		if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
-			return nil, &oauthError{code: errResp.Error, description: errResp.ErrorDescription}
-		}
 		return nil, fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var tokenResp TokenResponse
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
 		return nil, fmt.Errorf("failed to parse token response: %w", err)
+	}
+
+	if strings.TrimSpace(tokenResp.AccessToken) == "" {
+		slog.Debug("device_flow_token_missing_access_token",
+			"token_type", tokenResp.TokenType,
+			"expires_in", tokenResp.ExpiresIn,
+		)
+		return nil, fmt.Errorf("token response missing access_token")
 	}
 
 	return &tokenResp, nil

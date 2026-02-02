@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	copilot "github.com/github/copilot-sdk/go"
 )
 
 func TestFetchOpenRouterModels(t *testing.T) {
@@ -228,186 +230,133 @@ func TestFetchAnthropicModels_EmptyAPIKey(t *testing.T) {
 	}
 }
 
+type stubCopilotClient struct {
+	startErr   error
+	listErr    error
+	statusErr  error
+	models     []copilot.ModelInfo
+	status     *copilot.GetAuthStatusResponse
+	stopErrors []error
+}
+
+func (s *stubCopilotClient) Start() error {
+	return s.startErr
+}
+
+func (s *stubCopilotClient) Stop() []error {
+	return s.stopErrors
+}
+
+func (s *stubCopilotClient) GetAuthStatus() (*copilot.GetAuthStatusResponse, error) {
+	if s.statusErr != nil {
+		return nil, s.statusErr
+	}
+	if s.status == nil {
+		return &copilot.GetAuthStatusResponse{}, nil
+	}
+	return s.status, nil
+}
+
+func (s *stubCopilotClient) ListModels() ([]copilot.ModelInfo, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	return s.models, nil
+}
+
 func TestFetchCopilotModels(t *testing.T) {
-	requestCount := 0
-	client := newTestClient(func(req *http.Request) (*http.Response, error) {
-		if req.Body != nil {
-			_ = req.Body.Close()
-		}
-		requestCount++
+	origFactory := copilotClientFactory
+	defer func() {
+		copilotClientFactory = origFactory
+	}()
 
-		// First request: token exchange
-		if requestCount == 1 {
-			if req.URL.Path != "/copilot_internal/v2/token" {
-				t.Errorf("Expected token path, got %q", req.URL.Path)
-			}
-			if got := req.Header.Get("Authorization"); got != "token test-github-token" {
-				t.Errorf("Expected Authorization 'token test-github-token', got %q", got)
-			}
-			payload := map[string]any{
-				"token":      "copilot-api-token",
-				"expires_at": 1234567890,
-				"endpoints": map[string]any{
-					"api": "https://api.githubcopilot.com",
-				},
-			}
-			return newJSONResponse(t, req, http.StatusOK, payload), nil
-		}
+	stub := &stubCopilotClient{
+		models: []copilot.ModelInfo{
+			{ID: "gpt-4o", Name: "GPT-4o"},
+			{ID: "claude-3.5-sonnet", Name: ""},
+			{ID: "gpt-4o-mini", Name: "GPT-4o Mini"},
+		},
+	}
+	copilotClientFactory = func() copilotSDKClient { return stub }
 
-		// Second request: models list
-		if requestCount == 2 {
-			if req.URL.Path != "/models" {
-				t.Errorf("Expected models path, got %q", req.URL.Path)
-			}
-			if got := req.Header.Get("Authorization"); got != "Bearer copilot-api-token" {
-				t.Errorf("Expected Authorization 'Bearer copilot-api-token', got %q", got)
-			}
-			if got := req.Header.Get("Copilot-Integration-Id"); got != "vscode-chat" {
-				t.Errorf("Expected Copilot-Integration-Id 'vscode-chat', got %q", got)
-			}
-			payload := map[string]any{
-				"data": []any{
-					map[string]any{"id": "gpt-4o"},
-					map[string]any{"id": "gpt-4o-mini"},
-					map[string]any{"id": "claude-3.5-sonnet"},
-				},
-			}
-			return newJSONResponse(t, req, http.StatusOK, payload), nil
-		}
-
-		t.Fatalf("Unexpected request count: %d", requestCount)
-		return nil, nil
-	})
-
-	models, err := fetchCopilotModels(context.Background(), "test-github-token", client)
+	models, err := FetchCopilotModels(context.Background())
 	if err != nil {
-		t.Fatalf("fetchCopilotModels() error: %v", err)
+		t.Fatalf("FetchCopilotModels() error: %v", err)
 	}
 	if len(models) != 3 {
 		t.Fatalf("Expected 3 models, got %d", len(models))
 	}
-	// Should be sorted alphabetically
 	if models[0].ID != "claude-3.5-sonnet" {
-		t.Errorf("Expected first model 'claude-3.5-sonnet', got %q", models[0].ID)
+		t.Errorf("Expected sorted models, got %q first", models[0].ID)
 	}
-	if requestCount != 2 {
-		t.Errorf("Expected 2 requests (token + models), got %d", requestCount)
+	if models[0].Name != "claude-3.5-sonnet" {
+		t.Errorf("Expected fallback name to ID, got %q", models[0].Name)
 	}
 }
 
-func TestFetchCopilotModels_EmptyToken(t *testing.T) {
-	client := newTestClient(func(req *http.Request) (*http.Response, error) {
-		t.Fatal("Should not make request with empty token")
-		return nil, nil
-	})
+func TestFetchCopilotModels_StartError(t *testing.T) {
+	origFactory := copilotClientFactory
+	defer func() {
+		copilotClientFactory = origFactory
+	}()
 
-	_, err := fetchCopilotModels(context.Background(), "", client)
+	stub := &stubCopilotClient{startErr: errors.New("start failed")}
+	copilotClientFactory = func() copilotSDKClient { return stub }
+
+	_, err := FetchCopilotModels(context.Background())
 	if err == nil {
-		t.Fatal("Expected error for empty token")
+		t.Fatal("Expected error for Copilot client start failure")
 	}
 }
 
-func TestFetchCopilotModels_TokenExchangeError(t *testing.T) {
-	client := newTestClient(func(req *http.Request) (*http.Response, error) {
-		if req.Body != nil {
-			_ = req.Body.Close()
-		}
-		return newJSONResponse(t, req, http.StatusUnauthorized, map[string]any{
-			"message": "Bad credentials",
-		}), nil
-	})
+func TestFetchCopilotAuthStatus(t *testing.T) {
+	origFactory := copilotClientFactory
+	defer func() {
+		copilotClientFactory = origFactory
+	}()
 
-	_, err := fetchCopilotModels(context.Background(), "bad-token", client)
-	if err == nil {
-		t.Fatal("Expected error for token exchange failure")
+	authType := "oauth"
+	host := "github.com"
+	login := "octocat"
+	message := "Authenticated"
+	stub := &stubCopilotClient{
+		status: &copilot.GetAuthStatusResponse{
+			IsAuthenticated: true,
+			AuthType:        &authType,
+			Host:            &host,
+			Login:           &login,
+			StatusMessage:   &message,
+		},
 	}
-}
+	copilotClientFactory = func() copilotSDKClient { return stub }
 
-func TestFetchCopilotModels_ModelsRequestError(t *testing.T) {
-	requestCount := 0
-	client := newTestClient(func(req *http.Request) (*http.Response, error) {
-		if req.Body != nil {
-			_ = req.Body.Close()
-		}
-		requestCount++
-
-		// First request: token exchange succeeds
-		if requestCount == 1 {
-			payload := map[string]any{
-				"token":      "copilot-api-token",
-				"expires_at": 1234567890,
-				"endpoints": map[string]any{
-					"api": "https://api.githubcopilot.com",
-				},
-			}
-			return newJSONResponse(t, req, http.StatusOK, payload), nil
-		}
-
-		// Second request: models list fails
-		return newJSONResponse(t, req, http.StatusForbidden, map[string]any{
-			"error": "Access denied",
-		}), nil
-	})
-
-	_, err := fetchCopilotModels(context.Background(), "test-token", client)
-	if err == nil {
-		t.Fatal("Expected error for models request failure")
-	}
-}
-
-func TestFetchCopilotModels_DefaultEndpoint(t *testing.T) {
-	requestCount := 0
-	var modelsHost string
-	client := newTestClient(func(req *http.Request) (*http.Response, error) {
-		if req.Body != nil {
-			_ = req.Body.Close()
-		}
-		requestCount++
-
-		// First request: token exchange with empty endpoint
-		if requestCount == 1 {
-			payload := map[string]any{
-				"token":      "copilot-api-token",
-				"expires_at": 1234567890,
-				"endpoints":  map[string]any{}, // Empty endpoints
-			}
-			return newJSONResponse(t, req, http.StatusOK, payload), nil
-		}
-
-		// Second request: should use default endpoint
-		modelsHost = req.URL.Host
-		payload := map[string]any{
-			"data": []any{
-				map[string]any{"id": "gpt-4o"},
-			},
-		}
-		return newJSONResponse(t, req, http.StatusOK, payload), nil
-	})
-
-	_, err := fetchCopilotModels(context.Background(), "test-token", client)
+	status, err := FetchCopilotAuthStatus(context.Background())
 	if err != nil {
-		t.Fatalf("fetchCopilotModels() error: %v", err)
+		t.Fatalf("FetchCopilotAuthStatus() error: %v", err)
 	}
-	if modelsHost != "api.githubcopilot.com" {
-		t.Errorf("Expected default host 'api.githubcopilot.com', got %q", modelsHost)
+	if !status.Authenticated {
+		t.Fatal("Expected authenticated status")
+	}
+	if status.Login != "octocat" {
+		t.Fatalf("Expected login 'octocat', got %q", status.Login)
+	}
+	if status.StatusMessage != "Authenticated" {
+		t.Fatalf("Expected status message, got %q", status.StatusMessage)
 	}
 }
 
-func TestFetchCopilotModels_NilClient(t *testing.T) {
-	_, err := fetchCopilotModels(context.Background(), "test-token", nil)
-	if err == nil {
-		t.Fatal("Expected error for nil client")
-	}
-}
+func TestFetchCopilotAuthStatus_Error(t *testing.T) {
+	origFactory := copilotClientFactory
+	defer func() {
+		copilotClientFactory = origFactory
+	}()
 
-func TestFetchCopilotModels_NetworkError(t *testing.T) {
-	client := newTestClient(func(req *http.Request) (*http.Response, error) {
-		return nil, errors.New("network error")
-	})
+	stub := &stubCopilotClient{statusErr: errors.New("status error")}
+	copilotClientFactory = func() copilotSDKClient { return stub }
 
-	_, err := fetchCopilotModels(context.Background(), "test-token", client)
+	_, err := FetchCopilotAuthStatus(context.Background())
 	if err == nil {
-		t.Fatal("Expected error for network failure")
+		t.Fatal("Expected error for auth status failure")
 	}
 }
 

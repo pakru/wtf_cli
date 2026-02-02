@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -76,6 +77,12 @@ func (m *AuthManager) Save(creds StoredCredentials) error {
 
 	store.Credentials[creds.Provider] = creds
 
+	slog.Debug("auth_save",
+		"provider", creds.Provider,
+		"path", m.configPath,
+		"has_refresh", creds.RefreshToken != "",
+		"expires_at_set", !creds.ExpiresAt.IsZero(),
+	)
 	return m.saveStore(store)
 }
 
@@ -86,14 +93,21 @@ func (m *AuthManager) Load(provider string) (*StoredCredentials, error) {
 
 	store, err := m.loadStore()
 	if err != nil {
+		slog.Debug("auth_load_error", "provider", provider, "error", err)
 		return nil, err
 	}
 
 	creds, ok := store.Credentials[provider]
 	if !ok {
+		slog.Debug("auth_load_missing", "provider", provider)
 		return nil, fmt.Errorf("no credentials found for provider: %s", provider)
 	}
 
+	slog.Debug("auth_load",
+		"provider", provider,
+		"expires_at_set", !creds.ExpiresAt.IsZero(),
+		"expired", creds.IsExpired(),
+	)
 	return &creds, nil
 }
 
@@ -104,11 +118,13 @@ func (m *AuthManager) Delete(provider string) error {
 
 	store, err := m.loadStore()
 	if err != nil {
+		slog.Debug("auth_delete_error", "provider", provider, "error", err)
 		return err
 	}
 
 	delete(store.Credentials, provider)
 
+	slog.Debug("auth_delete", "provider", provider, "path", m.configPath)
 	return m.saveStore(store)
 }
 
@@ -133,6 +149,7 @@ func (m *AuthManager) ListProviders() []string {
 
 	store, err := m.loadStore()
 	if err != nil {
+		slog.Debug("auth_list_error", "error", err)
 		return nil
 	}
 

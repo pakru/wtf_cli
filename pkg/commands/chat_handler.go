@@ -54,6 +54,7 @@ func (h *ChatHandler) StartChatStream(
 		return nil, err
 	}
 
+	slog.Debug("chat_stream_provider_config", "llm_provider", cfg.LLMProvider)
 	// Create provider
 	provider, err := ai.GetProviderFromConfig(cfg)
 	if err != nil {

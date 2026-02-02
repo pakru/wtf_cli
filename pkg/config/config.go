@@ -182,7 +182,7 @@ func (c Config) Validate() error {
 			return err
 		}
 	case "copilot":
-		// Copilot uses OAuth, no API key validation needed here
+		// Copilot uses Copilot CLI authentication via the SDK, no API key validation needed here
 	case "anthropic":
 		if err := c.validateAnthropic(); err != nil {
 			return err

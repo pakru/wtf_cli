@@ -429,6 +429,14 @@ func (s *Sidebar) StartAssistantMessage() {
 	})
 }
 
+// StartAssistantMessageWithContent creates a new assistant message with content.
+func (s *Sidebar) StartAssistantMessageWithContent(content string) {
+	s.messages = append(s.messages, ai.ChatMessage{
+		Role:    "assistant",
+		Content: content,
+	})
+}
+
 // AppendErrorMessage adds an error message to the chat.
 func (s *Sidebar) AppendErrorMessage(errMsg string) {
 	s.messages = append(s.messages, ai.ChatMessage{
@@ -441,6 +449,20 @@ func (s *Sidebar) AppendErrorMessage(errMsg string) {
 func (s *Sidebar) UpdateLastMessage(delta string) {
 	if len(s.messages) > 0 {
 		s.messages[len(s.messages)-1].Content += delta
+	}
+}
+
+// SetLastMessageContent replaces the content of the last message.
+func (s *Sidebar) SetLastMessageContent(content string) {
+	if len(s.messages) > 0 {
+		s.messages[len(s.messages)-1].Content = content
+	}
+}
+
+// RemoveLastMessage removes the most recent message.
+func (s *Sidebar) RemoveLastMessage() {
+	if len(s.messages) > 0 {
+		s.messages = s.messages[:len(s.messages)-1]
 	}
 }
 

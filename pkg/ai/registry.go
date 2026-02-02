@@ -2,6 +2,7 @@ package ai
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"wtf_cli/pkg/ai/auth"
@@ -58,6 +59,12 @@ func (r *Registry) Register(info ProviderInfo, factory ProviderFactory) {
 	defer r.mu.Unlock()
 	r.factories[info.Type] = factory
 	r.info[info.Type] = info
+	slog.Debug("provider_register",
+		"type", info.Type,
+		"name", info.Name,
+		"auth_method", info.AuthMethod,
+		"requires_key", info.RequiresKey,
+	)
 }
 
 // GetProvider creates a provider instance by type.
@@ -67,9 +74,11 @@ func (r *Registry) GetProvider(cfg ProviderConfig) (Provider, error) {
 	r.mu.RUnlock()
 
 	if !ok {
+		slog.Debug("provider_get_unknown", "type", cfg.Type)
 		return nil, fmt.Errorf("unknown provider type: %s", cfg.Type)
 	}
 
+	slog.Debug("provider_get", "type", cfg.Type)
 	return factory(cfg)
 }
 
@@ -145,14 +154,19 @@ func ValidateProviderType(s string) (ProviderType, bool) {
 func GetProviderFromConfig(cfg config.Config) (Provider, error) {
 	providerType, ok := ValidateProviderType(cfg.LLMProvider)
 	if !ok {
+		slog.Debug("provider_invalid_fallback", "requested", cfg.LLMProvider, "fallback", ProviderOpenRouter)
 		providerType = ProviderOpenRouter
 	}
 
 	var authMgr *auth.AuthManager
-	if providerType == ProviderCopilot || providerType == ProviderOpenAI {
+	if providerType == ProviderOpenAI {
 		authMgr = auth.NewAuthManager(auth.DefaultAuthPath())
 	}
 
+	slog.Debug("provider_from_config",
+		"provider", providerType,
+		"auth_manager", authMgr != nil,
+	)
 	providerCfg := ProviderConfig{
 		Type:        providerType,
 		Config:      cfg,

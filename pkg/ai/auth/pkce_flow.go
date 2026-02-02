@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -37,6 +38,11 @@ type PKCEFlowResult struct {
 // StartPKCEFlow initiates the PKCE authorization flow.
 // Returns the authorization URL that the user should open in their browser.
 func StartPKCEFlow(ctx context.Context, cfg PKCEFlowConfig) (*PKCEFlowResult, error) {
+	slog.Debug("pkce_start",
+		"auth_url", cfg.AuthURL,
+		"redirect_port", cfg.RedirectPort,
+		"scopes", strings.Join(cfg.Scopes, " "),
+	)
 	codeVerifier, err := generateCodeVerifier()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate code verifier: %w", err)
@@ -63,6 +69,7 @@ func StartPKCEFlow(ctx context.Context, cfg PKCEFlowConfig) (*PKCEFlowResult, er
 	}
 
 	authURL := fmt.Sprintf("%s?%s", cfg.AuthURL, params.Encode())
+	slog.Debug("pkce_auth_url_ready")
 
 	tokenChan := make(chan *TokenResponse, 1)
 	errorChan := make(chan error, 1)
@@ -127,11 +134,13 @@ func StartPKCEFlow(ctx context.Context, cfg PKCEFlowConfig) (*PKCEFlowResult, er
 func (r *PKCEFlowResult) StartCallbackServer(ctx context.Context, timeout time.Duration) (*TokenResponse, error) {
 	listener, err := net.Listen("tcp", r.Server.Addr)
 	if err != nil {
+		slog.Debug("pkce_callback_listen_error", "error", err)
 		return nil, fmt.Errorf("failed to start callback server: %w", err)
 	}
 
 	go func() {
 		if err := r.Server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			slog.Debug("pkce_callback_server_error", "error", err)
 			r.ErrorChan <- fmt.Errorf("callback server error: %w", err)
 		}
 	}()
@@ -147,10 +156,13 @@ func (r *PKCEFlowResult) StartCallbackServer(ctx context.Context, timeout time.D
 
 	select {
 	case token := <-r.TokenChan:
+		slog.Debug("pkce_callback_success")
 		return token, nil
 	case err := <-r.ErrorChan:
+		slog.Debug("pkce_callback_error", "error", err)
 		return nil, err
 	case <-timeoutCtx.Done():
+		slog.Debug("pkce_callback_timeout")
 		return nil, fmt.Errorf("authorization timed out")
 	}
 }
@@ -184,8 +196,10 @@ func exchangeCodeForToken(ctx context.Context, cfg PKCEFlowConfig, code, codeVer
 	if resp.StatusCode != http.StatusOK {
 		var errResp DeviceFlowError
 		if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
+			slog.Debug("pkce_token_error", "status", resp.StatusCode, "error", errResp.Error)
 			return nil, fmt.Errorf("token error: %s - %s", errResp.Error, errResp.ErrorDescription)
 		}
+		slog.Debug("pkce_token_error", "status", resp.StatusCode)
 		return nil, fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
