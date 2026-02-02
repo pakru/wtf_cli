@@ -11,6 +11,9 @@ import (
 	"wtf_cli/pkg/pty"
 	"wtf_cli/pkg/ui"
 
+	// Import providers package to register all LLM providers via init()
+	_ "wtf_cli/pkg/ai/providers"
+
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -33,8 +36,8 @@ func main() {
 	}
 	slog.Info("app_start",
 		"config_path", config.GetConfigPath(),
-		"model", cfg.OpenRouter.Model,
-		"api_url", cfg.OpenRouter.APIURL,
+		"provider", cfg.LLMProvider,
+		"model", getModelForProvider(cfg),
 		"log_level", cfg.LogLevel,
 		"log_format", cfg.LogFormat,
 		"log_file", cfg.LogFile,
@@ -63,5 +66,31 @@ func main() {
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+// getModelForProvider returns the model name for the currently selected provider
+func getModelForProvider(cfg config.Config) string {
+	switch cfg.LLMProvider {
+	case "openai":
+		if cfg.Providers.OpenAI.Model != "" {
+			return cfg.Providers.OpenAI.Model
+		}
+		return "gpt-4o"
+	case "copilot":
+		if cfg.Providers.Copilot.Model != "" {
+			return cfg.Providers.Copilot.Model
+		}
+		return "gpt-4o"
+	case "anthropic":
+		if cfg.Providers.Anthropic.Model != "" {
+			return cfg.Providers.Anthropic.Model
+		}
+		return "claude-3-5-sonnet-20241022"
+	default: // openrouter or unknown
+		if cfg.OpenRouter.Model != "" {
+			return cfg.OpenRouter.Model
+		}
+		return config.Default().OpenRouter.Model
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"wtf_cli/pkg/ai"
+	"wtf_cli/pkg/ai/auth"
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/commands"
@@ -607,20 +608,56 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case settings.StartCopilotAuthMsg:
+		// Start GitHub Copilot OAuth device flow
+		slog.Info("copilot_auth_start")
+		return m, startCopilotAuthCmd()
+
+	case copilotAuthStartedMsg:
+		// Device flow started, show user code to user
+		slog.Info("copilot_auth_device_code", "user_code", msg.UserCode, "verification_uri", msg.VerificationURI)
+		m.statusBar.SetMessage(fmt.Sprintf("Go to %s and enter code: %s", msg.VerificationURI, msg.UserCode))
+		return m, pollCopilotTokenCmd(msg.DeviceCode, msg.Interval)
+
+	case copilotAuthCompleteMsg:
+		// Auth complete, save credentials
+		slog.Info("copilot_auth_complete")
+		m.statusBar.SetMessage("GitHub Copilot connected!")
+		// Reload settings panel to show updated auth status
+		if m.settingsPanel != nil && m.settingsPanel.IsVisible() {
+			cfg, _ := config.Load(config.GetConfigPath())
+			m.settingsPanel.Show(cfg, config.GetConfigPath())
+		}
+		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+			return clearStatusMsg{}
+		})
+
+	case copilotAuthErrorMsg:
+		slog.Error("copilot_auth_error", "error", msg.Err)
+		m.statusBar.SetMessage(fmt.Sprintf("Copilot auth failed: %v", msg.Err))
+		return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+			return clearStatusMsg{}
+		})
+
+	case clearStatusMsg:
+		m.statusBar.SetMessage("")
+		return m, nil
+
 	case settings.SettingsSaveMsg:
 		// Save settings to file
 		if err := config.Save(msg.ConfigPath, msg.Config); err != nil {
 			slog.Error("settings_save_error", "error", err)
 		} else {
 			slog.Info("settings_save",
-				"model", msg.Config.OpenRouter.Model,
+				"provider", msg.Config.LLMProvider,
+				"model", getModelForProvider(msg.Config),
 				"log_level", msg.Config.LogLevel,
 				"log_format", msg.Config.LogFormat,
 				"log_file", msg.Config.LogFile,
 			)
 			logging.SetLevel(msg.Config.LogLevel)
 		}
-		m.statusBar.SetModel(msg.Config.OpenRouter.Model)
+		m.statusBar.SetModel(getModelForProvider(msg.Config))
 		return m, nil
 
 	case input.CtrlDPressedMsg:
@@ -683,6 +720,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.settingsPanel != nil {
 			switch msg.FieldKey {
+			case "llm_provider":
+				m.settingsPanel.SetProviderValue(msg.Value)
 			case "log_level":
 				m.settingsPanel.SetLogLevelValue(msg.Value)
 			case "log_format":
@@ -1084,22 +1123,44 @@ func getCurrentDir() string {
 }
 
 func loadModelFromConfig() string {
-	modelName := config.Default().OpenRouter.Model
 	path := config.GetConfigPath()
 	if path == "" {
-		return modelName
+		return config.Default().OpenRouter.Model
 	}
 	if _, err := os.Stat(path); err != nil {
-		return modelName
+		return config.Default().OpenRouter.Model
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
-		return modelName
+		return config.Default().OpenRouter.Model
 	}
-	if strings.TrimSpace(cfg.OpenRouter.Model) == "" {
-		return modelName
+	return getModelForProvider(cfg)
+}
+
+// getModelForProvider returns the model name for the currently selected provider
+func getModelForProvider(cfg config.Config) string {
+	switch cfg.LLMProvider {
+	case "openai":
+		if cfg.Providers.OpenAI.Model != "" {
+			return cfg.Providers.OpenAI.Model
+		}
+		return "gpt-4o"
+	case "copilot":
+		if cfg.Providers.Copilot.Model != "" {
+			return cfg.Providers.Copilot.Model
+		}
+		return "gpt-4o"
+	case "anthropic":
+		if cfg.Providers.Anthropic.Model != "" {
+			return cfg.Providers.Anthropic.Model
+		}
+		return "claude-3-5-sonnet-20241022"
+	default: // openrouter or unknown
+		if cfg.OpenRouter.Model != "" {
+			return cfg.OpenRouter.Model
+		}
+		return config.Default().OpenRouter.Model
 	}
-	return cfg.OpenRouter.Model
 }
 
 func refreshModelCacheCmd(apiURL string) tea.Cmd {
@@ -1291,4 +1352,76 @@ func applyPasteToOverlay(content string, update func(tea.KeyPressMsg) tea.Cmd) t
 		return cmds[0]
 	}
 	return tea.Batch(cmds...)
+}
+
+// Copilot auth message types
+type copilotAuthStartedMsg struct {
+	DeviceCode      string
+	UserCode        string
+	VerificationURI string
+	Interval        int
+}
+
+type copilotAuthCompleteMsg struct{}
+
+type copilotAuthErrorMsg struct {
+	Err error
+}
+
+type clearStatusMsg struct{}
+
+// startCopilotAuthCmd initiates the GitHub Copilot OAuth device flow
+func startCopilotAuthCmd() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		cfg := auth.GitHubCopilotDeviceFlowConfig()
+		resp, err := auth.StartDeviceFlow(ctx, cfg)
+		if err != nil {
+			return copilotAuthErrorMsg{Err: err}
+		}
+
+		return copilotAuthStartedMsg{
+			DeviceCode:      resp.DeviceCode,
+			UserCode:        resp.UserCode,
+			VerificationURI: resp.VerificationURI,
+			Interval:        resp.Interval,
+		}
+	}
+}
+
+// pollCopilotTokenCmd polls for the OAuth token after user authorization
+func pollCopilotTokenCmd(deviceCode string, interval int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		cfg := auth.GitHubCopilotDeviceFlowConfig()
+		token, err := auth.PollForToken(ctx, cfg, deviceCode, interval)
+		if err != nil {
+			return copilotAuthErrorMsg{Err: err}
+		}
+
+		// Save the token
+		authMgr := auth.NewAuthManager(auth.DefaultAuthPath())
+
+		expiresAt := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+		if token.ExpiresIn == 0 {
+			// GitHub tokens don't expire by default, set a long expiry
+			expiresAt = time.Now().Add(365 * 24 * time.Hour)
+		}
+
+		err = authMgr.Save(auth.StoredCredentials{
+			Provider:     string(ai.ProviderCopilot),
+			AccessToken:  token.AccessToken,
+			RefreshToken: token.RefreshToken,
+			ExpiresAt:    expiresAt,
+		})
+		if err != nil {
+			return copilotAuthErrorMsg{Err: fmt.Errorf("failed to save credentials: %w", err)}
+		}
+
+		return copilotAuthCompleteMsg{}
+	}
 }

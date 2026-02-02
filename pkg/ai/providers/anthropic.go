@@ -232,13 +232,16 @@ func (p *AnthropicProvider) buildRequest(req ai.ChatRequest, stream bool) (*anth
 		return nil, fmt.Errorf("messages are required")
 	}
 
-	var systemPrompt string
+	var systemPrompts []string
 	messages := make([]anthropicMessage, 0, len(req.Messages))
 
 	for _, msg := range req.Messages {
 		role := strings.ToLower(strings.TrimSpace(msg.Role))
 		if role == "system" || role == "developer" {
-			systemPrompt = msg.Content
+			// Concatenate multiple system/developer messages
+			if content := strings.TrimSpace(msg.Content); content != "" {
+				systemPrompts = append(systemPrompts, content)
+			}
 			continue
 		}
 
@@ -269,6 +272,9 @@ func (p *AnthropicProvider) buildRequest(req ai.ChatRequest, stream bool) (*anth
 	if maxTokens <= 0 {
 		maxTokens = 4096
 	}
+
+	// Join all system prompts with newlines
+	systemPrompt := strings.Join(systemPrompts, "\n\n")
 
 	return &anthropicRequest{
 		Model:       model,
