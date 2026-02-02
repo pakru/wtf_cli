@@ -388,7 +388,7 @@ func TestSettingsPanel_ModelPicker(t *testing.T) {
 
 	modelPicker := picker.NewModelPickerPanel()
 	modelPicker.SetSize(80, 24)
-	modelPicker.Show(openMsg.Options, openMsg.Current)
+	modelPicker.Show(openMsg.Options, openMsg.Current, openMsg.FieldKey)
 
 	// Select second model
 	modelPicker.Update(testutils.TestKeyDown)

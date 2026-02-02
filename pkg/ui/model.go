@@ -686,21 +686,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case picker.OpenModelPickerMsg:
-		slog.Info("model_picker_open", "current", msg.Current, "cached_models", len(msg.Options))
+		slog.Info("model_picker_open", "current", msg.Current, "field_key", msg.FieldKey, "cached_models", len(msg.Options))
 		if m.modelPicker != nil {
 			m.modelPicker.SetSize(m.width, m.height)
-			m.modelPicker.Show(msg.Options, msg.Current)
+			m.modelPicker.Show(msg.Options, msg.Current, msg.FieldKey)
 		}
-		cmd := refreshModelCacheCmd(msg.APIURL)
+		// Only refresh cache for OpenRouter (which has dynamic model list)
+		var cmd tea.Cmd
+		if msg.FieldKey == "model" && msg.APIURL != "" {
+			cmd = refreshModelCacheCmd(msg.APIURL)
+		}
 		return m, cmd
 
 	case picker.ModelPickerSelectMsg:
-		slog.Info("model_picker_select", "model", msg.ModelID)
+		slog.Info("model_picker_select", "model", msg.ModelID, "field_key", msg.FieldKey)
 		if m.modelPicker != nil && m.modelPicker.IsVisible() {
 			m.modelPicker.Hide()
 		}
 		if m.settingsPanel != nil {
-			m.settingsPanel.SetModelValue(msg.ModelID)
+			switch msg.FieldKey {
+			case "model":
+				m.settingsPanel.SetModelValue(msg.ModelID)
+			case "openai_model":
+				m.settingsPanel.SetOpenAIModelValue(msg.ModelID)
+			case "copilot_model":
+				m.settingsPanel.SetCopilotModelValue(msg.ModelID)
+			case "anthropic_model":
+				m.settingsPanel.SetAnthropicModelValue(msg.ModelID)
+			default:
+				// Fallback to OpenRouter model for backwards compatibility
+				m.settingsPanel.SetModelValue(msg.ModelID)
+			}
 		}
 		return m, nil
 

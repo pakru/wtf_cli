@@ -143,6 +143,41 @@ func SaveModelCache(path string, cache ModelCache) error {
 	return nil
 }
 
+// GetProviderModels returns the available models for a given provider.
+// For OpenRouter, this returns an empty list (use FetchOpenRouterModels instead).
+// For other providers, this returns a static list of commonly available models.
+func GetProviderModels(provider string) []ModelInfo {
+	switch provider {
+	case "openai":
+		return []ModelInfo{
+			{ID: "gpt-4o", Name: "GPT-4o", Description: "Most capable GPT-4 model"},
+			{ID: "gpt-4o-mini", Name: "GPT-4o Mini", Description: "Smaller, faster GPT-4o"},
+			{ID: "gpt-4-turbo", Name: "GPT-4 Turbo", Description: "GPT-4 Turbo with vision"},
+			{ID: "gpt-4", Name: "GPT-4", Description: "Original GPT-4 model"},
+			{ID: "gpt-3.5-turbo", Name: "GPT-3.5 Turbo", Description: "Fast and cost-effective"},
+			{ID: "o1-preview", Name: "o1 Preview", Description: "Reasoning model preview"},
+			{ID: "o1-mini", Name: "o1 Mini", Description: "Smaller reasoning model"},
+		}
+	case "copilot":
+		return []ModelInfo{
+			{ID: "gpt-4o", Name: "GPT-4o", Description: "Default Copilot model"},
+			{ID: "gpt-4o-mini", Name: "GPT-4o Mini", Description: "Faster Copilot model"},
+			{ID: "gpt-4", Name: "GPT-4", Description: "GPT-4 via Copilot"},
+			{ID: "gpt-3.5-turbo", Name: "GPT-3.5 Turbo", Description: "Fast model via Copilot"},
+		}
+	case "anthropic":
+		return []ModelInfo{
+			{ID: "claude-3-5-sonnet-20241022", Name: "Claude 3.5 Sonnet", Description: "Latest Claude 3.5 Sonnet"},
+			{ID: "claude-3-5-haiku-20241022", Name: "Claude 3.5 Haiku", Description: "Fast Claude 3.5 model"},
+			{ID: "claude-3-opus-20240229", Name: "Claude 3 Opus", Description: "Most capable Claude 3"},
+			{ID: "claude-3-sonnet-20240229", Name: "Claude 3 Sonnet", Description: "Balanced Claude 3"},
+			{ID: "claude-3-haiku-20240307", Name: "Claude 3 Haiku", Description: "Fast Claude 3 model"},
+		}
+	default:
+		return nil
+	}
+}
+
 func buildModelsURL(apiURL string) (string, error) {
 	trimmed := strings.TrimSpace(apiURL)
 	if trimmed == "" {

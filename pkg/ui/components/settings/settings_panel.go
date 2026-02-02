@@ -234,9 +234,40 @@ func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 			copy(options, sp.modelCache.Models)
 			return func() tea.Msg {
 				return picker.OpenModelPickerMsg{
-					Options: options,
-					Current: sp.config.OpenRouter.Model,
-					APIURL:  sp.config.OpenRouter.APIURL,
+					Options:  options,
+					Current:  sp.config.OpenRouter.Model,
+					APIURL:   sp.config.OpenRouter.APIURL,
+					FieldKey: "model",
+				}
+			}
+		}
+		if field.Key == "openai_model" {
+			options := ai.GetProviderModels("openai")
+			return func() tea.Msg {
+				return picker.OpenModelPickerMsg{
+					Options:  options,
+					Current:  sp.config.Providers.OpenAI.Model,
+					FieldKey: "openai_model",
+				}
+			}
+		}
+		if field.Key == "copilot_model" {
+			options := ai.GetProviderModels("copilot")
+			return func() tea.Msg {
+				return picker.OpenModelPickerMsg{
+					Options:  options,
+					Current:  sp.config.Providers.Copilot.Model,
+					FieldKey: "copilot_model",
+				}
+			}
+		}
+		if field.Key == "anthropic_model" {
+			options := ai.GetProviderModels("anthropic")
+			return func() tea.Msg {
+				return picker.OpenModelPickerMsg{
+					Options:  options,
+					Current:  sp.config.Providers.Anthropic.Model,
+					FieldKey: "anthropic_model",
 				}
 			}
 		}
@@ -662,6 +693,42 @@ func (sp *SettingsPanel) SetProviderValue(value string) {
 	sp.config.LLMProvider = value
 	sp.changed = true
 	sp.buildFields()
+}
+
+// SetOpenAIModelValue updates the OpenAI model field.
+func (sp *SettingsPanel) SetOpenAIModelValue(value string) {
+	sp.config.Providers.OpenAI.Model = value
+	sp.changed = true
+	for i := range sp.fields {
+		if sp.fields[i].Key == "openai_model" {
+			sp.fields[i].Value = value
+			break
+		}
+	}
+}
+
+// SetCopilotModelValue updates the Copilot model field.
+func (sp *SettingsPanel) SetCopilotModelValue(value string) {
+	sp.config.Providers.Copilot.Model = value
+	sp.changed = true
+	for i := range sp.fields {
+		if sp.fields[i].Key == "copilot_model" {
+			sp.fields[i].Value = value
+			break
+		}
+	}
+}
+
+// SetAnthropicModelValue updates the Anthropic model field.
+func (sp *SettingsPanel) SetAnthropicModelValue(value string) {
+	sp.config.Providers.Anthropic.Model = value
+	sp.changed = true
+	for i := range sp.fields {
+		if sp.fields[i].Key == "anthropic_model" {
+			sp.fields[i].Value = value
+			break
+		}
+	}
 }
 
 func (sp *SettingsPanel) setModelValue(value string) {
