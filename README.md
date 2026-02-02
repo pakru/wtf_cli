@@ -68,23 +68,6 @@ cd ~/projects
 
 ## ✨ Features
 
-### Implemented ✅
-
-- **Transparent PTY Wrapper**: Seamless terminal proxy that feels native
-- **Full Terminal Support**: Works with vim, htop, nano, and all terminal apps
-- **Signal Handling**: Proper SIGWINCH (resize), SIGINT, SIGTERM support
-- **Circular Buffer**: Captures last 2000 lines of terminal output
-- **Modern TUI**: Built with Charm's Bubble Tea and Lipgloss
-- **Status Bar**: Shows current directory and helpful hints
-- **Command Palette**: Press `/` to access AI commands
-- **History Search**: Press `Ctrl+R` to search command history
-- **Welcome Banner**: Helpful shortcut reference on startup
-- **AI Chat Sidebar**: Interactive chat with context-aware AI assistant
-- **Streaming Responses**: Real-time AI response streaming
-- **Password Protection**: Automatic detection of password prompts - sensitive input is never captured or sent to the LLM
-- **Clipboard Paste**: Full paste support into the terminal
-- **Cursor Navigation**: Left/Right arrow keys, Home/End support in command line
-
 ### Commands (Available)
 
 | Command | Description |
