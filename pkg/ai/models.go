@@ -268,15 +268,127 @@ func fetchAnthropicModels(ctx context.Context, apiKey string, client httpDoer) (
 	return models, nil
 }
 
-// GetCopilotModels returns the available models for GitHub Copilot.
-// Copilot uses a fixed set of models that are documented but don't have a listing API.
+// GetCopilotModels returns the static fallback list of models for GitHub Copilot.
+// Use FetchCopilotModels for dynamic list when authenticated.
 func GetCopilotModels() []ModelInfo {
 	return []ModelInfo{
 		{ID: "gpt-4o", Name: "GPT-4o", Description: "Default Copilot model"},
 		{ID: "gpt-4o-mini", Name: "GPT-4o Mini", Description: "Faster Copilot model"},
 		{ID: "gpt-4", Name: "GPT-4", Description: "GPT-4 via Copilot"},
 		{ID: "gpt-3.5-turbo", Name: "GPT-3.5 Turbo", Description: "Fast model via Copilot"},
+		{ID: "claude-3.5-sonnet", Name: "Claude 3.5 Sonnet", Description: "Anthropic model via Copilot"},
+		{ID: "o1-preview", Name: "o1 Preview", Description: "OpenAI reasoning model"},
+		{ID: "o1-mini", Name: "o1 Mini", Description: "Smaller reasoning model"},
 	}
+}
+
+// FetchCopilotModels retrieves the model list from GitHub Copilot API.
+// This is an undocumented endpoint that may change. Falls back to static list on error.
+// Requires a valid GitHub OAuth token (not the Copilot API token).
+func FetchCopilotModels(ctx context.Context, githubToken string) ([]ModelInfo, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	return fetchCopilotModels(ctx, githubToken, client)
+}
+
+func fetchCopilotModels(ctx context.Context, githubToken string, client httpDoer) ([]ModelInfo, error) {
+	if client == nil {
+		return nil, fmt.Errorf("http client is required")
+	}
+	if githubToken == "" {
+		return nil, fmt.Errorf("github token is required")
+	}
+
+	// First, get the Copilot API token and endpoint
+	copilotToken, apiEndpoint, err := getCopilotAPITokenForModels(ctx, githubToken, client)
+	if err != nil {
+		return nil, fmt.Errorf("get copilot token: %w", err)
+	}
+
+	// Now fetch models from the Copilot API
+	modelsURL := strings.TrimRight(apiEndpoint, "/") + "/models"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create models request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+copilotToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Copilot-Integration-Id", "vscode-chat")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch models: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("models request failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	// Parse OpenAI-style response
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode models response: %w", err)
+	}
+
+	var models []ModelInfo
+	for _, m := range payload.Data {
+		models = append(models, ModelInfo{
+			ID:   m.ID,
+			Name: m.ID,
+		})
+	}
+
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].ID < models[j].ID
+	})
+
+	return models, nil
+}
+
+// getCopilotAPITokenForModels exchanges a GitHub OAuth token for a Copilot API token.
+func getCopilotAPITokenForModels(ctx context.Context, githubToken string, client httpDoer) (string, string, error) {
+	const copilotTokenURL = "https://api.github.com/copilot_internal/v2/token"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, copilotTokenURL, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("create token request: %w", err)
+	}
+	req.Header.Set("Authorization", "token "+githubToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("request copilot token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return "", "", fmt.Errorf("copilot token request failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var tokenResp struct {
+		Token     string `json:"token"`
+		ExpiresAt int64  `json:"expires_at"`
+		Endpoints struct {
+			API string `json:"api"`
+		} `json:"endpoints"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", "", fmt.Errorf("decode token response: %w", err)
+	}
+
+	apiEndpoint := tokenResp.Endpoints.API
+	if apiEndpoint == "" {
+		apiEndpoint = "https://api.githubcopilot.com"
+	}
+
+	return tokenResp.Token, apiEndpoint, nil
 }
 
 // GetProviderModels returns a static fallback list of models for a given provider.

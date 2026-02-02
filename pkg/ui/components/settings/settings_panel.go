@@ -255,11 +255,18 @@ func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		if field.Key == "copilot_model" {
 			options := ai.GetCopilotModels()
+			// Try to get the GitHub token from auth.json for dynamic model fetching
+			var githubToken string
+			authMgr := auth.NewAuthManager(auth.DefaultAuthPath())
+			if creds, err := authMgr.Load("copilot"); err == nil && !creds.IsExpired() {
+				githubToken = creds.AccessToken
+			}
 			return func() tea.Msg {
 				return picker.OpenModelPickerMsg{
 					Options:  options,
 					Current:  sp.config.Providers.Copilot.Model,
 					FieldKey: "copilot_model",
+					APIKey:   githubToken, // GitHub OAuth token for Copilot
 				}
 			}
 		}

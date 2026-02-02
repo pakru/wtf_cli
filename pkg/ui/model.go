@@ -702,6 +702,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.APIKey != "" {
 				cmd = fetchOpenAIModelsCmd(msg.APIKey)
 			}
+		case "copilot_model":
+			if msg.APIKey != "" {
+				cmd = fetchCopilotModelsCmd(msg.APIKey)
+			}
 		case "anthropic_model":
 			if msg.APIKey != "" {
 				cmd = fetchAnthropicModelsCmd(msg.APIKey)
@@ -1250,6 +1254,21 @@ func fetchAnthropicModelsCmd(apiKey string) tea.Cmd {
 
 		models, err := ai.FetchAnthropicModels(ctx, apiKey)
 		return providerModelsRefreshMsg{Models: models, FieldKey: "anthropic_model", Err: err}
+	}
+}
+
+func fetchCopilotModelsCmd(githubToken string) tea.Cmd {
+	if githubToken == "" {
+		return nil
+	}
+
+	return func() tea.Msg {
+		slog.Info("copilot_models_fetch_start")
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		models, err := ai.FetchCopilotModels(ctx, githubToken)
+		return providerModelsRefreshMsg{Models: models, FieldKey: "copilot_model", Err: err}
 	}
 }
 
