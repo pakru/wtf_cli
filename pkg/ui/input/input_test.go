@@ -876,3 +876,195 @@ func TestInputHandler_ClearLineBuffer_PreservesLastCommand(t *testing.T) {
 		t.Errorf("Expected empty command after ClearLineBuffer, got %q", submitted.Command)
 	}
 }
+
+// TestInputHandler_SlashPalette_EmptyLineBuffer tests that / only triggers
+// the command palette when line buffer is empty (first character scenario).
+func TestInputHandler_SlashPalette_EmptyLineBuffer(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	// Line buffer is empty initially, / should trigger palette
+	msg := testutils.NewTextKeyPressMsg("/")
+	handled, cmd := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected / to be handled")
+	}
+
+	// Should NOT send to PTY (triggers palette)
+	if buf.Len() != 0 {
+		t.Errorf("Expected empty buffer when palette triggered, got %q", buf.String())
+	}
+
+	// Should return ShowPaletteMsg
+	if cmd == nil {
+		t.Fatal("Expected command to show palette")
+	}
+
+	result := cmd()
+	if _, ok := result.(ShowPaletteMsg); !ok {
+		t.Errorf("Expected ShowPaletteMsg, got %T", result)
+	}
+}
+
+// TestInputHandler_SlashPalette_NonEmptyLineBuffer tests that / does NOT
+// trigger the palette when there's already text in the line buffer.
+func TestInputHandler_SlashPalette_NonEmptyLineBuffer(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	// Type some text first
+	ih.HandleKey(testutils.NewTextKeyPressMsg("e"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("c"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("h"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("o"))
+	buf.Reset() // Clear typed chars from buffer
+
+	// Now / should be sent to PTY, not trigger palette
+	msg := testutils.NewTextKeyPressMsg("/")
+	handled, cmd := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected / to be handled")
+	}
+
+	// Should send "/" to PTY
+	if buf.String() != "/" {
+		t.Errorf("Expected '/' sent to PTY, got %q", buf.String())
+	}
+
+	// Should NOT return palette command
+	if cmd != nil {
+		t.Error("Should not trigger palette when line buffer is not empty")
+	}
+
+	// Verify line buffer contains the full text
+	if ih.lineBuffer != "echo/" {
+		t.Errorf("Expected lineBuffer 'echo/', got %q", ih.lineBuffer)
+	}
+}
+
+// TestInputHandler_SlashPalette_AfterEnter tests that / triggers the palette
+// after Enter is pressed (clears the line buffer).
+func TestInputHandler_SlashPalette_AfterEnter(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	// Type a command
+	ih.HandleKey(testutils.NewTextKeyPressMsg("l"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("s"))
+
+	// Press Enter to submit
+	ih.HandleKey(testutils.TestKeyEnter)
+	buf.Reset()
+
+	// Line buffer should be empty after Enter
+	if ih.lineBuffer != "" {
+		t.Fatalf("Expected empty lineBuffer after Enter, got %q", ih.lineBuffer)
+	}
+
+	// Now / should trigger palette
+	msg := testutils.NewTextKeyPressMsg("/")
+	handled, cmd := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected / to be handled")
+	}
+
+	// Should NOT send to PTY
+	if buf.Len() != 0 {
+		t.Errorf("Expected empty buffer when palette triggered, got %q", buf.String())
+	}
+
+	// Should return ShowPaletteMsg
+	if cmd == nil {
+		t.Fatal("Expected command to show palette")
+	}
+
+	result := cmd()
+	if _, ok := result.(ShowPaletteMsg); !ok {
+		t.Errorf("Expected ShowPaletteMsg, got %T", result)
+	}
+}
+
+// TestInputHandler_SlashPalette_AfterBackspaceToEmpty tests that / triggers
+// the palette after user backspaces to an empty line.
+func TestInputHandler_SlashPalette_AfterBackspaceToEmpty(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	// Type one character
+	ih.HandleKey(testutils.NewTextKeyPressMsg("x"))
+	buf.Reset()
+
+	// Backspace to clear
+	ih.HandleKey(testutils.TestKeyBackspace)
+	buf.Reset()
+
+	// Line buffer should be empty after backspacing
+	if ih.lineBuffer != "" {
+		t.Fatalf("Expected empty lineBuffer after backspace, got %q", ih.lineBuffer)
+	}
+
+	// Now / should trigger palette
+	msg := testutils.NewTextKeyPressMsg("/")
+	handled, cmd := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected / to be handled")
+	}
+
+	// Should NOT send to PTY
+	if buf.Len() != 0 {
+		t.Errorf("Expected empty buffer when palette triggered, got %q", buf.String())
+	}
+
+	// Should return ShowPaletteMsg
+	if cmd != nil {
+		result := cmd()
+		if _, ok := result.(ShowPaletteMsg); !ok {
+			t.Errorf("Expected ShowPaletteMsg, got %T", result)
+		}
+	} else {
+		t.Error("Expected command to show palette")
+	}
+}
+
+// TestInputHandler_SlashPalette_AfterCtrlC tests that / triggers the palette
+// after Ctrl+C (which clears the line).
+func TestInputHandler_SlashPalette_AfterCtrlC(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	// Type something
+	ih.HandleKey(testutils.NewTextKeyPressMsg("c"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("a"))
+	ih.HandleKey(testutils.NewTextKeyPressMsg("t"))
+
+	// Press Ctrl+C
+	ih.HandleKey(testutils.TestKeyCtrlC)
+	buf.Reset()
+
+	// Line buffer should be empty after Ctrl+C
+	if ih.lineBuffer != "" {
+		t.Fatalf("Expected empty lineBuffer after Ctrl+C, got %q", ih.lineBuffer)
+	}
+
+	// Now / should trigger palette
+	msg := testutils.NewTextKeyPressMsg("/")
+	handled, cmd := ih.HandleKey(msg)
+
+	if !handled {
+		t.Error("Expected / to be handled")
+	}
+
+	// Should NOT send to PTY
+	if buf.Len() != 0 {
+		t.Errorf("Expected empty buffer when palette triggered, got %q", buf.String())
+	}
+
+	// Should return ShowPaletteMsg
+	if cmd == nil {
+		t.Fatal("Expected command to show palette")
+	}
+}

@@ -108,6 +108,9 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 
 	keyStr := msg.String()
 
+	// Debug: log all key presses to trace command palette trigger issue
+	slog.Debug("handle_key", "key", keyStr, "lineBuffer", ih.lineBuffer, "len", len(ih.lineBuffer))
+
 	cursorSeq := func(normal, app string) []byte {
 		if ih.cursorKeysAppMode {
 			return []byte(app)
@@ -224,7 +227,8 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 	}
 
 	// Check for slash at line start - trigger command palette
-	if keyStr == "/" && ih.atLineStart {
+	// Only trigger when line buffer is empty (no text typed yet on this line)
+	if keyStr == "/" && len(ih.lineBuffer) == 0 {
 		// Trigger command palette
 		return true, func() tea.Msg {
 			return ShowPaletteMsg{}
@@ -241,9 +245,18 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 
 	// Normal typing - send to PTY if it's printable text
 	key := msg.Key()
-	if key.Text != "" {
-		ih.ptyWriter.Write([]byte(key.Text))
-		ih.lineBuffer += key.Text
+	// Use key.Text if available (for multi-byte characters), otherwise use keyStr for single chars
+	text := key.Text
+	if text == "" && len(keyStr) == 1 {
+		// Single printable character - keyStr contains the character
+		r := rune(keyStr[0])
+		if r >= 32 && r < 127 { // Printable ASCII
+			text = keyStr
+		}
+	}
+	if text != "" {
+		ih.ptyWriter.Write([]byte(text))
+		ih.lineBuffer += text
 		ih.atLineStart = false
 		return true, nil
 	}

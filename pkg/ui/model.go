@@ -412,10 +412,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Use input handler to route keys to PTY
-		// Clear input buffer if echo is disabled (password entry)
-		if m.ptyFile != nil && pty.IsEchoDisabled(m.ptyFile) {
-			m.inputHandler.ClearLineBuffer()
-		}
+		// Note: ClearLineBuffer for password entry is only done in fullscreen mode
+		// where programs like sudo actually disable echo. In normal mode, BubbleTea's
+		// raw terminal mode disables echo, but that's not password entry.
 		handled, cmd := m.inputHandler.HandleKey(msg)
 		if handled {
 			return m, cmd
