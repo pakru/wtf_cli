@@ -135,6 +135,59 @@ func TestReadBashHistory_FallbackToDefault(t *testing.T) {
 	}
 }
 
+func TestReadBashHistory_ZshExtendedFormat(t *testing.T) {
+	// Create a temporary zsh history file with extended format
+	tmpDir := t.TempDir()
+	histFile := filepath.Join(tmpDir, ".zsh_history")
+
+	// Zsh extended history format: ": timestamp:0;command"
+	content := `: 1234567890:0;ls -la
+: 1234567891:0;cd /tmp
+: 1234567892:0;git status
+echo "hello world"
+: 1234567893:0;git commit -m "test"
+#this is a comment
+: 1234567894:0;pwd
+`
+	if err := os.WriteFile(histFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test zsh history file: %v", err)
+	}
+
+	// Set HISTFILE to our test file
+	originalHistFile := os.Getenv("HISTFILE")
+	os.Setenv("HISTFILE", histFile)
+	defer os.Setenv("HISTFILE", originalHistFile)
+
+	// Test reading zsh history
+	history, err := ReadBashHistory(0)
+	if err != nil {
+		t.Fatalf("ReadBashHistory failed on zsh format: %v", err)
+	}
+
+	// Expected commands in reverse order (most recent first)
+	expected := []string{
+		"pwd",
+		"git commit -m \"test\"",
+		"echo \"hello world\"",
+		"git status",
+		"cd /tmp",
+		"ls -la",
+	}
+
+	if len(history) != len(expected) {
+		t.Errorf("Expected %d commands from zsh history, got %d", len(expected), len(history))
+	}
+
+	for i, cmd := range expected {
+		if i >= len(history) {
+			break
+		}
+		if history[i] != cmd {
+			t.Errorf("Zsh Command[%d]: expected %q, got %q", i, cmd, history[i])
+		}
+	}
+}
+
 func TestMergeHistory(t *testing.T) {
 	bashHistory := []string{
 		"ls -la", // most recent in bash history
