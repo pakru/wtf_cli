@@ -4,21 +4,50 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
-// ReadBashHistory reads commands from the bash history file.
-// It uses $HISTFILE environment variable, falling back to ~/.bash_history.
+// detectShell determines which shell is being used based on $SHELL and OS platform.
+// Returns "zsh", "bash", or "unknown".
+func detectShell() string {
+	// Check $SHELL environment variable first
+	shell := os.Getenv("SHELL")
+	if strings.HasSuffix(shell, "/zsh") || strings.HasSuffix(shell, "\\zsh") {
+		return "zsh"
+	}
+	if strings.HasSuffix(shell, "/bash") || strings.HasSuffix(shell, "\\bash") {
+		return "bash"
+	}
+
+	// Fall back to OS platform detection
+	// macOS defaults to zsh (since Catalina), Linux typically uses bash
+	if runtime.GOOS == "darwin" {
+		return "zsh"
+	}
+
+	return "bash" // default fallback
+}
+
+// ReadBashHistory reads commands from the shell history file.
+// It supports both bash and zsh history formats.
+// It uses $HISTFILE environment variable, falling back to shell-specific defaults.
 // Returns up to maxLines commands in reverse chronological order (most recent first).
 func ReadBashHistory(maxLines int) ([]string, error) {
 	histFile := os.Getenv("HISTFILE")
 	if histFile == "" {
-		// Fallback to default bash history location
+		// Detect shell and use appropriate default history file
+		shell := detectShell()
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			return nil, err
 		}
-		histFile = filepath.Join(homeDir, ".bash_history")
+
+		if shell == "zsh" {
+			histFile = filepath.Join(homeDir, ".zsh_history")
+		} else {
+			histFile = filepath.Join(homeDir, ".bash_history")
+		}
 	}
 
 	file, err := os.Open(histFile)
@@ -40,6 +69,17 @@ func ReadBashHistory(maxLines int) ([]string, error) {
 		// Skip bash timestamps (lines starting with #)
 		if strings.HasPrefix(line, "#") {
 			continue
+		}
+
+		// Handle zsh extended history format: ": timestamp:0;command"
+		if strings.HasPrefix(line, ": ") {
+			// Find the semicolon that separates timestamp from command
+			if idx := strings.Index(line, ";"); idx != -1 {
+				line = line[idx+1:]
+			} else {
+				// Malformed zsh history line, skip it
+				continue
+			}
 		}
 
 		// Skip empty lines
