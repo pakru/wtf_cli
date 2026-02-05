@@ -14,7 +14,15 @@ A transparent PTY-based terminal wrapper with AI-powered assistance. Get instant
 
 ### Installation
 
-#### Option 1: Download Pre-built Binary (Recommended)
+#### Quick Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pakru/wtf_cli/main/install.sh | bash
+```
+
+This will automatically detect your platform, download the latest release, verify checksums, and install to the appropriate location.
+
+#### Option 1: Download Pre-built Binary
 
 Download the latest release for your platform from the [Releases page](https://github.com/pakru/wtf_cli/releases):
 
