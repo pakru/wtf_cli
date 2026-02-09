@@ -81,21 +81,3 @@ func (w *Wrapper) GetPID() int {
 	}
 	return 0
 }
-
-// GetCwd returns the shell's current working directory
-// by reading from /proc/<pid>/cwd (Linux-specific)
-func (w *Wrapper) GetCwd() (string, error) {
-	pid := w.GetPID()
-	if pid == 0 {
-		return "", fmt.Errorf("no process running")
-	}
-
-	// Read the symlink at /proc/<pid>/cwd
-	procPath := fmt.Sprintf("/proc/%d/cwd", pid)
-	cwd, err := os.Readlink(procPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read cwd: %w", err)
-	}
-
-	return cwd, nil
-}
