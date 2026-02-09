@@ -6,9 +6,9 @@ This document describes how to create a new release of WTF CLI.
 
 Releases are automated using GitHub Actions and GoReleaser. When you push a version tag, the system will:
 1. Run all tests
-2. Build binaries for multiple platforms
-3. Create a GitHub Release with changelog
-4. Upload all release artifacts
+2. Build Linux artifacts on Ubuntu
+3. Build macOS artifacts on macOS
+4. Create a GitHub Release and upload all artifacts
 
 ## Prerequisites
 
@@ -80,14 +80,17 @@ If needed, edit the release notes on GitHub:
 
 ## Testing Before Release
 
-To test the release configuration locally without publishing:
+To test release artifact generation locally without publishing:
 
 ```bash
 # Install GoReleaser (if not already installed)
 go install github.com/goreleaser/goreleaser/v2@latest
 
-# Test release build locally
-goreleaser release --snapshot --clean
+# Linux artifacts
+goreleaser release --snapshot --clean --skip=publish --config .goreleaser.linux.yml
+
+# macOS artifacts (run this on macOS)
+goreleaser release --snapshot --clean --skip=publish --config .goreleaser.darwin.yml
 
 # Check the dist/ folder for built binaries
 ls -la dist/
@@ -125,7 +128,8 @@ Follow the release steps again with a new patch version (e.g., `v0.2.1`).
 
 **Common issues**:
 - Tests failing: Fix the tests and create a new tag
-- GoReleaser config error: Test locally with `goreleaser release --snapshot`
+- Linux config error: Test with `goreleaser release --snapshot --skip=publish --config .goreleaser.linux.yml`
+- macOS config error: Test with `goreleaser release --snapshot --skip=publish --config .goreleaser.darwin.yml` on macOS
 - Missing permissions: Ensure GitHub Actions has write permissions
 
 ### Wrong Version in Binary
@@ -140,7 +144,7 @@ If the binary shows the wrong version:
 Check for common issues:
 - **Linux/macOS**: Make the binary executable with `chmod +x wtf_cli`
 - **Wrong architecture**: Ensure you downloaded the correct binary for your platform
-- **Missing dependencies**: The binaries are statically linked (CGO_ENABLED=0), so they should work anywhere
+- **Dependencies**: Linux builds are non-cgo (`CGO_ENABLED=0`), while macOS builds use system libraries (`CGO_ENABLED=1`)
 
 ## Best Practices
 
