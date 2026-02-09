@@ -1010,7 +1010,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case directoryUpdateMsg:
-		// Update current directory from /proc/<pid>/cwd
+		// Update current directory from shell process
 		if m.cwdFunc != nil {
 			if cwd, err := m.cwdFunc(); err == nil {
 				m.currentDir = cwd
