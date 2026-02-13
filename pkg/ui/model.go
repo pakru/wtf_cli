@@ -40,6 +40,9 @@ type Model struct {
 	// PTY connection
 	ptyFile *os.File
 	cwdFunc func() (string, error) // Function to get shell's cwd
+	// secretDetector checks whether the PTY is in canonical secret-input mode.
+	// Injectable for tests.
+	secretDetector func(*os.File) bool
 
 	// UI Components
 	viewport      viewport.PTYViewport              // Viewport for PTY output
@@ -117,6 +120,7 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 	return Model{
 		ptyFile:             ptyFile,
 		cwdFunc:             cwdFunc,
+		secretDetector:      pty.IsSecretInputMode,
 		viewport:            viewport,
 		statusBar:           statusBar,
 		inputHandler:        input.NewInputHandler(ptyFile),
@@ -265,6 +269,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.inputHandler != nil {
+			secretMode := m.ptyFile != nil && m.secretDetector != nil && m.secretDetector(m.ptyFile)
+			m.inputHandler.SetSecretMode(secretMode)
+			if secretMode {
+				m.inputHandler.HandlePaste(msg.Content)
+				return m, nil
+			}
+		}
+
 		if m.exitPending {
 			m.exitPending = false
 			m.statusBar.SetMessage("")
@@ -347,6 +360,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 			return m, nil // Always return here to avoid fallthrough
+		}
+
+		if m.inputHandler != nil {
+			secretMode := m.ptyFile != nil && m.secretDetector != nil && m.secretDetector(m.ptyFile)
+			m.inputHandler.SetSecretMode(secretMode)
+			if secretMode {
+				handled, cmd := m.inputHandler.HandleKey(msg)
+				if handled {
+					return m, cmd
+				}
+				return m, nil
+			}
 		}
 
 		if m.exitPending && msg.String() != "ctrl+d" {

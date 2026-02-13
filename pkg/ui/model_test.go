@@ -674,6 +674,105 @@ func TestModel_PasswordProtection_ClearLineBufferPreventsCapture(t *testing.T) {
 	}
 }
 
+func TestModel_SecretMode_KeyBypassesPaletteRouting(t *testing.T) {
+	tmpDir := t.TempDir()
+	ptyFile, err := os.CreateTemp(tmpDir, "pty")
+	if err != nil {
+		t.Fatalf("Failed to create temp PTY file: %v", err)
+	}
+	defer ptyFile.Close()
+
+	m := NewModel(ptyFile, buffer.New(100), capture.NewSessionContext(), nil)
+	m.secretDetector = func(*os.File) bool { return true }
+	m.palette.Show()
+
+	newModel, cmd := m.Update(testutils.NewTextKeyPressMsg("/"))
+	m = newModel.(Model)
+	if cmd != nil {
+		t.Error("Expected no command when key is passed directly to PTY in secret mode")
+	}
+
+	if _, err := ptyFile.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("Failed to seek PTY file: %v", err)
+	}
+	data, err := io.ReadAll(ptyFile)
+	if err != nil {
+		t.Fatalf("Failed to read PTY output: %v", err)
+	}
+	if string(data) != "/" {
+		t.Fatalf("Expected PTY output %q, got %q", "/", string(data))
+	}
+}
+
+func TestModel_SecretMode_PasteBypassesPaletteRouting(t *testing.T) {
+	tmpDir := t.TempDir()
+	ptyFile, err := os.CreateTemp(tmpDir, "pty")
+	if err != nil {
+		t.Fatalf("Failed to create temp PTY file: %v", err)
+	}
+	defer ptyFile.Close()
+
+	m := NewModel(ptyFile, buffer.New(100), capture.NewSessionContext(), nil)
+	m.secretDetector = func(*os.File) bool { return true }
+	m.palette.Show()
+
+	pasteContent := "secret-paste"
+	newModel, cmd := m.Update(tea.PasteMsg{Content: pasteContent})
+	m = newModel.(Model)
+	if cmd != nil {
+		t.Error("Expected no command for paste in secret mode")
+	}
+
+	if _, err := ptyFile.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("Failed to seek PTY file: %v", err)
+	}
+	data, err := io.ReadAll(ptyFile)
+	if err != nil {
+		t.Fatalf("Failed to read PTY output: %v", err)
+	}
+	if string(data) != pasteContent {
+		t.Fatalf("Expected PTY output %q, got %q", pasteContent, string(data))
+	}
+}
+
+func TestModel_SecretModeFalse_CommandCaptureStillWorks(t *testing.T) {
+	tmpDir := t.TempDir()
+	ptyFile, err := os.CreateTemp(tmpDir, "pty")
+	if err != nil {
+		t.Fatalf("Failed to create temp PTY file: %v", err)
+	}
+	defer ptyFile.Close()
+
+	m := NewModel(ptyFile, buffer.New(100), capture.NewSessionContext(), nil)
+	m.secretDetector = func(*os.File) bool { return false }
+
+	step := func(msg tea.Msg) {
+		newModel, cmd := m.Update(msg)
+		m = newModel.(Model)
+		if cmd == nil {
+			return
+		}
+		emitted := cmd()
+		if emitted == nil {
+			return
+		}
+		newModel, _ = m.Update(emitted)
+		m = newModel.(Model)
+	}
+
+	step(testutils.NewTextKeyPressMsg("l"))
+	step(testutils.NewTextKeyPressMsg("s"))
+	step(testutils.TestKeyEnter)
+
+	last := m.session.GetLastN(1)
+	if len(last) != 1 {
+		t.Fatalf("Expected one command in session, got %d", len(last))
+	}
+	if last[0].Command != "ls" {
+		t.Fatalf("Expected last command %q, got %q", "ls", last[0].Command)
+	}
+}
+
 func TestModel_Update_StartCopilotAuthMsg(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 
