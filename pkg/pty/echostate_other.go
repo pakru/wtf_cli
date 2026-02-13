@@ -11,3 +11,8 @@ import (
 func IsEchoDisabled(f *os.File) bool {
 	return false
 }
+
+// IsSecretInputMode returns false on unsupported platforms.
+func IsSecretInputMode(f *os.File) bool {
+	return false
+}

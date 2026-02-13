@@ -19,6 +19,7 @@ type InputHandler struct {
 	paletteMode       bool   // True when command palette is active
 	historyPickerMode bool   // True when history picker is active
 	fullScreenMode    bool   // True when full-screen app (vim, nano) is active
+	secretMode        bool   // True when PTY is in canonical secret-input mode
 
 	cursorKeysAppMode  bool
 	keypadAppMode      bool
@@ -90,6 +91,13 @@ type CtrlDPressedMsg struct{}
 func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cmd) {
 	// FULL-SCREEN MODE: bypass all special handling, send directly to PTY
 	if ih.fullScreenMode {
+		ih.sendKeyToPTY(msg)
+		return true, nil
+	}
+
+	// SECRET MODE: bypass shortcuts and line buffer accumulation.
+	// Keys are passed through directly to PTY (like full-screen mode).
+	if ih.secretMode {
 		ih.sendKeyToPTY(msg)
 		return true, nil
 	}
@@ -350,6 +358,17 @@ func (ih *InputHandler) HandlePaste(content string) {
 		return
 	}
 
+	if ih.secretMode {
+		if ih.bracketedPasteMode {
+			ih.ptyWriter.Write([]byte("\x1b[200~"))
+		}
+		ih.ptyWriter.Write([]byte(content))
+		if ih.bracketedPasteMode {
+			ih.ptyWriter.Write([]byte("\x1b[201~"))
+		}
+		return
+	}
+
 	logger := slog.Default()
 	ctx := context.Background()
 	if logger.Enabled(ctx, logging.LevelTrace) {
@@ -389,6 +408,16 @@ func (ih *InputHandler) SetFullScreenMode(active bool) {
 // IsFullScreenMode returns whether full-screen mode is active
 func (ih *InputHandler) IsFullScreenMode() bool {
 	return ih.fullScreenMode
+}
+
+// SetSecretMode enables or disables secret-input passthrough mode.
+func (ih *InputHandler) SetSecretMode(active bool) {
+	ih.secretMode = active
+}
+
+// IsSecretMode returns whether secret-input passthrough mode is active.
+func (ih *InputHandler) IsSecretMode() bool {
+	return ih.secretMode
 }
 
 // sendKeyToPTY sends a key directly to PTY with proper encoding

@@ -795,6 +795,93 @@ func TestInputHandler_FullScreenMode_BypassesCtrlT(t *testing.T) {
 	}
 }
 
+func TestInputHandler_SetSecretMode(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	if ih.IsSecretMode() {
+		t.Error("Should not be in secret mode initially")
+	}
+
+	ih.SetSecretMode(true)
+	if !ih.IsSecretMode() {
+		t.Error("Should be in secret mode after SetSecretMode(true)")
+	}
+
+	ih.SetSecretMode(false)
+	if ih.IsSecretMode() {
+		t.Error("Should not be in secret mode after SetSecretMode(false)")
+	}
+}
+
+func TestInputHandler_SecretMode_BypassesSlashPalette(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+	ih.SetSecretMode(true)
+
+	handled, cmd := ih.HandleKey(testutils.NewTextKeyPressMsg("/"))
+	if !handled {
+		t.Error("Expected / to be handled in secret mode")
+	}
+	if cmd != nil {
+		t.Error("Expected no command for / in secret mode")
+	}
+	if buf.String() != "/" {
+		t.Errorf("Expected / to be sent to PTY, got %q", buf.String())
+	}
+}
+
+func TestInputHandler_SecretMode_BypassesCtrlR(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+	ih.SetSecretMode(true)
+
+	handled, cmd := ih.HandleKey(testutils.NewCtrlKeyPressMsg('r'))
+	if !handled {
+		t.Error("Expected Ctrl+R to be handled in secret mode")
+	}
+	if cmd != nil {
+		t.Error("Expected no command for Ctrl+R in secret mode")
+	}
+	if buf.Len() != 1 || buf.Bytes()[0] != 18 {
+		t.Errorf("Expected byte 18 sent to PTY, got %v", buf.Bytes())
+	}
+}
+
+func TestInputHandler_SecretMode_EnterDoesNotEmitCommand(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+	ih.SetSecretMode(true)
+
+	handled, cmd := ih.HandleKey(testutils.TestKeyEnter)
+	if !handled {
+		t.Error("Expected Enter to be handled in secret mode")
+	}
+	if cmd != nil {
+		t.Error("Expected no command emission for Enter in secret mode")
+	}
+	if buf.Len() != 1 || buf.Bytes()[0] != 13 {
+		t.Errorf("Expected CR byte sent to PTY, got %v", buf.Bytes())
+	}
+	if ih.lineBuffer != "" {
+		t.Errorf("Expected lineBuffer to remain empty, got %q", ih.lineBuffer)
+	}
+}
+
+func TestInputHandler_SecretMode_PasteDoesNotAccumulate(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+	ih.SetSecretMode(true)
+
+	ih.HandlePaste("secret")
+	if buf.String() != "secret" {
+		t.Errorf("Expected paste to be sent to PTY, got %q", buf.String())
+	}
+	if ih.lineBuffer != "" {
+		t.Errorf("Expected lineBuffer to remain empty in secret mode, got %q", ih.lineBuffer)
+	}
+}
+
 func TestInputHandler_ClearLineBuffer(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)
