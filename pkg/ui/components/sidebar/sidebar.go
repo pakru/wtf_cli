@@ -17,10 +17,9 @@ import (
 )
 
 const (
-	sidebarBorderSize  = 1
-	sidebarPaddingH    = 1
-	sidebarPaddingV    = 1
-	sidebarFooterLabel = "Up/Down Scroll | y Copy | Esc/q Close"
+	sidebarBorderSize = 1
+	sidebarPaddingH   = 1
+	sidebarPaddingV   = 1
 )
 
 // FocusTarget indicates which part of the chat sidebar has focus.
@@ -43,8 +42,7 @@ type Sidebar struct {
 	lines   []string
 	follow  bool
 
-	// Chat mode fields
-	chatMode  bool             // When true, show input area
+	// Chat fields
 	textarea  textarea.Model   // Chat input
 	focused   FocusTarget      // Input or Viewport
 	messages  []ai.ChatMessage // Persistent conversation history
@@ -53,7 +51,15 @@ type Sidebar struct {
 
 // NewSidebar creates a new sidebar component.
 func NewSidebar() *Sidebar {
-	return &Sidebar{}
+	ta := textarea.New()
+	ta.Placeholder = "Type your message..."
+	ta.SetHeight(3)
+	ta.Focus()
+
+	return &Sidebar{
+		textarea: ta,
+		focused:  FocusInput,
+	}
 }
 
 // Show displays the sidebar with a title and content.
@@ -63,11 +69,11 @@ func (s *Sidebar) Show(title, content string) {
 	s.scrollY = 0
 	s.follow = true
 
-	// Chat mode: preserve message history, only refresh view
-	if s.chatMode && len(s.messages) > 0 {
+	// Preserve message history when reopening.
+	if len(s.messages) > 0 {
 		s.RefreshView() // Re-render from existing messages
 	} else {
-		s.SetContent(content) // Non-chat or first open
+		s.SetContent(content)
 	}
 }
 
@@ -108,8 +114,8 @@ func (s *Sidebar) ShouldHandleKey(msg tea.KeyPressMsg) bool {
 		return false
 	}
 
-	// Chat mode: handle more keys when input is focused
-	if s.chatMode && s.focused == FocusInput {
+	// Handle more keys when input is focused.
+	if s.focused == FocusInput {
 		// Always handle navigation and action keys
 		switch msg.String() {
 		case "esc", "enter", "up", "down", "pgup", "pgdown", "home", "end":
@@ -130,7 +136,6 @@ func (s *Sidebar) ShouldHandleKey(msg tea.KeyPressMsg) bool {
 		return false
 	}
 
-	// Non-chat mode: existing keys
 	keyStr := msg.String()
 	switch keyStr {
 	case "esc", "up", "down", "pgup", "pgdown", "q", "y":
@@ -146,8 +151,8 @@ func (s *Sidebar) Update(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 
-	// Chat mode: handle input focus
-	if s.chatMode && s.focused == FocusInput {
+	// Handle input focus.
+	if s.focused == FocusInput {
 		switch msg.String() {
 		case "enter":
 			if !s.streaming {
@@ -174,7 +179,7 @@ func (s *Sidebar) Update(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	}
 
-	// Regular sidebar navigation (non-chat or viewport focused)
+	// Viewport-focused navigation.
 	keyStr := msg.String()
 
 	switch keyStr {
@@ -238,53 +243,7 @@ func (s *Sidebar) View() string {
 	contentWidth := s.contentWidth()
 	contentHeight := s.contentHeight()
 
-	// Chat mode: split between viewport and textarea
-	if s.chatMode {
-		return s.renderChatView(contentWidth, contentHeight)
-	}
-
-	// Non-chat mode: existing rendering
-	titleLine := truncateToWidth(s.title, contentWidth)
-	footerLine := truncateToWidth(sidebarFooterLabel, contentWidth)
-
-	lines := make([]string, 0, contentHeight)
-
-	if contentHeight >= 1 {
-		lines = append(lines, padStyled(sidebarTitleStyle.Render(titleLine), contentWidth))
-	}
-
-	bodyHeight := s.bodyHeight()
-	if bodyHeight > 0 {
-		start := s.scrollY
-		end := start + bodyHeight
-		if end > len(s.lines) {
-			end = len(s.lines)
-		}
-		for i := start; i < end; i++ {
-			lines = append(lines, padStyled(s.lines[i], contentWidth))
-		}
-		for len(lines) < 1+bodyHeight {
-			lines = append(lines, strings.Repeat(" ", contentWidth))
-		}
-	}
-
-	if contentHeight >= 2 {
-		lines = append(lines, padStyled(sidebarFooterStyle.Render(footerLine), contentWidth))
-	}
-
-	content := strings.Join(lines, "\n")
-
-	boxWidth := s.width
-	if boxWidth < 1 {
-		boxWidth = 1
-	}
-
-	box := sidebarBoxStyle.
-		Width(boxWidth).
-		Padding(sidebarPaddingV, sidebarPaddingH).
-		Render(content)
-
-	return box
+	return s.renderChatView(contentWidth, contentHeight)
 }
 
 func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
@@ -360,25 +319,6 @@ func (s *Sidebar) copyToClipboard() tea.Cmd {
 		_, _ = fmt.Fprint(os.Stdout, osc52.New(text))
 		return nil
 	}
-}
-
-// Chat mode methods
-
-// EnableChatMode switches the sidebar to interactive chat mode.
-func (s *Sidebar) EnableChatMode() {
-	s.chatMode = true
-	s.focused = FocusInput
-
-	// Initialize textarea
-	s.textarea = textarea.New()
-	s.textarea.Placeholder = "Type your message..."
-	s.textarea.SetHeight(3)
-	s.textarea.Focus()
-}
-
-// IsChatMode returns true if the sidebar is in chat mode.
-func (s *Sidebar) IsChatMode() bool {
-	return s.chatMode
 }
 
 // ToggleFocus switches focus between viewport and input.
@@ -489,12 +429,10 @@ func (s *Sidebar) SubmitMessage() (string, bool) {
 
 // RefreshView re-renders the viewport from messages.
 func (s *Sidebar) RefreshView() {
-	if s.chatMode {
-		s.content = s.RenderMessages()
-		s.reflow()
-		if s.follow {
-			s.scrollY = s.maxScroll()
-		}
+	s.content = s.RenderMessages()
+	s.reflow()
+	if s.follow {
+		s.scrollY = s.maxScroll()
 	}
 }
 
@@ -566,23 +504,9 @@ func (s *Sidebar) contentHeight() int {
 	return height
 }
 
-func (s *Sidebar) bodyHeight() int {
-	contentHeight := s.contentHeight()
-	if contentHeight < 2 {
-		return 0
-	}
-	return contentHeight - 2
-}
-
 func (s *Sidebar) maxScroll() int {
-	// Calculate effective viewport height based on mode
-	// Default: contentHeight - 2 (title + separator)
-	viewportHeight := s.contentHeight() - 2
-
-	if s.chatMode {
-		// Chat: contentHeight - 2 (title/sep) - 3 (textarea)
-		viewportHeight = s.contentHeight() - 5
-	}
+	// Chat viewport excludes title, separator, and textarea.
+	viewportHeight := s.contentHeight() - 5
 
 	if viewportHeight < 1 {
 		viewportHeight = 1

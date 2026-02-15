@@ -10,24 +10,8 @@ import (
 	"wtf_cli/pkg/ui/components/testutils"
 )
 
-func TestSidebar_ChatMode(t *testing.T) {
-	s := NewSidebar()
-
-	// Initially not in chat mode
-	if s.IsChatMode() {
-		t.Error("Expected chat mode to be false initially")
-	}
-
-	// Enable chat mode
-	s.EnableChatMode()
-	if !s.IsChatMode() {
-		t.Error("Expected chat mode to be true after EnableChatMode()")
-	}
-}
-
 func TestSidebar_AppendUserMessage(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
 	s.AppendUserMessage("Hello AI")
 
@@ -45,7 +29,6 @@ func TestSidebar_AppendUserMessage(t *testing.T) {
 
 func TestSidebar_StartAssistantMessage(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
 	s.StartAssistantMessage()
 
@@ -63,7 +46,6 @@ func TestSidebar_StartAssistantMessage(t *testing.T) {
 
 func TestSidebar_UpdateLastMessage(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
 	s.StartAssistantMessage()
 	s.UpdateLastMessage("Hello")
@@ -80,7 +62,6 @@ func TestSidebar_UpdateLastMessage(t *testing.T) {
 
 func TestSidebar_SetLastMessageContent(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
 	s.StartAssistantMessage()
 	s.UpdateLastMessage("Hello")
@@ -97,7 +78,6 @@ func TestSidebar_SetLastMessageContent(t *testing.T) {
 
 func TestSidebar_RemoveLastMessage(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
 	s.AppendUserMessage("First")
 	s.StartAssistantMessage()
@@ -114,7 +94,6 @@ func TestSidebar_RemoveLastMessage(t *testing.T) {
 
 func TestSidebar_AppendErrorMessage(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
 	s.AppendErrorMessage("Connection failed")
 
@@ -137,7 +116,6 @@ func TestSidebar_AppendErrorMessage(t *testing.T) {
 
 func TestSidebar_StreamingState(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
 	// Initially not streaming
 	if s.IsStreaming() {
@@ -159,11 +137,10 @@ func TestSidebar_StreamingState(t *testing.T) {
 
 func TestSidebar_FocusToggle(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
-	// EnableChatMode sets initial focus to input
+	// NewSidebar sets initial focus to input.
 	if !s.IsFocusedOnInput() {
-		t.Error("Expected focus on input initially after EnableChatMode()")
+		t.Error("Expected focus on input initially")
 	}
 
 	// Toggle to viewport
@@ -181,7 +158,6 @@ func TestSidebar_FocusToggle(t *testing.T) {
 
 func TestSidebar_FocusInput(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
 	s.FocusInput()
 	if !s.IsFocusedOnInput() {
@@ -191,7 +167,6 @@ func TestSidebar_FocusInput(t *testing.T) {
 
 func TestSidebar_BlurInput(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
 	s.BlurInput()
 	if s.IsFocusedOnInput() {
@@ -201,7 +176,6 @@ func TestSidebar_BlurInput(t *testing.T) {
 
 func TestSidebar_SubmitMessage(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 	s.FocusInput()
 
 	// Simulate textarea having content
@@ -223,7 +197,6 @@ func TestSidebar_SubmitMessage(t *testing.T) {
 
 func TestSidebar_SubmitMessage_Empty(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 	s.FocusInput()
 
 	// Empty textarea
@@ -240,7 +213,6 @@ func TestSidebar_SubmitMessage_Empty(t *testing.T) {
 
 func TestSidebar_MessageHistory(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
 	// Add multiple messages
 	s.AppendUserMessage("First question")
@@ -267,7 +239,6 @@ func TestSidebar_MessageHistory(t *testing.T) {
 
 func TestSidebar_GetMessages_ReturnsSlice(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
 	s.AppendUserMessage("Test")
 
@@ -282,7 +253,6 @@ func TestSidebar_GetMessages_ReturnsSlice(t *testing.T) {
 
 func TestSidebar_ConversionToChatMessage(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 
 	s.AppendUserMessage("Hello")
 	messages := s.GetMessages()
@@ -312,9 +282,8 @@ func TestSidebar_GetTitle(t *testing.T) {
 	}
 }
 
-func TestSidebar_ChatMode_ScrollKeysScrollViewport(t *testing.T) {
+func TestSidebar_ScrollKeysScrollViewport(t *testing.T) {
 	s := NewSidebar()
-	s.EnableChatMode()
 	s.SetSize(40, 15)
 
 	lines := make([]string, 0, 20)
