@@ -402,6 +402,7 @@ Available Commands:
 
 Shortcuts:
   Ctrl+T    - Toggle chat sidebar
+  Shift+Tab - Switch focus to chat panel
   Ctrl+R    - Search command history
   Ctrl+C    - Cancel current command
   Ctrl+D    - Exit terminal (press twice)

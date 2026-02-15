@@ -85,6 +85,10 @@ type CommandSubmittedMsg struct {
 // ToggleChatMsg is sent when Ctrl+T is pressed to toggle chat sidebar
 type ToggleChatMsg struct{}
 
+// FocusSwitchMsg is sent when Shift+Tab is pressed to switch focus
+// between terminal and chat sidebar.
+type FocusSwitchMsg struct{}
+
 type CtrlDPressedMsg struct{}
 
 // HandleKey processes a key message and returns whether it was handled
@@ -144,6 +148,16 @@ func (ih *InputHandler) HandleKey(msg tea.KeyPressMsg) (handled bool, cmd tea.Cm
 		// Ctrl+T - toggle chat sidebar
 		return true, func() tea.Msg {
 			return ToggleChatMsg{}
+		}
+
+	case "shift+tab":
+		// Shift+Tab - toggle focus between terminal and chat sidebar.
+		// NOTE: In normal mode, model.go intercepts shift+tab in the KeyPressMsg
+		// handler before it reaches here. This case is reachable only when the
+		// input handler is called directly (e.g. fullscreen/secret modes bypass
+		// model.go interception and route through sendKeyToPTY instead).
+		return true, func() tea.Msg {
+			return FocusSwitchMsg{}
 		}
 
 	case "ctrl+r":
@@ -441,6 +455,8 @@ func (ih *InputHandler) sendKeyToPTY(msg tea.KeyPressMsg) {
 		ih.ptyWriter.Write([]byte{26}) // ASCII SUB (Ctrl+Z)
 	case "tab":
 		ih.ptyWriter.Write([]byte{9}) // ASCII TAB
+	case "shift+tab":
+		ih.ptyWriter.Write([]byte("\x1b[Z"))
 	case "enter":
 		ih.ptyWriter.Write([]byte{13}) // CR
 	case "backspace":

@@ -15,6 +15,7 @@ type PTYViewport struct {
 	content       string
 	cursorTracker *terminal.CursorTracker
 	lineRenderer  *terminal.LineRenderer
+	showCursor    bool
 	ready         bool
 	dirty         bool // True if content changed since last View()
 }
@@ -26,6 +27,7 @@ func NewPTYViewport() PTYViewport {
 		content:       "",
 		cursorTracker: terminal.NewCursorTracker(),
 		lineRenderer:  terminal.NewLineRenderer(),
+		showCursor:    true,
 	}
 }
 
@@ -58,11 +60,20 @@ func (v *PTYViewport) AppendOutput(data []byte) {
 	v.dirty = true // Mark content as changed
 
 	// Set content with cursor overlay
-	contentWithCursor := v.cursorTracker.RenderCursorOverlay(v.content, "█")
-	v.Viewport.SetContent(contentWithCursor)
+	v.renderContent()
 
 	// Auto-scroll to bottom when new content arrives
 	v.Viewport.GotoBottom()
+}
+
+// SetCursorVisible toggles cursor overlay visibility and re-renders content.
+func (v *PTYViewport) SetCursorVisible(visible bool) {
+	if v.showCursor == visible {
+		return
+	}
+	v.showCursor = visible
+	v.renderContent()
+	v.dirty = true
 }
 
 // GetContent returns the current viewport content
@@ -145,4 +156,16 @@ func (v *PTYViewport) Stats() (totalLines, visibleLines, scrollPercent int) {
 func (v *PTYViewport) RenderLines() string {
 	view := v.View()
 	return strings.TrimSpace(view)
+}
+
+func (v *PTYViewport) renderContent() {
+	if v.cursorTracker == nil {
+		v.Viewport.SetContent(v.content)
+		return
+	}
+	cursorChar := ""
+	if v.showCursor {
+		cursorChar = "█"
+	}
+	v.Viewport.SetContent(v.cursorTracker.RenderCursorOverlay(v.content, cursorChar))
 }

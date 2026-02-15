@@ -189,6 +189,16 @@ func TestSidebar_FocusInput(t *testing.T) {
 	}
 }
 
+func TestSidebar_BlurInput(t *testing.T) {
+	s := NewSidebar()
+	s.EnableChatMode()
+
+	s.BlurInput()
+	if s.IsFocusedOnInput() {
+		t.Error("Expected focus on viewport after BlurInput()")
+	}
+}
+
 func TestSidebar_SubmitMessage(t *testing.T) {
 	s := NewSidebar()
 	s.EnableChatMode()

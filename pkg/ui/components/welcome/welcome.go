@@ -49,9 +49,9 @@ func WelcomeMessage() string {
 	// Shortcuts
 	shortcuts := []struct{ key, desc string }{
 		{"Ctrl+D", "Exit terminal (press twice)"},
-		{"Ctrl+C", "Cancel current command"},
-		{"Ctrl+Z", "Suspend process"},
+		{"Ctrl+T", "Toggle tty analysis sidebar chat"},
 		{"Ctrl+R", "Search command history"},
+		{"Shift+Tab", "Switch focus to chat panel"},
 		{"/", "Open command palette"},
 	}
 	for _, s := range shortcuts {

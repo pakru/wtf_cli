@@ -854,3 +854,168 @@ func TestModel_Update_CopilotAuthStatusMsg_PreservesSettingsPanelEdits(t *testin
 		t.Error("Expected unsaved changes to be preserved after auth status update")
 	}
 }
+
+func TestModel_FocusSwitch_ShiftTab(t *testing.T) {
+	tmpDir := t.TempDir()
+	ptyFile, err := os.CreateTemp(tmpDir, "pty")
+	if err != nil {
+		t.Fatalf("Failed to create temp PTY file: %v", err)
+	}
+	defer ptyFile.Close()
+
+	m := NewModel(ptyFile, buffer.New(100), capture.NewSessionContext(), nil)
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = newModel.(Model)
+
+	if !m.terminalFocused {
+		t.Fatal("Expected terminal to be focused by default")
+	}
+
+	// Ensure cursor rendering uses the block cursor when visible.
+	m.viewport.AppendOutput([]byte("hi\x1b[3C"))
+	if !strings.Contains(m.viewport.View(), "█") {
+		t.Fatal("Expected terminal cursor block to be visible initially")
+	}
+
+	// Shift+Tab should emit FocusSwitchMsg.
+	newModel, cmd := m.Update(testutils.TestKeyShiftTab)
+	m = newModel.(Model)
+	if cmd == nil {
+		t.Fatal("Expected Shift+Tab to emit FocusSwitchMsg command")
+	}
+	msg := cmd()
+	switchMsg, ok := msg.(input.FocusSwitchMsg)
+	if !ok {
+		t.Fatalf("Expected FocusSwitchMsg, got %T", msg)
+	}
+
+	// Process focus switch: open sidebar and focus chat input.
+	newModel, _ = m.Update(switchMsg)
+	m = newModel.(Model)
+	if m.sidebar == nil || !m.sidebar.IsVisible() {
+		t.Fatal("Expected sidebar to be visible after first Shift+Tab")
+	}
+	if m.terminalFocused {
+		t.Fatal("Expected terminal focus to be false after first Shift+Tab")
+	}
+	if !m.sidebar.IsFocusedOnInput() {
+		t.Fatal("Expected sidebar input to be focused after first Shift+Tab")
+	}
+	if strings.Contains(m.viewport.View(), "█") {
+		t.Fatal("Expected terminal cursor block to be hidden when sidebar is focused")
+	}
+
+	// Overlay should block focus switching.
+	m.resultPanel.Show("Result", "Content")
+	newModel, _ = m.Update(input.FocusSwitchMsg{})
+	m = newModel.(Model)
+	if m.terminalFocused {
+		t.Fatal("Expected focus switch to be blocked while result panel is visible")
+	}
+	if !m.sidebar.IsFocusedOnInput() {
+		t.Fatal("Expected sidebar focus to remain unchanged while overlay is visible")
+	}
+	m.resultPanel.Hide()
+
+	// Shift+Tab again should switch focus back to terminal.
+	newModel, cmd = m.Update(testutils.TestKeyShiftTab)
+	m = newModel.(Model)
+	if cmd == nil {
+		t.Fatal("Expected Shift+Tab to emit FocusSwitchMsg command")
+	}
+	msg = cmd()
+	switchMsg, ok = msg.(input.FocusSwitchMsg)
+	if !ok {
+		t.Fatalf("Expected FocusSwitchMsg, got %T", msg)
+	}
+	newModel, _ = m.Update(switchMsg)
+	m = newModel.(Model)
+	if !m.terminalFocused {
+		t.Fatal("Expected terminal focus after second Shift+Tab")
+	}
+	if m.sidebar.IsFocusedOnInput() {
+		t.Fatal("Expected sidebar input to be blurred when terminal is focused")
+	}
+	if !strings.Contains(m.viewport.View(), "█") {
+		t.Fatal("Expected terminal cursor block to be visible when terminal is focused")
+	}
+
+	// Ctrl+T close should restore terminal focus.
+	newModel, _ = m.Update(input.ToggleChatMsg{})
+	m = newModel.(Model)
+	if m.sidebar.IsVisible() {
+		t.Fatal("Expected sidebar to be hidden after Ctrl+T close")
+	}
+	if !m.terminalFocused {
+		t.Fatal("Expected terminal to remain focused after Ctrl+T close")
+	}
+
+	// Ctrl+T open path should sync terminalFocused=false.
+	newModel, _ = m.Update(input.ToggleChatMsg{})
+	m = newModel.(Model)
+	if !m.sidebar.IsVisible() {
+		t.Fatal("Expected sidebar to be visible after Ctrl+T open")
+	}
+	if m.terminalFocused {
+		t.Fatal("Expected terminal focus to be false after Ctrl+T open")
+	}
+
+	// Esc in chat should close sidebar and restore terminal focus.
+	newModel, _ = m.Update(testutils.TestKeyEsc)
+	m = newModel.(Model)
+	if m.sidebar.IsVisible() {
+		t.Fatal("Expected sidebar to be hidden after Esc in chat mode")
+	}
+	if !m.terminalFocused {
+		t.Fatal("Expected terminal focus after Esc closes sidebar")
+	}
+}
+
+func TestModel_FocusSwitch_TerminalFocusedRoutesKeysToPTY(t *testing.T) {
+	tmpDir := t.TempDir()
+	ptyFile, err := os.CreateTemp(tmpDir, "pty")
+	if err != nil {
+		t.Fatalf("Failed to create temp PTY file: %v", err)
+	}
+	defer ptyFile.Close()
+
+	m := NewModel(ptyFile, buffer.New(100), capture.NewSessionContext(), nil)
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = newModel.(Model)
+
+	// Open chat sidebar first (chat focused).
+	newModel, _ = m.Update(input.ToggleChatMsg{})
+	m = newModel.(Model)
+	if m.terminalFocused {
+		t.Fatal("Expected chat focus after opening sidebar")
+	}
+
+	// Move focus back to terminal.
+	m.setTerminalFocused(true)
+	if !m.terminalFocused {
+		t.Fatal("Expected terminal focus after setTerminalFocused(true)")
+	}
+	if m.sidebar.IsFocusedOnInput() {
+		t.Fatal("Expected sidebar input to be blurred when terminal is focused")
+	}
+
+	newModel, cmd := m.Update(testutils.NewTextKeyPressMsg("x"))
+	m = newModel.(Model)
+	if cmd != nil {
+		t.Fatal("Expected no command for regular printable PTY input")
+	}
+	if m.sidebar.IsFocusedOnInput() {
+		t.Fatal("Expected key input to bypass sidebar while terminal is focused")
+	}
+
+	if _, err := ptyFile.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("Failed to seek PTY file: %v", err)
+	}
+	data, err := io.ReadAll(ptyFile)
+	if err != nil {
+		t.Fatalf("Failed to read PTY file: %v", err)
+	}
+	if !strings.Contains(string(data), "x") {
+		t.Fatalf("Expected PTY to receive typed key, got %q", string(data))
+	}
+}
