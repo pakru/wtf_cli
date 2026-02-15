@@ -251,6 +251,49 @@ func TestStatusBarView_MessagePriority(t *testing.T) {
 	}
 }
 
+func TestStatusBarView_GitBranchShown(t *testing.T) {
+	sb := NewStatusBarView()
+	sb.SetWidth(120)
+	sb.SetDirectory("/home/user/projects/repo")
+	sb.SetModel("model-1")
+	sb.SetGitBranch("feature/foo")
+
+	rendered := ansi.Strip(sb.Render())
+	if !strings.Contains(rendered, "⎇ feature/foo") {
+		t.Fatalf("expected git branch marker in status bar, got %q", rendered)
+	}
+}
+
+func TestStatusBarView_GitBranchHiddenWhenMessageActive(t *testing.T) {
+	sb := NewStatusBarView()
+	sb.SetWidth(120)
+	sb.SetDirectory("/home/user/projects/repo")
+	sb.SetModel("model-1")
+	sb.SetGitBranch("main")
+	sb.SetMessage("Important notification")
+
+	rendered := ansi.Strip(sb.Render())
+	if strings.Contains(rendered, "⎇ main") {
+		t.Fatalf("expected git branch to be hidden while message is active, got %q", rendered)
+	}
+}
+
+func TestStatusBarView_GitBranchDroppedOnNarrowWidth(t *testing.T) {
+	sb := NewStatusBarView()
+	sb.SetWidth(58)
+	sb.SetDirectory("/home/user/repo")
+	sb.SetModel("model-1")
+	sb.SetGitBranch("very-long-feature/branch-name")
+
+	rendered := ansi.Strip(sb.Render())
+	if strings.Contains(rendered, "⎇") {
+		t.Fatalf("expected git branch marker to be fully dropped on narrow width, got %q", rendered)
+	}
+	if strings.Contains(rendered, "very-long-feature/branch-name") {
+		t.Fatalf("expected git branch text to be dropped on narrow width, got %q", rendered)
+	}
+}
+
 func TestStatusBarView_SetTheme(t *testing.T) {
 	sb := NewStatusBarView()
 	sb.SetWidth(80)

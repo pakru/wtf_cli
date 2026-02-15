@@ -60,9 +60,14 @@ type Model struct {
 	dispatcher *commands.Dispatcher
 
 	// Data
-	buffer     *buffer.CircularBuffer
-	session    *capture.SessionContext
-	currentDir string
+	buffer          *buffer.CircularBuffer
+	session         *capture.SessionContext
+	currentDir      string
+	gitBranch       string
+	lastResolvedDir string
+	// gitBranchResolver resolves a git branch label from a directory path.
+	// Injectable for tests.
+	gitBranchResolver func(string) string
 
 	// Streaming state
 	wtfStream               <-chan commands.WtfStreamEvent
@@ -136,6 +141,8 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		buffer:              buf,
 		session:             sess,
 		currentDir:          initialDir,
+		lastResolvedDir:     initialDir,
+		gitBranchResolver:   statusbar.ResolveGitBranch,
 		fullScreenPanel:     fullscreen.NewFullScreenPanel(80, 24),
 		altScreenState:      terminal.NewAltScreenState(),
 		ptyNormalizer:       terminal.NewNormalizer(),
@@ -151,6 +158,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		listenToPTY(m.ptyFile), // Start listening to PTY output
 		tickDirectory(),        // Start directory update ticker
+		resolveGitBranchCmd(m.currentDir, m.gitBranchResolver),
 	)
 }
 
@@ -162,6 +170,11 @@ func tickDirectory() tea.Cmd {
 }
 
 type directoryUpdateMsg struct{}
+
+type gitBranchMsg struct {
+	dir    string
+	branch string
+}
 
 type exitConfirmTimeoutMsg struct {
 	id int
@@ -656,10 +669,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case input.CommandSubmittedMsg:
-		if m.session == nil {
+		if strings.TrimSpace(msg.Command) == "" {
 			return m, nil
 		}
-		if strings.TrimSpace(msg.Command) == "" {
+		// Force one branch refresh on next tick so same-directory git operations
+		// (e.g. checkout/switch) are reflected in the status bar.
+		m.lastResolvedDir = ""
+		if m.session == nil {
 			return m, nil
 		}
 		m.session.AddCommand(capture.CommandRecord{
@@ -1091,8 +1107,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currentDir = cwd
 			}
 		}
+		var branchCmd tea.Cmd
+		if m.currentDir != m.lastResolvedDir {
+			m.lastResolvedDir = m.currentDir
+			branchCmd = resolveGitBranchCmd(m.currentDir, m.gitBranchResolver)
+		}
 		// Schedule next update
-		return m, tickDirectory()
+		return m, tea.Batch(tickDirectory(), branchCmd)
+
+	case gitBranchMsg:
+		if msg.dir == m.currentDir {
+			m.gitBranch = msg.branch
+		}
+		return m, nil
 	}
 
 	return m, nil
@@ -1427,6 +1454,7 @@ func (m Model) renderCanvas() *lipgloss.Canvas {
 	// Update status bar width and directory for this frame.
 	m.statusBar.SetWidth(m.width)
 	m.statusBar.SetDirectory(m.currentDir)
+	m.statusBar.SetGitBranch(m.gitBranch)
 
 	viewportHeight := render.ViewportHeight(m.height)
 	viewportWidth := m.width
@@ -1478,6 +1506,19 @@ func (m Model) renderCanvas() *lipgloss.Canvas {
 	}
 
 	return lipgloss.NewCanvas(layers...)
+}
+
+func resolveGitBranchCmd(dir string, resolver func(string) string) tea.Cmd {
+	trimmed := strings.TrimSpace(dir)
+	if trimmed == "" || resolver == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		return gitBranchMsg{
+			dir:    trimmed,
+			branch: resolver(trimmed),
+		}
+	}
 }
 
 func addOverlayLayer(layers []*lipgloss.Layer, view string, screenW, screenH, z int) []*lipgloss.Layer {
