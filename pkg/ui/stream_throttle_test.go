@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,13 +14,14 @@ import (
 func TestStreamThrottling(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	m.streamThrottleDelay = 10 * time.Millisecond
+	m.startStreamPlaceholder()
 
 	// First chunk should update immediately and start timer
 	updated, _ := m.Update(commands.WtfStreamEvent{Delta: "chunk1"})
 	m = updated.(Model)
 
-	if m.wtfContent != "chunk1" {
-		t.Errorf("Expected content 'chunk1', got %q", m.wtfContent)
+	if got := latestAssistantMessageContent(t, m); got != "chunk1" {
+		t.Errorf("Expected content 'chunk1', got %q", got)
 	}
 
 	if !m.streamThrottlePending {
@@ -32,9 +34,9 @@ func TestStreamThrottling(t *testing.T) {
 		m = updated.(Model)
 	}
 
-	// Content should accumulate
-	if m.wtfContent != "chunk1xxxxxxxxx" {
-		t.Errorf("Expected accumulated content, got %q", m.wtfContent)
+	// Content should accumulate on the streaming assistant message.
+	if got := latestAssistantMessageContent(t, m); got != "chunk1xxxxxxxxx" {
+		t.Errorf("Expected accumulated content, got %q", got)
 	}
 
 	// Timer should still be pending (only one timer set)
@@ -55,6 +57,7 @@ func TestStreamThrottling(t *testing.T) {
 func TestStreamDoneUpdates(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	m.streamThrottleDelay = 10 * time.Millisecond
+	m.startStreamPlaceholder()
 
 	// Add some content
 	updated, _ := m.Update(commands.WtfStreamEvent{Delta: "content"})
@@ -73,11 +76,15 @@ func TestStreamDoneUpdates(t *testing.T) {
 	if m.streamThrottlePending {
 		t.Error("Expected throttle to be reset after done")
 	}
+	if m.sidebar.IsStreaming() {
+		t.Error("Expected sidebar streaming state to be false after done")
+	}
 }
 
 func TestStreamErrorResetsThrottle(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	m.streamThrottleDelay = 10 * time.Millisecond
+	m.startStreamPlaceholder()
 
 	// Start stream
 	updated, _ := m.Update(commands.WtfStreamEvent{Delta: "start"})
@@ -100,4 +107,23 @@ func TestStreamErrorResetsThrottle(t *testing.T) {
 	if m.wtfStream != nil {
 		t.Error("Expected wtfStream to be nil after error")
 	}
+	if got := latestAssistantMessageContent(t, m); !strings.Contains(got, "test error") {
+		t.Errorf("Expected latest assistant message to include error, got %q", got)
+	}
+}
+
+func latestAssistantMessageContent(t *testing.T, m Model) string {
+	t.Helper()
+	if m.sidebar == nil {
+		t.Fatal("Expected sidebar to be initialized")
+	}
+	messages := m.sidebar.GetMessages()
+	if len(messages) == 0 {
+		t.Fatal("Expected at least one sidebar message")
+	}
+	latest := messages[len(messages)-1]
+	if latest.Role != "assistant" {
+		t.Fatalf("Expected latest role assistant, got %q", latest.Role)
+	}
+	return latest.Content
 }
