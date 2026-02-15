@@ -60,11 +60,11 @@ type Model struct {
 	dispatcher *commands.Dispatcher
 
 	// Data
-	buffer          *buffer.CircularBuffer
-	session         *capture.SessionContext
-	currentDir      string
-	gitBranch       string
-	lastResolvedDir string
+	buffer     *buffer.CircularBuffer
+	session    *capture.SessionContext
+	currentDir string
+	gitBranch  string
+
 	// gitBranchResolver resolves a git branch label from a directory path.
 	// Injectable for tests.
 	gitBranchResolver func(string) string
@@ -124,24 +124,24 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 	statusBar.SetModel(loadModelFromConfig())
 
 	return Model{
-		ptyFile:             ptyFile,
-		cwdFunc:             cwdFunc,
-		secretDetector:      pty.IsSecretInputMode,
-		viewport:            viewport,
-		statusBar:           statusBar,
-		inputHandler:        input.NewInputHandler(ptyFile),
-		palette:             palette.NewCommandPalette(),
-		historyPicker:       historypicker.NewHistoryPickerPanel(),
-		resultPanel:         result.NewResultPanel(),
-		settingsPanel:       settings.NewSettingsPanel(),
-		modelPicker:         picker.NewModelPickerPanel(),
-		optionPicker:        picker.NewOptionPickerPanel(),
-		sidebar:             sidebar.NewSidebar(),
-		dispatcher:          commands.NewDispatcher(),
-		buffer:              buf,
-		session:             sess,
-		currentDir:          initialDir,
-		lastResolvedDir:     initialDir,
+		ptyFile:        ptyFile,
+		cwdFunc:        cwdFunc,
+		secretDetector: pty.IsSecretInputMode,
+		viewport:       viewport,
+		statusBar:      statusBar,
+		inputHandler:   input.NewInputHandler(ptyFile),
+		palette:        palette.NewCommandPalette(),
+		historyPicker:  historypicker.NewHistoryPickerPanel(),
+		resultPanel:    result.NewResultPanel(),
+		settingsPanel:  settings.NewSettingsPanel(),
+		modelPicker:    picker.NewModelPickerPanel(),
+		optionPicker:   picker.NewOptionPickerPanel(),
+		sidebar:        sidebar.NewSidebar(),
+		dispatcher:     commands.NewDispatcher(),
+		buffer:         buf,
+		session:        sess,
+		currentDir:     initialDir,
+
 		gitBranchResolver:   statusbar.ResolveGitBranch,
 		fullScreenPanel:     fullscreen.NewFullScreenPanel(80, 24),
 		altScreenState:      terminal.NewAltScreenState(),
@@ -672,9 +672,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if strings.TrimSpace(msg.Command) == "" {
 			return m, nil
 		}
-		// Force one branch refresh on next tick so same-directory git operations
-		// (e.g. checkout/switch) are reflected in the status bar.
-		m.lastResolvedDir = ""
+
 		if m.session == nil {
 			return m, nil
 		}
@@ -1107,11 +1105,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currentDir = cwd
 			}
 		}
-		var branchCmd tea.Cmd
-		if m.currentDir != m.lastResolvedDir {
-			m.lastResolvedDir = m.currentDir
-			branchCmd = resolveGitBranchCmd(m.currentDir, m.gitBranchResolver)
-		}
+		// Always resolve git branch on every tick — the resolver is cheap
+		// (reads .git/HEAD) and this ensures branch changes from commands
+		// like `git checkout` are reflected promptly.
+		branchCmd := resolveGitBranchCmd(m.currentDir, m.gitBranchResolver)
 		// Schedule next update
 		return m, tea.Batch(tickDirectory(), branchCmd)
 

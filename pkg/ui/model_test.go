@@ -284,33 +284,29 @@ func TestResolveGitBranchCmd_EmptyDir(t *testing.T) {
 	}
 }
 
-func TestModel_Update_DirectoryUpdate_ChangeGated(t *testing.T) {
-	nextDir := "/tmp/a"
+func TestModel_Update_DirectoryUpdate_AlwaysResolvesBranch(t *testing.T) {
+	resolveCount := 0
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), func() (string, error) {
-		return nextDir, nil
+		return "/tmp/repo", nil
 	})
-
-	// Start with initial directory already marked as resolved.
-	if m.currentDir != "/tmp/a" || m.lastResolvedDir != "/tmp/a" {
-		t.Fatalf("unexpected initial dirs: current=%q resolved=%q", m.currentDir, m.lastResolvedDir)
+	m.gitBranchResolver = func(dir string) string {
+		resolveCount++
+		return "main"
 	}
 
-	// No directory change: gate should keep lastResolvedDir unchanged.
-	newModel, _ := m.Update(directoryUpdateMsg{})
+	// First tick should trigger a resolve.
+	newModel, cmd := m.Update(directoryUpdateMsg{})
 	m = newModel.(Model)
-	if m.lastResolvedDir != "/tmp/a" {
-		t.Fatalf("expected lastResolvedDir to remain %q, got %q", "/tmp/a", m.lastResolvedDir)
+	if cmd == nil {
+		t.Fatal("expected cmd from directoryUpdateMsg")
 	}
 
-	// Directory change: gate should advance to new directory.
-	nextDir = "/tmp/b"
-	newModel, _ = m.Update(directoryUpdateMsg{})
+	// Second tick (same directory) should still trigger a resolve.
+	resolveCount = 0
+	newModel, cmd = m.Update(directoryUpdateMsg{})
 	m = newModel.(Model)
-	if m.currentDir != "/tmp/b" {
-		t.Fatalf("expected currentDir %q, got %q", "/tmp/b", m.currentDir)
-	}
-	if m.lastResolvedDir != "/tmp/b" {
-		t.Fatalf("expected lastResolvedDir %q, got %q", "/tmp/b", m.lastResolvedDir)
+	if cmd == nil {
+		t.Fatal("expected cmd from second directoryUpdateMsg")
 	}
 }
 
@@ -329,26 +325,6 @@ func TestModel_Update_GitBranchMsgStaleGuard(t *testing.T) {
 	m = newModel.(Model)
 	if m.gitBranch != "feature" {
 		t.Fatalf("expected matching gitBranchMsg to apply, got %q", m.gitBranch)
-	}
-}
-
-func TestModel_Update_CommandSubmitted_ResetsLastResolvedDir(t *testing.T) {
-	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), func() (string, error) {
-		return "/tmp/repo", nil
-	})
-	m.lastResolvedDir = "/tmp/repo"
-
-	newModel, _ := m.Update(input.CommandSubmittedMsg{Command: "git checkout -b feature/test"})
-	m = newModel.(Model)
-	if m.lastResolvedDir != "" {
-		t.Fatalf("expected lastResolvedDir to be reset after submitted command, got %q", m.lastResolvedDir)
-	}
-
-	m.lastResolvedDir = "/tmp/repo"
-	newModel, _ = m.Update(input.CommandSubmittedMsg{Command: "   "})
-	m = newModel.(Model)
-	if m.lastResolvedDir != "/tmp/repo" {
-		t.Fatalf("expected empty command not to reset lastResolvedDir, got %q", m.lastResolvedDir)
 	}
 }
 
