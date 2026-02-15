@@ -398,6 +398,12 @@ func (s *Sidebar) FocusInput() {
 	s.textarea.Focus()
 }
 
+// BlurInput switches focus to the message viewport.
+func (s *Sidebar) BlurInput() {
+	s.focused = FocusViewport
+	s.textarea.Blur()
+}
+
 // IsFocusedOnInput returns true if the text input is focused.
 func (s *Sidebar) IsFocusedOnInput() bool {
 	return s.focused == FocusInput

@@ -71,9 +71,10 @@ type Model struct {
 	streamStartPending      bool
 
 	// UI state
-	width  int
-	height int
-	ready  bool
+	width           int
+	height          int
+	ready           bool
+	terminalFocused bool
 
 	exitPending   bool
 	exitConfirmID int
@@ -141,6 +142,7 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		ptyBatchMaxSize:     16384,                 // 16KB
 		ptyBatchMaxWait:     16 * time.Millisecond, // ~60fps
 		streamThrottleDelay: 50 * time.Millisecond, // Throttle stream updates
+		terminalFocused:     true,
 	}
 }
 
@@ -412,16 +414,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// Intercept Shift+Tab before sidebar/PTY routing so focus switching works
+		// regardless of current focus target.
+		if msg.String() == "shift+tab" {
+			return m, func() tea.Msg {
+				return input.FocusSwitchMsg{}
+			}
+		}
+
 		// Priority 3: Sidebar chat mode (if enabled and visible)
 		// Chat mode handles keys when focused on input
 		// This runs AFTER overlays and result panel, so they take precedence
 		if m.sidebar != nil && m.sidebar.IsChatMode() && m.sidebar.IsVisible() {
-			if cmd := m.sidebar.Update(msg); cmd != nil {
-				return m, cmd
-			}
-			// If sidebar handled key, don't fall through
-			if m.sidebar.ShouldHandleKey(msg) {
-				return m, nil
+			if !m.terminalFocused {
+				wasVisible := m.sidebar.IsVisible()
+				if cmd := m.sidebar.Update(msg); cmd != nil {
+					return m, cmd
+				}
+				if wasVisible && !m.sidebar.IsVisible() {
+					slog.Info("sidebar_close", "reason", "key")
+					m.setTerminalFocused(true)
+					m.applyLayout()
+					return m, nil
+				}
+				// If sidebar handled key, don't fall through
+				if m.sidebar.ShouldHandleKey(msg) {
+					return m, nil
+				}
 			}
 		}
 
@@ -431,6 +450,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd := m.sidebar.Update(msg)
 			if wasVisible && !m.sidebar.IsVisible() {
 				slog.Info("sidebar_close", "reason", "key")
+				m.setTerminalFocused(true)
 				m.applyLayout()
 			}
 			return m, cmd
@@ -462,6 +482,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Hide sidebar
 				m.sidebar.Hide()
 				slog.Info("sidebar_close", "reason", "ctrl_t")
+				m.setTerminalFocused(true)
 				m.applyLayout()
 			} else {
 				// Show sidebar in chat mode, preserve existing title
@@ -472,9 +493,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.sidebar.Show(title, "")
 				m.sidebar.FocusInput()
+				m.setTerminalFocused(false)
 				slog.Info("sidebar_open", "reason", "ctrl_t", "chat_mode", true, "title", title)
 				m.applyLayout()
 			}
+		}
+		return m, nil
+
+	case input.FocusSwitchMsg:
+		if m.hasBlockingOverlay() {
+			return m, nil
+		}
+		if m.sidebar == nil {
+			return m, nil
+		}
+		if m.sidebar.IsVisible() && m.sidebar.IsChatMode() {
+			m.setTerminalFocused(!m.terminalFocused)
+			return m, nil
+		}
+		if !m.sidebar.IsVisible() {
+			m.sidebar.EnableChatMode()
+			title := m.sidebar.GetTitle()
+			if title == "" {
+				title = "WTF Analysis"
+			}
+			m.sidebar.Show(title, "")
+			m.sidebar.FocusInput()
+			m.setTerminalFocused(false)
+			slog.Info("sidebar_open", "reason", "shift_tab", "chat_mode", true, "title", title)
+			m.applyLayout()
 		}
 		return m, nil
 
@@ -515,6 +562,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.sidebar.IsVisible() {
 					m.sidebar.Hide()
 					slog.Info("sidebar_close", "reason", "chat_command")
+					m.setTerminalFocused(true)
 				} else {
 					// Preserve existing title
 					m.sidebar.EnableChatMode()
@@ -524,6 +572,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					m.sidebar.Show(title, "")
 					m.sidebar.FocusInput()
+					m.setTerminalFocused(false)
 					slog.Info("sidebar_open", "reason", "chat_command", "chat_mode", true, "title", title)
 				}
 				m.applyLayout()
@@ -539,6 +588,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sidebar.Show(result.Title, "")
 				// Focus input so user can start typing immediately
 				m.sidebar.FocusInput()
+				m.setTerminalFocused(false)
 				slog.Info("sidebar_open", "title", result.Title, "streaming", true, "chat_mode", true)
 				m.applyLayout()
 			}
@@ -1125,6 +1175,48 @@ func (m *Model) exitFullScreen() {
 		m.inputHandler.SetFullScreenMode(false)
 	}
 	m.applyLayout()
+}
+
+func (m *Model) hasBlockingOverlay() bool {
+	if m.fullScreenMode {
+		return true
+	}
+	if m.settingsPanel != nil && m.settingsPanel.IsVisible() {
+		return true
+	}
+	if m.palette != nil && m.palette.IsVisible() {
+		return true
+	}
+	if m.historyPicker != nil && m.historyPicker.IsVisible() {
+		return true
+	}
+	if m.resultPanel != nil && m.resultPanel.IsVisible() {
+		return true
+	}
+	if m.modelPicker != nil && m.modelPicker.IsVisible() {
+		return true
+	}
+	if m.optionPicker != nil && m.optionPicker.IsVisible() {
+		return true
+	}
+	return false
+}
+
+func (m *Model) setTerminalFocused(focused bool) {
+	if m.terminalFocused == focused {
+		return
+	}
+	m.terminalFocused = focused
+	m.viewport.SetCursorVisible(focused)
+
+	if m.sidebar == nil || !m.sidebar.IsVisible() || !m.sidebar.IsChatMode() {
+		return
+	}
+	if focused {
+		m.sidebar.BlurInput()
+		return
+	}
+	m.sidebar.FocusInput()
 }
 
 func (m *Model) applyLayout() {

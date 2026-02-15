@@ -85,6 +85,26 @@ func TestPTYViewport_CursorRight_PadsSpaces(t *testing.T) {
 	}
 }
 
+func TestPTYViewport_SetCursorVisible_ReRendersCurrentContent(t *testing.T) {
+	vp := NewPTYViewport()
+	vp.SetSize(80, 24)
+	vp.AppendOutput([]byte("hi\x1b[3C"))
+
+	if view := vp.View(); !strings.Contains(view, "█") {
+		t.Fatalf("Expected cursor to be visible initially, got %q", view)
+	}
+
+	vp.SetCursorVisible(false)
+	if view := vp.View(); strings.Contains(view, "█") {
+		t.Fatalf("Expected cursor to be hidden after SetCursorVisible(false), got %q", view)
+	}
+
+	vp.SetCursorVisible(true)
+	if view := vp.View(); !strings.Contains(view, "█") {
+		t.Fatalf("Expected cursor to be visible after SetCursorVisible(true), got %q", view)
+	}
+}
+
 func TestPTYViewport_CursorHome_ShowsCursorAtStart(t *testing.T) {
 	vp := NewPTYViewport()
 	vp.SetSize(80, 24)

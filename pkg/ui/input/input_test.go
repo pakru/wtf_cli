@@ -769,6 +769,26 @@ func TestInputHandler_HandleKey_CtrlT(t *testing.T) {
 	}
 }
 
+func TestInputHandler_HandleKey_ShiftTab(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+
+	handled, cmd := ih.HandleKey(testutils.TestKeyShiftTab)
+	if !handled {
+		t.Error("Expected Shift+Tab to be handled")
+	}
+	if buf.Len() != 0 {
+		t.Errorf("Expected no PTY output for Shift+Tab, got %q", buf.String())
+	}
+	if cmd == nil {
+		t.Fatal("Expected command for Shift+Tab")
+	}
+	msg := cmd()
+	if _, ok := msg.(FocusSwitchMsg); !ok {
+		t.Fatalf("Expected FocusSwitchMsg, got %T", msg)
+	}
+}
+
 func TestInputHandler_FullScreenMode_BypassesCtrlT(t *testing.T) {
 	buf := &bytes.Buffer{}
 	ih := NewInputHandler(buf)
@@ -792,6 +812,23 @@ func TestInputHandler_FullScreenMode_BypassesCtrlT(t *testing.T) {
 	// Should NOT return ToggleChatMsg
 	if cmd != nil {
 		t.Error("Should not return ToggleChatMsg in fullscreen mode")
+	}
+}
+
+func TestInputHandler_FullScreenMode_BypassesShiftTab(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+	ih.SetFullScreenMode(true)
+
+	handled, cmd := ih.HandleKey(testutils.TestKeyShiftTab)
+	if !handled {
+		t.Error("Expected Shift+Tab to be handled in fullscreen mode")
+	}
+	if cmd != nil {
+		t.Error("Expected no command for Shift+Tab in fullscreen mode")
+	}
+	if buf.String() != "\x1b[Z" {
+		t.Errorf("Expected reverse tab sequence %q, got %q", "\x1b[Z", buf.String())
 	}
 }
 
@@ -845,6 +882,23 @@ func TestInputHandler_SecretMode_BypassesCtrlR(t *testing.T) {
 	}
 	if buf.Len() != 1 || buf.Bytes()[0] != 18 {
 		t.Errorf("Expected byte 18 sent to PTY, got %v", buf.Bytes())
+	}
+}
+
+func TestInputHandler_SecretMode_BypassesShiftTab(t *testing.T) {
+	buf := &bytes.Buffer{}
+	ih := NewInputHandler(buf)
+	ih.SetSecretMode(true)
+
+	handled, cmd := ih.HandleKey(testutils.TestKeyShiftTab)
+	if !handled {
+		t.Error("Expected Shift+Tab to be handled in secret mode")
+	}
+	if cmd != nil {
+		t.Error("Expected no command for Shift+Tab in secret mode")
+	}
+	if buf.String() != "\x1b[Z" {
+		t.Errorf("Expected reverse tab sequence %q, got %q", "\x1b[Z", buf.String())
 	}
 }
 

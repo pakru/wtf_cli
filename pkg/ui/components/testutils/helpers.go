@@ -49,12 +49,21 @@ func NewCtrlKeyPressMsg(char rune) tea.KeyPressMsg {
 	})
 }
 
+// NewShiftTabKeyPressMsg creates a Shift+Tab key message.
+func NewShiftTabKeyPressMsg() tea.KeyPressMsg {
+	return tea.KeyPressMsg(tea.Key{
+		Code: tea.KeyTab,
+		Mod:  tea.ModShift,
+	})
+}
+
 // Common ctrl combinations
 var (
-	TestKeyCtrlC = NewCtrlKeyPressMsg('c')
-	TestKeyCtrlD = NewCtrlKeyPressMsg('d')
-	TestKeyCtrlT = NewCtrlKeyPressMsg('t')
-	TestKeyCtrlW = NewCtrlKeyPressMsg('w')
-	TestKeyCtrlZ = NewCtrlKeyPressMsg('z')
-	TestKeyCtrlX = NewCtrlKeyPressMsg('x')
+	TestKeyCtrlC    = NewCtrlKeyPressMsg('c')
+	TestKeyCtrlD    = NewCtrlKeyPressMsg('d')
+	TestKeyCtrlT    = NewCtrlKeyPressMsg('t')
+	TestKeyCtrlW    = NewCtrlKeyPressMsg('w')
+	TestKeyCtrlZ    = NewCtrlKeyPressMsg('z')
+	TestKeyCtrlX    = NewCtrlKeyPressMsg('x')
+	TestKeyShiftTab = NewShiftTabKeyPressMsg()
 )
