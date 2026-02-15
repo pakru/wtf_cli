@@ -11,9 +11,16 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+const (
+	// DefaultGitBranchSymbol is the glyph used to display git branch status.
+	DefaultGitBranchSymbol = "⎇"
+	gitBranchPad           = " "
+)
+
 // StatusBarView handles the status bar rendering with Lipgloss
 type StatusBarView struct {
 	currentDir  string
+	gitBranch   string
 	message     string
 	model       string
 	width       int
@@ -32,6 +39,11 @@ func NewStatusBarView() *StatusBarView {
 // SetDirectory updates the current directory
 func (s *StatusBarView) SetDirectory(dir string) {
 	s.currentDir = dir
+}
+
+// SetGitBranch updates the current git branch label.
+func (s *StatusBarView) SetGitBranch(branch string) {
+	s.gitBranch = strings.TrimSpace(branch)
 }
 
 // SetMessage sets a temporary message
@@ -87,6 +99,11 @@ func (s *StatusBarView) Render() string {
 
 	leftPrefix := "[wtf_cli]"
 	leftContent := leftPrefix
+	branchAppended := false
+	branchSuffix := ""
+	if s.message == "" && s.gitBranch != "" {
+		branchSuffix = gitBranchPad + DefaultGitBranchSymbol + gitBranchPad + s.gitBranch
+	}
 
 	leftAvailable := innerWidth - rightWidth - minGap
 	if leftAvailable < 0 {
@@ -97,9 +114,18 @@ func (s *StatusBarView) Render() string {
 	if leftAvailable >= prefixWidth+1 {
 		bodyWidth := leftAvailable - prefixWidth - 1
 		if bodyWidth > 0 && leftText != "" {
-			truncated := truncatePath(leftText, bodyWidth)
-			if truncated != "" {
-				leftContent = leftPrefix + " " + truncated
+			pathText := truncatePath(leftText, bodyWidth)
+			if branchSuffix != "" {
+				branchWidth := ansi.StringWidth(branchSuffix)
+				pathWithBranch := truncatePath(leftText, bodyWidth-branchWidth)
+				if pathWithBranch != "" && ansi.StringWidth(pathWithBranch)+branchWidth <= bodyWidth {
+					leftContent = leftPrefix + " " + pathWithBranch + branchSuffix
+					branchAppended = true
+				} else if pathText != "" {
+					leftContent = leftPrefix + " " + pathText
+				}
+			} else if pathText != "" {
+				leftContent = leftPrefix + " " + pathText
 			}
 		}
 	} else if leftAvailable < prefixWidth {
@@ -116,7 +142,23 @@ func (s *StatusBarView) Render() string {
 		if allowedLeft < 0 {
 			allowedLeft = 0
 		}
-		leftContent = ansi.Truncate(leftContent, allowedLeft, "")
+		if branchAppended {
+			leftContent = leftPrefix
+			if allowedLeft >= prefixWidth+1 {
+				bodyWidth := allowedLeft - prefixWidth - 1
+				if bodyWidth > 0 && leftText != "" {
+					truncated := truncatePath(leftText, bodyWidth)
+					if truncated != "" {
+						leftContent = leftPrefix + " " + truncated
+					}
+				}
+			} else if allowedLeft < prefixWidth {
+				leftContent = ansi.Truncate(leftPrefix, allowedLeft, "")
+			}
+			branchAppended = false
+		} else {
+			leftContent = ansi.Truncate(leftContent, allowedLeft, "")
+		}
 		leftWidth = ansi.StringWidth(leftContent)
 		gap = innerWidth - leftWidth - rightWidth
 		if gap < 0 {
