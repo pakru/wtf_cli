@@ -566,9 +566,7 @@ func normalizeGoogleModelID(name string) string {
 	}
 
 	// Gemini API typically returns "models/<id>".
-	if strings.HasPrefix(id, "models/") {
-		id = strings.TrimPrefix(id, "models/")
-	}
+	id = strings.TrimPrefix(id, "models/")
 
 	// Be tolerant of fully-qualified names such as ".../models/<id>".
 	if idx := strings.LastIndex(id, "/models/"); idx >= 0 {

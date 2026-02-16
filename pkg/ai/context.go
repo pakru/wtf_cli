@@ -140,7 +140,6 @@ func wtfSystemPrompt() string {
 		"If last_command is provided, focus on that command and its output first.",
 		"If a metadata field is missing, do not assume or invent it.",
 		"Field definitions: cwd is the current working directory; last_command is the most recent captured command; last_exit_code is the exit code for last_command; output_lines is the number of lines in the output block; output may be truncated when noted.",
-		"Do not reveal internal reasoning, planning, or self-check steps. Return only the final user-facing answer.",
 		"Provide concise, actionable suggestions and likely causes.",
 		"If you need more information, ask focused questions.",
 	}, " ")
