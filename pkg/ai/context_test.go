@@ -62,8 +62,8 @@ func TestBuildWtfMessages_IncludesMetadata(t *testing.T) {
 	if messages[0].Role != "system" || messages[1].Role != "user" {
 		t.Fatalf("Expected system and user roles, got %q and %q", messages[0].Role, messages[1].Role)
 	}
-	if !strings.Contains(messages[0].Content, "Do not reveal internal reasoning") {
-		t.Fatalf("Expected no-reasoning instruction in system prompt, got %q", messages[0].Content)
+	if !strings.Contains(messages[0].Content, "You are a terminal assistant.") {
+		t.Fatalf("Expected base system prompt text, got %q", messages[0].Content)
 	}
 	if !strings.Contains(ctx.UserPrompt, "cwd: /tmp") {
 		t.Fatalf("Expected working dir in prompt, got %q", ctx.UserPrompt)
