@@ -202,6 +202,17 @@ func getProviderSettings(cfg config.Config) (model string, temperature float64, 
 		if timeout <= 0 {
 			timeout = 60
 		}
+	case "google":
+		model = cfg.Providers.Google.Model
+		if model == "" {
+			model = "gemini-3-flash-preview"
+		}
+		temperature = cfg.Providers.Google.Temperature
+		maxTokens = cfg.Providers.Google.MaxTokens
+		timeout = cfg.Providers.Google.APITimeoutSeconds
+		if timeout <= 0 {
+			timeout = 60
+		}
 	default:
 		model = cfg.OpenRouter.Model
 		temperature = cfg.OpenRouter.Temperature

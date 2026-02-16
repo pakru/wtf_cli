@@ -87,6 +87,11 @@ func getModelForProvider(cfg config.Config) string {
 			return cfg.Providers.Anthropic.Model
 		}
 		return "claude-3-5-sonnet-20241022"
+	case "google":
+		if cfg.Providers.Google.Model != "" {
+			return cfg.Providers.Google.Model
+		}
+		return "gemini-3-flash-preview"
 	default: // openrouter or unknown
 		if cfg.OpenRouter.Model != "" {
 			return cfg.OpenRouter.Model

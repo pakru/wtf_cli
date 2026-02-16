@@ -27,6 +27,7 @@ type ProvidersConfig struct {
 	OpenAI    OpenAIConfig    `json:"openai"`
 	Copilot   CopilotConfig   `json:"copilot"`
 	Anthropic AnthropicConfig `json:"anthropic"`
+	Google    GoogleConfig    `json:"google"`
 }
 
 // OpenAIConfig holds OpenAI API configuration.
@@ -51,6 +52,15 @@ type CopilotConfig struct {
 type AnthropicConfig struct {
 	APIKey            string  `json:"api_key"`
 	APIURL            string  `json:"api_url"`
+	Model             string  `json:"model"`
+	Temperature       float64 `json:"temperature"`
+	MaxTokens         int     `json:"max_tokens"`
+	APITimeoutSeconds int     `json:"api_timeout_seconds"`
+}
+
+// GoogleConfig holds Google Gemini API configuration.
+type GoogleConfig struct {
+	APIKey            string  `json:"api_key"`
 	Model             string  `json:"model"`
 	Temperature       float64 `json:"temperature"`
 	MaxTokens         int     `json:"max_tokens"`
@@ -88,6 +98,15 @@ func Default() Config {
 			Temperature:       0.7,
 			MaxTokens:         2000,
 			APITimeoutSeconds: 30,
+		},
+		Providers: ProvidersConfig{
+			Google: GoogleConfig{
+				APIKey:            "",
+				Model:             "gemini-3-flash-preview",
+				Temperature:       0.7,
+				MaxTokens:         8192,
+				APITimeoutSeconds: 60,
+			},
 		},
 		BufferSize:    2000,
 		ContextWindow: 1000,
@@ -151,7 +170,7 @@ func Save(configPath string, cfg Config) error {
 
 // SupportedProviders returns a list of supported LLM provider names.
 func SupportedProviders() []string {
-	return []string{"openrouter", "openai", "copilot", "anthropic"}
+	return []string{"openrouter", "openai", "copilot", "anthropic", "google"}
 }
 
 // IsValidProvider checks if a provider name is supported.
@@ -185,6 +204,10 @@ func (c Config) Validate() error {
 		// Copilot uses Copilot CLI authentication via the SDK, no API key validation needed here
 	case "anthropic":
 		if err := c.validateAnthropic(); err != nil {
+			return err
+		}
+	case "google":
+		if err := c.validateGoogle(); err != nil {
 			return err
 		}
 	}
@@ -265,6 +288,13 @@ func (c Config) validateAnthropic() error {
 	return nil
 }
 
+func (c Config) validateGoogle() error {
+	if strings.TrimSpace(c.Providers.Google.APIKey) == "" {
+		return fmt.Errorf("Google API key is required (set in config file)")
+	}
+	return nil
+}
+
 type configPresence struct {
 	LLMProvider *string `json:"llm_provider"`
 	OpenRouter  *struct {
@@ -277,6 +307,15 @@ type configPresence struct {
 		MaxTokens         *int     `json:"max_tokens"`
 		APITimeoutSeconds *int     `json:"api_timeout_seconds"`
 	} `json:"openrouter"`
+	Providers *struct {
+		Google *struct {
+			APIKey            *string  `json:"api_key"`
+			Model             *string  `json:"model"`
+			Temperature       *float64 `json:"temperature"`
+			MaxTokens         *int     `json:"max_tokens"`
+			APITimeoutSeconds *int     `json:"api_timeout_seconds"`
+		} `json:"google"`
+	} `json:"providers"`
 	BufferSize    *int `json:"buffer_size"`
 	ContextWindow *int `json:"context_window"`
 	StatusBar     *struct {
@@ -325,6 +364,26 @@ func applyDefaults(cfg Config, data []byte) Config {
 		}
 		if presence.OpenRouter.APITimeoutSeconds == nil || cfg.OpenRouter.APITimeoutSeconds <= 0 {
 			cfg.OpenRouter.APITimeoutSeconds = defaults.OpenRouter.APITimeoutSeconds
+		}
+	}
+
+	if presence.Providers == nil || presence.Providers.Google == nil {
+		cfg.Providers.Google = defaults.Providers.Google
+	} else {
+		if presence.Providers.Google.APIKey == nil {
+			cfg.Providers.Google.APIKey = defaults.Providers.Google.APIKey
+		}
+		if presence.Providers.Google.Model == nil || strings.TrimSpace(cfg.Providers.Google.Model) == "" {
+			cfg.Providers.Google.Model = defaults.Providers.Google.Model
+		}
+		if presence.Providers.Google.Temperature == nil {
+			cfg.Providers.Google.Temperature = defaults.Providers.Google.Temperature
+		}
+		if presence.Providers.Google.MaxTokens == nil || cfg.Providers.Google.MaxTokens <= 0 {
+			cfg.Providers.Google.MaxTokens = defaults.Providers.Google.MaxTokens
+		}
+		if presence.Providers.Google.APITimeoutSeconds == nil || cfg.Providers.Google.APITimeoutSeconds <= 0 {
+			cfg.Providers.Google.APITimeoutSeconds = defaults.Providers.Google.APITimeoutSeconds
 		}
 	}
 

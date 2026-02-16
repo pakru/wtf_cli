@@ -57,6 +57,28 @@ func TestChatHandler_buildChatMessages_WithHistory(t *testing.T) {
 	}
 }
 
+func TestChatHandler_buildChatMessages_FiltersThinkingPlaceholder(t *testing.T) {
+	ctx := NewContext(buffer.New(100), nil, "/tmp")
+	history := []ai.ChatMessage{
+		{Role: "user", Content: "Hello"},
+		{Role: "assistant", Content: "Thinking..."},
+		{Role: "assistant", Content: "Real answer"},
+	}
+
+	messages := buildChatMessages(history, ctx)
+
+	// system + developer + user + real assistant
+	if len(messages) != 4 {
+		t.Fatalf("Expected 4 messages, got %d", len(messages))
+	}
+	if messages[2].Role != "user" || messages[2].Content != "Hello" {
+		t.Fatalf("Expected preserved user message, got role=%q content=%q", messages[2].Role, messages[2].Content)
+	}
+	if messages[3].Role != "assistant" || messages[3].Content != "Real answer" {
+		t.Fatalf("Expected preserved assistant message, got role=%q content=%q", messages[3].Role, messages[3].Content)
+	}
+}
+
 func TestChatHandler_MessageCapping(t *testing.T) {
 	// Create > MaxChatHistoryMessages (15 total, cap is 10)
 	history := make([]ai.ChatMessage, MaxChatHistoryMessages+5)

@@ -17,6 +17,7 @@ const (
 	ProviderOpenAI     ProviderType = "openai"
 	ProviderCopilot    ProviderType = "copilot"
 	ProviderAnthropic  ProviderType = "anthropic"
+	ProviderGoogle     ProviderType = "google"
 )
 
 // ProviderConfig holds configuration for creating a provider.
@@ -135,6 +136,7 @@ func SupportedProviders() []ProviderType {
 		ProviderOpenAI,
 		ProviderCopilot,
 		ProviderAnthropic,
+		ProviderGoogle,
 	}
 }
 

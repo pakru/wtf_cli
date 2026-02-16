@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"wtf_cli/pkg/ai"
@@ -11,6 +12,7 @@ import (
 )
 
 const MaxChatHistoryMessages = 10
+const chatThinkingPlaceholder = "Thinking..."
 
 // ChatHandler handles the /chat command and interactive chat conversations.
 type ChatHandler struct{}
@@ -149,6 +151,10 @@ func buildChatMessages(
 
 	// Append conversation history
 	for _, msg := range history {
+		// Skip ephemeral UI placeholder messages from prompt history.
+		if msg.Role == "assistant" && strings.TrimSpace(msg.Content) == chatThinkingPlaceholder {
+			continue
+		}
 		msgs = append(msgs, ai.Message{
 			Role:    msg.Role,
 			Content: msg.Content,

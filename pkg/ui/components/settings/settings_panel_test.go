@@ -294,6 +294,56 @@ func TestSettingsPanel_ApplyField(t *testing.T) {
 	}
 }
 
+func TestSettingsPanel_BuildFields_Google(t *testing.T) {
+	withTempHome(t, nil)
+
+	sp := NewSettingsPanel()
+	cfg := config.Default()
+	cfg.LLMProvider = "google"
+	cfg.Providers.Google.APIKey = "gemini-key"
+	cfg.Providers.Google.Model = "gemini-2.5-pro"
+	cfg.Providers.Google.Temperature = 0.8
+	cfg.Providers.Google.MaxTokens = 4096
+
+	sp.Show(cfg, "/tmp/test_config.json")
+
+	_ = findFieldIndex(t, sp, "provider_status")
+	_ = findFieldIndex(t, sp, "google_api_key")
+	_ = findFieldIndex(t, sp, "google_model")
+	_ = findFieldIndex(t, sp, "google_temperature")
+	_ = findFieldIndex(t, sp, "google_max_tokens")
+
+	statusIdx := findFieldIndex(t, sp, "provider_status")
+	if got := sp.fields[statusIdx].Value; got != "✅ Ready" {
+		t.Fatalf("Expected provider status ready, got %q", got)
+	}
+}
+
+func TestSettingsPanel_ApplyField_GoogleAPIKeyRefreshesStatus(t *testing.T) {
+	withTempHome(t, nil)
+
+	sp := NewSettingsPanel()
+	cfg := config.Default()
+	cfg.LLMProvider = "google"
+	sp.Show(cfg, "/tmp/test_config.json")
+
+	statusIdx := findFieldIndex(t, sp, "provider_status")
+	if got := sp.fields[statusIdx].Value; got != "❌ Missing API key" {
+		t.Fatalf("Expected missing-key status, got %q", got)
+	}
+
+	apiKeyIdx := findFieldIndex(t, sp, "google_api_key")
+	sp.fields[apiKeyIdx].Value = "new-gemini-key"
+	sp.applyField(&sp.fields[apiKeyIdx])
+
+	if sp.config.Providers.Google.APIKey != "new-gemini-key" {
+		t.Fatalf("Expected Google API key to be updated, got %q", sp.config.Providers.Google.APIKey)
+	}
+	if got := sp.fields[statusIdx].Value; got != "✅ Ready" {
+		t.Fatalf("Expected provider status ready after API key update, got %q", got)
+	}
+}
+
 func TestSettingsPanel_View(t *testing.T) {
 	withTempHome(t, nil)
 
@@ -394,6 +444,44 @@ func TestSettingsPanel_ModelPicker(t *testing.T) {
 	sp.SetModelValue(selectMsg.ModelID)
 	if sp.config.OpenRouter.Model != "model-b" {
 		t.Errorf("Expected model 'model-b', got %q", sp.config.OpenRouter.Model)
+	}
+}
+
+func TestSettingsPanel_GoogleModelPicker(t *testing.T) {
+	withTempHome(t, nil)
+
+	sp := NewSettingsPanel()
+	cfg := config.Default()
+	cfg.LLMProvider = "google"
+	cfg.Providers.Google.APIKey = "gemini-test-key"
+	cfg.Providers.Google.Model = "gemini-2.5-flash"
+	sp.Show(cfg, "/tmp/test_config.json")
+
+	sp.selected = findFieldIndex(t, sp, "google_model")
+
+	cmd := sp.Update(testutils.TestKeyEnter)
+	if cmd == nil {
+		t.Fatal("Expected openModelPickerMsg command")
+	}
+
+	msg := cmd()
+	openMsg, ok := msg.(picker.OpenModelPickerMsg)
+	if !ok {
+		t.Fatalf("Expected picker.OpenModelPickerMsg, got %T", msg)
+	}
+	if openMsg.FieldKey != "google_model" {
+		t.Fatalf("Expected field key google_model, got %q", openMsg.FieldKey)
+	}
+	if openMsg.APIKey != "gemini-test-key" {
+		t.Fatalf("Expected Google API key in picker message, got %q", openMsg.APIKey)
+	}
+	if len(openMsg.Options) != len(ai.GetProviderModels("google")) {
+		t.Fatalf("Expected Google fallback options, got %d", len(openMsg.Options))
+	}
+
+	sp.SetGoogleModelValue("gemini-2.5-pro")
+	if sp.config.Providers.Google.Model != "gemini-2.5-pro" {
+		t.Fatalf("Expected Google model to update, got %q", sp.config.Providers.Google.Model)
 	}
 }
 

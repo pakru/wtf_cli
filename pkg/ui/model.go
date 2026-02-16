@@ -765,6 +765,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				slog.Debug("anthropic_models_fetch_skipped", "reason", "missing_api_key")
 			}
+		case "google_model":
+			if msg.APIKey != "" {
+				cmd = fetchGoogleModelsCmd(msg.APIKey)
+			} else {
+				slog.Debug("google_models_fetch_skipped", "reason", "missing_api_key")
+			}
 		}
 		return m, cmd
 
@@ -783,6 +789,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.settingsPanel.SetCopilotModelValue(msg.ModelID)
 			case "anthropic_model":
 				m.settingsPanel.SetAnthropicModelValue(msg.ModelID)
+			case "google_model":
+				m.settingsPanel.SetGoogleModelValue(msg.ModelID)
 			default:
 				// Fallback to OpenRouter model for backwards compatibility
 				m.settingsPanel.SetModelValue(msg.ModelID)
@@ -899,10 +907,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Build context and start chat stream
 		ctx := commands.NewContext(m.buffer, m.session, m.currentDir)
+		history := append([]ai.ChatMessage(nil), m.sidebar.GetMessages()...)
 		m.streamStartPending = true
 		m.streamPlaceholderActive = false
 		m.startStreamPlaceholder()
-		return m, startChatStreamCmd(ctx, m.sidebar.GetMessages())
+		return m, startChatStreamCmd(ctx, history)
 
 	case commands.WtfStreamEvent:
 		if msg.Err != nil {
@@ -1277,6 +1286,11 @@ func getModelForProvider(cfg config.Config) string {
 			return cfg.Providers.Anthropic.Model
 		}
 		return "claude-3-5-sonnet-20241022"
+	case "google":
+		if cfg.Providers.Google.Model != "" {
+			return cfg.Providers.Google.Model
+		}
+		return "gemini-3-flash-preview"
 	default: // openrouter or unknown
 		if cfg.OpenRouter.Model != "" {
 			return cfg.OpenRouter.Model
@@ -1335,6 +1349,21 @@ func fetchAnthropicModelsCmd(apiKey string) tea.Cmd {
 
 		models, err := ai.FetchAnthropicModels(ctx, apiKey)
 		return providerModelsRefreshMsg{Models: models, FieldKey: "anthropic_model", Err: err}
+	}
+}
+
+func fetchGoogleModelsCmd(apiKey string) tea.Cmd {
+	if apiKey == "" {
+		return nil
+	}
+
+	return func() tea.Msg {
+		slog.Info("google_models_fetch_start")
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		models, err := ai.FetchGoogleModels(ctx, apiKey)
+		return providerModelsRefreshMsg{Models: models, FieldKey: "google_model", Err: err}
 	}
 }
 
