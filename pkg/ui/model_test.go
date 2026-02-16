@@ -17,6 +17,7 @@ import (
 	"wtf_cli/pkg/config"
 	"wtf_cli/pkg/ui/components/historypicker"
 	"wtf_cli/pkg/ui/components/palette"
+	"wtf_cli/pkg/ui/components/picker"
 	"wtf_cli/pkg/ui/components/settings"
 	"wtf_cli/pkg/ui/components/testutils"
 	"wtf_cli/pkg/ui/input"
@@ -1100,5 +1101,86 @@ func TestModel_FocusSwitch_TerminalFocusedRoutesKeysToPTY(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "x") {
 		t.Fatalf("Expected PTY to receive typed key, got %q", string(data))
+	}
+}
+
+func TestModel_Update_OpenModelPickerMsg_GoogleStartsFetchWhenAPIKeyPresent(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	newModel, cmd := m.Update(picker.OpenModelPickerMsg{
+		Options:  ai.GetProviderModels("google"),
+		Current:  "gemini-2.5-flash",
+		FieldKey: "google_model",
+		APIKey:   "test-google-key",
+	})
+	m = newModel.(Model)
+
+	if m.modelPicker == nil || !m.modelPicker.IsVisible() {
+		t.Fatal("Expected model picker to be visible")
+	}
+	if cmd == nil {
+		t.Fatal("Expected command to fetch Google models when API key is present")
+	}
+}
+
+func TestModel_Update_OpenModelPickerMsg_GoogleSkipsFetchWithoutAPIKey(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	newModel, cmd := m.Update(picker.OpenModelPickerMsg{
+		Options:  ai.GetProviderModels("google"),
+		Current:  "gemini-2.5-flash",
+		FieldKey: "google_model",
+	})
+	m = newModel.(Model)
+
+	if m.modelPicker == nil || !m.modelPicker.IsVisible() {
+		t.Fatal("Expected model picker to be visible")
+	}
+	if cmd != nil {
+		t.Fatal("Expected no fetch command when Google API key is missing")
+	}
+}
+
+func TestModel_Update_ModelPickerSelectMsg_GoogleUpdatesSettings(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	cfg := config.Default()
+	cfg.LLMProvider = "google"
+	cfg.Providers.Google.Model = "gemini-2.5-flash"
+	m.settingsPanel.Show(cfg, "/tmp/test_config.json")
+	m.modelPicker.Show(ai.GetProviderModels("google"), cfg.Providers.Google.Model, "google_model")
+
+	newModel, cmd := m.Update(picker.ModelPickerSelectMsg{
+		ModelID:  "gemini-2.5-pro",
+		FieldKey: "google_model",
+	})
+	m = newModel.(Model)
+
+	if cmd != nil {
+		t.Fatal("Expected no command after Gemini model select")
+	}
+	if got := m.settingsPanel.GetConfig().Providers.Google.Model; got != "gemini-2.5-pro" {
+		t.Fatalf("Expected Google model to update, got %q", got)
+	}
+	if !m.settingsPanel.HasChanges() {
+		t.Fatal("Expected settings panel to be marked as changed")
+	}
+	if m.modelPicker.IsVisible() {
+		t.Fatal("Expected model picker to be hidden after selection")
+	}
+}
+
+func TestGetModelForProvider_Google(t *testing.T) {
+	cfg := config.Default()
+	cfg.LLMProvider = "google"
+	cfg.Providers.Google.Model = "gemini-2.5-pro"
+
+	if got := getModelForProvider(cfg); got != "gemini-2.5-pro" {
+		t.Fatalf("Expected configured Google model, got %q", got)
+	}
+
+	cfg.Providers.Google.Model = ""
+	if got := getModelForProvider(cfg); got != "gemini-3-flash-preview" {
+		t.Fatalf("Expected Google fallback model, got %q", got)
 	}
 }

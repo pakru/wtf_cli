@@ -87,8 +87,8 @@ func TestRegistry_IsRegistered(t *testing.T) {
 
 func TestSupportedProviders(t *testing.T) {
 	providers := SupportedProviders()
-	if len(providers) != 4 {
-		t.Fatalf("expected 4 supported providers, got %d", len(providers))
+	if len(providers) != 5 {
+		t.Fatalf("expected 5 supported providers, got %d", len(providers))
 	}
 
 	expected := map[ProviderType]bool{
@@ -96,6 +96,7 @@ func TestSupportedProviders(t *testing.T) {
 		ProviderOpenAI:     true,
 		ProviderCopilot:    true,
 		ProviderAnthropic:  true,
+		ProviderGoogle:     true,
 	}
 
 	for _, p := range providers {
@@ -115,6 +116,7 @@ func TestValidateProviderType(t *testing.T) {
 		{"openai", ProviderOpenAI, true},
 		{"copilot", ProviderCopilot, true},
 		{"anthropic", ProviderAnthropic, true},
+		{"google", ProviderGoogle, true},
 		{"invalid", "", false},
 		{"", "", false},
 		{"OPENROUTER", "", false},
@@ -145,5 +147,8 @@ func TestProviderTypeConstants(t *testing.T) {
 	}
 	if ProviderAnthropic != "anthropic" {
 		t.Errorf("ProviderAnthropic = %q, want 'anthropic'", ProviderAnthropic)
+	}
+	if ProviderGoogle != "google" {
+		t.Errorf("ProviderGoogle = %q, want 'google'", ProviderGoogle)
 	}
 }

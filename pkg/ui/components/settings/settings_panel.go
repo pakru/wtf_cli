@@ -105,6 +105,13 @@ func (sp *SettingsPanel) buildFields() {
 			SettingField{Label: "Temperature", Key: "anthropic_temperature", Value: fmt.Sprintf("%.1f", sp.config.Providers.Anthropic.Temperature), Type: "float"},
 			SettingField{Label: "Max Tokens", Key: "anthropic_max_tokens", Value: fmt.Sprintf("%d", sp.config.Providers.Anthropic.MaxTokens), Type: "int"},
 		)
+	case "google":
+		sp.fields = append(sp.fields,
+			SettingField{Label: "API Key", Key: "google_api_key", Value: sp.config.Providers.Google.APIKey, Type: "string", Masked: true},
+			SettingField{Label: "Model", Key: "google_model", Value: sp.getGoogleModel(), Type: "string"},
+			SettingField{Label: "Temperature", Key: "google_temperature", Value: fmt.Sprintf("%.1f", sp.config.Providers.Google.Temperature), Type: "float"},
+			SettingField{Label: "Max Tokens", Key: "google_max_tokens", Value: fmt.Sprintf("%d", sp.config.Providers.Google.MaxTokens), Type: "int"},
+		)
 	}
 
 	// Common fields
@@ -136,6 +143,13 @@ func (sp *SettingsPanel) getAnthropicModel() string {
 		return sp.config.Providers.Anthropic.Model
 	}
 	return "claude-3-5-sonnet-20241022"
+}
+
+func (sp *SettingsPanel) getGoogleModel() string {
+	if sp.config.Providers.Google.Model != "" {
+		return sp.config.Providers.Google.Model
+	}
+	return "gemini-3-flash-preview"
 }
 
 func (sp *SettingsPanel) getCopilotAuthStatus() string {
@@ -183,6 +197,13 @@ func (sp *SettingsPanel) getAnthropicStatus() string {
 	return "❌ Missing API key"
 }
 
+func (sp *SettingsPanel) getGoogleStatus() string {
+	if strings.TrimSpace(sp.config.Providers.Google.APIKey) != "" {
+		return "✅ Ready"
+	}
+	return "❌ Missing API key"
+}
+
 func (sp *SettingsPanel) getSelectedProviderStatus() string {
 	switch sp.config.LLMProvider {
 	case "openai":
@@ -191,6 +212,8 @@ func (sp *SettingsPanel) getSelectedProviderStatus() string {
 		return sp.getCopilotStatus()
 	case "anthropic":
 		return sp.getAnthropicStatus()
+	case "google":
+		return sp.getGoogleStatus()
 	default:
 		return sp.getOpenRouterStatus()
 	}
@@ -332,6 +355,18 @@ func (sp *SettingsPanel) Update(msg tea.KeyPressMsg) tea.Cmd {
 					Options:  options,
 					Current:  sp.config.Providers.Anthropic.Model,
 					FieldKey: "anthropic_model",
+					APIKey:   apiKey,
+				}
+			}
+		}
+		if field.Key == "google_model" {
+			options := ai.GetProviderModels("google")
+			apiKey := sp.config.Providers.Google.APIKey
+			return func() tea.Msg {
+				return picker.OpenModelPickerMsg{
+					Options:  options,
+					Current:  sp.config.Providers.Google.Model,
+					FieldKey: "google_model",
 					APIKey:   apiKey,
 				}
 			}
@@ -582,6 +617,21 @@ func (sp *SettingsPanel) applyField(field *SettingField) {
 			sp.config.Providers.Anthropic.MaxTokens = v
 		}
 
+	// Google fields
+	case "google_api_key":
+		sp.config.Providers.Google.APIKey = field.Value
+		sp.refreshProviderStatusFields()
+	case "google_model":
+		sp.config.Providers.Google.Model = field.Value
+	case "google_temperature":
+		if v, err := strconv.ParseFloat(field.Value, 64); err == nil {
+			sp.config.Providers.Google.Temperature = v
+		}
+	case "google_max_tokens":
+		if v, err := strconv.Atoi(field.Value); err == nil {
+			sp.config.Providers.Google.MaxTokens = v
+		}
+
 	// Common fields
 	case "buffer_size":
 		if v, err := strconv.Atoi(field.Value); err == nil {
@@ -716,6 +766,12 @@ func (sp *SettingsPanel) View() string {
 			} else {
 				hint = "↑↓ Navigate • Enter: Pick • e: Edit • Esc: Close"
 			}
+		} else if selectedKey == "openai_model" || selectedKey == "copilot_model" || selectedKey == "anthropic_model" || selectedKey == "google_model" {
+			if sp.changed {
+				hint = "↑↓ Navigate • Enter: Pick • s: Save • Esc: Save & Close"
+			} else {
+				hint = "↑↓ Navigate • Enter: Pick • Esc: Close"
+			}
 		} else if selectedKey == "llm_provider" || selectedKey == "log_level" || selectedKey == "log_format" {
 			if sp.changed {
 				hint = "↑↓ Navigate • Enter: Pick • s: Save • Esc: Save & Close"
@@ -809,6 +865,18 @@ func (sp *SettingsPanel) SetAnthropicModelValue(value string) {
 	sp.changed = true
 	for i := range sp.fields {
 		if sp.fields[i].Key == "anthropic_model" {
+			sp.fields[i].Value = value
+			break
+		}
+	}
+}
+
+// SetGoogleModelValue updates the Google model field.
+func (sp *SettingsPanel) SetGoogleModelValue(value string) {
+	sp.config.Providers.Google.Model = value
+	sp.changed = true
+	for i := range sp.fields {
+		if sp.fields[i].Key == "google_model" {
 			sp.fields[i].Value = value
 			break
 		}

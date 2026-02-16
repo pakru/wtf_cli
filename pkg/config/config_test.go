@@ -21,6 +21,10 @@ func TestDefault(t *testing.T) {
 		t.Errorf("Expected API URL 'https://openrouter.ai/api/v1', got %q", cfg.OpenRouter.APIURL)
 	}
 
+	if cfg.Providers.Google.Model != "gemini-3-flash-preview" {
+		t.Errorf("Expected Google model 'gemini-3-flash-preview', got %q", cfg.Providers.Google.Model)
+	}
+
 	if cfg.BufferSize != 2000 {
 		t.Errorf("Expected BufferSize 2000, got %d", cfg.BufferSize)
 	}
@@ -271,6 +275,62 @@ func TestValidate_InvalidProvider(t *testing.T) {
 	err := cfg.Validate()
 	if err == nil {
 		t.Error("Expected error for unsupported provider, got nil")
+	}
+}
+
+func TestValidate_GoogleSuccess(t *testing.T) {
+	cfg := Default()
+	cfg.LLMProvider = "google"
+	cfg.Providers.Google.APIKey = "test-google-key"
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() failed for valid Google config: %v", err)
+	}
+}
+
+func TestValidate_GoogleMissingAPIKey(t *testing.T) {
+	cfg := Default()
+	cfg.LLMProvider = "google"
+	cfg.Providers.Google.APIKey = ""
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Expected error for missing Google API key, got nil")
+	}
+}
+
+func TestLoad_GoogleDefaultsApplied(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	raw := `{
+  "llm_provider": "google",
+  "providers": {
+    "google": {
+      "api_key": "test-key"
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(raw), 0600); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Providers.Google.Model != "gemini-3-flash-preview" {
+		t.Errorf("Expected default Google model, got %q", cfg.Providers.Google.Model)
+	}
+	if cfg.Providers.Google.Temperature != 0.7 {
+		t.Errorf("Expected default Google temperature 0.7, got %f", cfg.Providers.Google.Temperature)
+	}
+	if cfg.Providers.Google.MaxTokens != 8192 {
+		t.Errorf("Expected default Google max_tokens 8192, got %d", cfg.Providers.Google.MaxTokens)
+	}
+	if cfg.Providers.Google.APITimeoutSeconds != 60 {
+		t.Errorf("Expected default Google timeout 60, got %d", cfg.Providers.Google.APITimeoutSeconds)
 	}
 }
 

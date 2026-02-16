@@ -9,6 +9,7 @@ import (
 	"time"
 
 	copilot "github.com/github/copilot-sdk/go"
+	"google.golang.org/genai"
 )
 
 func TestFetchOpenRouterModels(t *testing.T) {
@@ -230,6 +231,75 @@ func TestFetchAnthropicModels_EmptyAPIKey(t *testing.T) {
 	}
 }
 
+func TestFetchGoogleModels(t *testing.T) {
+	origFetch := fetchGoogleModelList
+	defer func() {
+		fetchGoogleModelList = origFetch
+	}()
+
+	fetchGoogleModelList = func(ctx context.Context, apiKey string) ([]*genai.Model, error) {
+		if apiKey != "test-google-key" {
+			t.Fatalf("Expected API key 'test-google-key', got %q", apiKey)
+		}
+		return []*genai.Model{
+			{
+				Name:            "models/gemini-2.5-flash",
+				DisplayName:     "Gemini 2.5 Flash",
+				Description:     "Fast Gemini model",
+				InputTokenLimit: 1048576,
+			},
+			{
+				Name:            "models/text-bison",
+				DisplayName:     "Text Bison",
+				InputTokenLimit: 8192,
+			},
+			{
+				Name:            "publishers/google/models/gemini-2.5-pro",
+				DisplayName:     "",
+				Description:     "Best reasoning model",
+				InputTokenLimit: 1048576,
+			},
+		}, nil
+	}
+
+	models, err := FetchGoogleModels(context.Background(), "test-google-key")
+	if err != nil {
+		t.Fatalf("FetchGoogleModels() error: %v", err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("Expected 2 gemini models after filtering, got %d", len(models))
+	}
+	if models[0].ID != "gemini-2.5-flash" {
+		t.Fatalf("Expected first model gemini-2.5-flash, got %q", models[0].ID)
+	}
+	if models[0].Name != "Gemini 2.5 Flash" {
+		t.Fatalf("Expected display name to be used, got %q", models[0].Name)
+	}
+	if models[1].ID != "gemini-2.5-pro" {
+		t.Fatalf("Expected second model gemini-2.5-pro, got %q", models[1].ID)
+	}
+	if models[1].Name != "gemini-2.5-pro" {
+		t.Fatalf("Expected name to fall back to ID, got %q", models[1].Name)
+	}
+}
+
+func TestFetchGoogleModels_EmptyAPIKey(t *testing.T) {
+	origFetch := fetchGoogleModelList
+	defer func() {
+		fetchGoogleModelList = origFetch
+	}()
+
+	fetchGoogleModelList = func(ctx context.Context, apiKey string) ([]*genai.Model, error) {
+		t.Fatal("fetchGoogleModelList should not be called when API key is empty")
+		return nil, nil
+	}
+
+	_, err := FetchGoogleModels(context.Background(), "")
+	if err == nil {
+		t.Fatal("Expected error for empty API key")
+	}
+}
+
 type stubCopilotClient struct {
 	startErr   error
 	listErr    error
@@ -386,6 +456,7 @@ func TestGetProviderModels(t *testing.T) {
 		{"openai", 7},
 		{"copilot", 7},
 		{"anthropic", 5},
+		{"google", 5},
 		{"unknown", 0},
 	}
 

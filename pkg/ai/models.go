@@ -15,6 +15,7 @@ import (
 	"time"
 
 	copilot "github.com/github/copilot-sdk/go"
+	"google.golang.org/genai"
 )
 
 const modelCacheFilename = "models_cache.json"
@@ -336,6 +337,27 @@ var copilotClientFactory = func() copilotSDKClient {
 	return &copilotSDKClientWrapper{client: copilot.NewClient(nil)}
 }
 
+var fetchGoogleModelList = func(ctx context.Context, apiKey string) ([]*genai.Model, error) {
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create google client: %w", err)
+	}
+
+	models := make([]*genai.Model, 0, 16)
+	for model, err := range client.Models.All(ctx) {
+		if err != nil {
+			return nil, fmt.Errorf("iterate google models: %w", err)
+		}
+		if model != nil {
+			models = append(models, model)
+		}
+	}
+	return models, nil
+}
+
 // FetchCopilotAuthStatus queries the Copilot CLI auth status via the SDK.
 func FetchCopilotAuthStatus(ctx context.Context) (CopilotAuthStatus, error) {
 	if ctx == nil {
@@ -423,6 +445,53 @@ func FetchCopilotModels(ctx context.Context) ([]ModelInfo, error) {
 	return result, nil
 }
 
+// FetchGoogleModels retrieves the model list via the Google AI SDK.
+func FetchGoogleModels(ctx context.Context, apiKey string) ([]ModelInfo, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(apiKey) == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	slog.Debug("google_models_fetch_start", "has_key", apiKey != "")
+	rawModels, err := fetchGoogleModelList(ctx, apiKey)
+	if err != nil {
+		slog.Debug("google_models_fetch_error", "error", err)
+		return nil, err
+	}
+
+	models := make([]ModelInfo, 0, len(rawModels))
+	for _, model := range rawModels {
+		id := normalizeGoogleModelID(model.Name)
+		if !strings.HasPrefix(id, "gemini-") {
+			continue
+		}
+
+		name := strings.TrimSpace(model.DisplayName)
+		if name == "" {
+			name = id
+		}
+
+		models = append(models, ModelInfo{
+			ID:            id,
+			Name:          name,
+			Description:   strings.TrimSpace(model.Description),
+			ContextLength: int(model.InputTokenLimit),
+		})
+	}
+
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].ID < models[j].ID
+	})
+
+	slog.Debug("google_models_fetch_done", "models", len(models))
+	return models, nil
+}
+
 // GetProviderModels returns a static fallback list of models for a given provider.
 // Use FetchOpenAIModels or FetchAnthropicModels for dynamic lists when API keys are available.
 func GetProviderModels(provider string) []ModelInfo {
@@ -448,6 +517,14 @@ func GetProviderModels(provider string) []ModelInfo {
 			{ID: "claude-3-opus-20240229", Name: "Claude 3 Opus", Description: "Most capable Claude 3"},
 			{ID: "claude-3-sonnet-20240229", Name: "Claude 3 Sonnet", Description: "Balanced Claude 3"},
 			{ID: "claude-3-haiku-20240307", Name: "Claude 3 Haiku", Description: "Fast Claude 3 model"},
+		}
+	case "google":
+		return []ModelInfo{
+			{ID: "gemini-3-flash-preview", Name: "Gemini 3 Flash (Preview)", Description: "Latest generation flash"},
+			{ID: "gemini-2.5-flash", Name: "Gemini 2.5 Flash", Description: "Best price-performance"},
+			{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", Description: "Advanced reasoning and coding"},
+			{ID: "gemini-2.5-flash-lite", Name: "Gemini 2.5 Flash Lite", Description: "Lightweight, low latency"},
+			{ID: "gemini-3-pro-preview", Name: "Gemini 3 Pro (Preview)", Description: "Most capable model"},
 		}
 	default:
 		return nil
@@ -480,4 +557,23 @@ func buildModelsURL(apiURL string) (string, error) {
 	parsed.Path = basePath + "/models"
 
 	return parsed.String(), nil
+}
+
+func normalizeGoogleModelID(name string) string {
+	id := strings.TrimSpace(name)
+	if id == "" {
+		return ""
+	}
+
+	// Gemini API typically returns "models/<id>".
+	if strings.HasPrefix(id, "models/") {
+		id = strings.TrimPrefix(id, "models/")
+	}
+
+	// Be tolerant of fully-qualified names such as ".../models/<id>".
+	if idx := strings.LastIndex(id, "/models/"); idx >= 0 {
+		id = id[idx+len("/models/"):]
+	}
+
+	return strings.TrimSpace(id)
 }
