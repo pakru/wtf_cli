@@ -412,9 +412,9 @@ Available Commands:
   /help     - Show this help
 
 Shortcuts:
-  Ctrl+T    - Toggle chat sidebar
-  Shift+Tab - Switch focus to chat panel
-  Ctrl+R    - Search command history
+  Ctrl+T     - Toggle chat sidebar
+  Shift+Tab  - Switch focus to chat panel
+  Ctrl+R     - Search command history
   Ctrl+C    - Cancel current command
   Ctrl+D    - Exit terminal (press twice)
   /         - Open command palette (at empty prompt)

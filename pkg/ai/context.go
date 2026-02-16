@@ -137,6 +137,7 @@ func wtfSystemPrompt() string {
 		"You are a terminal assistant.",
 		platform.PromptText(),
 		"Use the provided terminal output and metadata to diagnose issues.",
+		"When suggesting CLI commands the user can run, wrap each command in <cmd>...</cmd> tags, e.g. <cmd>ls -la</cmd>. Only wrap safe, single-line shell commands. Do not wrap multi-line scripts, code snippets, or explanations.",
 		"If last_command is provided, focus on that command and its output first.",
 		"If a metadata field is missing, do not assume or invent it.",
 		"Field definitions: cwd is the current working directory; last_command is the most recent captured command; last_exit_code is the exit code for last_command; output_lines is the number of lines in the output block; output may be truncated when noted.",

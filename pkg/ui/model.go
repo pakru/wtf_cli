@@ -647,6 +647,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inputHandler.SetHistoryPickerMode(false)
 		return m, nil
 
+	case sidebar.CommandExecuteMsg:
+		cmdText, ok := sidebar.SanitizeCommand(msg.Command)
+		if !ok {
+			return m, nil
+		}
+		if m.inputHandler != nil {
+			m.inputHandler.SendToPTY([]byte{21}) // Ctrl+U clears the line
+			m.inputHandler.SendToPTY([]byte(cmdText))
+			m.inputHandler.SetLineBuffer(cmdText)
+		}
+		m.setTerminalFocused(true)
+		return m, nil
+
 	case input.CommandSubmittedMsg:
 		if strings.TrimSpace(msg.Command) == "" {
 			return m, nil

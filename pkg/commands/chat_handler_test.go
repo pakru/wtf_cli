@@ -1,12 +1,28 @@
 package commands
 
 import (
+	"strings"
 	"testing"
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
 )
+
+func TestChatHandler_buildChatMessages_IncludesCommandTagInstruction(t *testing.T) {
+	ctx := NewContext(buffer.New(100), nil, "/tmp")
+	messages := buildChatMessages([]ai.ChatMessage{}, ctx)
+
+	if len(messages) < 2 {
+		t.Fatalf("Expected at least 2 messages, got %d", len(messages))
+	}
+	if messages[0].Role != "system" {
+		t.Fatalf("Expected first message to be system, got %q", messages[0].Role)
+	}
+	if !strings.Contains(messages[0].Content, "<cmd>") {
+		t.Fatalf("Expected chat system prompt to include <cmd> instruction, got %q", messages[0].Content)
+	}
+}
 
 func TestChatHandler_buildChatMessages_Empty(t *testing.T) {
 	ctx := NewContext(buffer.New(100), nil, "/tmp")

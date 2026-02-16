@@ -127,8 +127,19 @@ var (
 var (
 	// CodeStyle for code blocks
 	CodeStyle = lipgloss.NewStyle().
-		Foreground(ColorCode).
-		Background(ColorCodeBg)
+			Foreground(ColorCode).
+			Background(ColorCodeBg)
+
+	// CommandStyle for executable commands rendered in chat output.
+	CommandStyle = lipgloss.NewStyle().
+			Foreground(ColorTextBright).
+			Underline(true)
+
+	// CommandActiveStyle for the currently selected command line.
+	CommandActiveStyle = lipgloss.NewStyle().
+				Foreground(ColorTextBright).
+				Background(ColorBorderMuted).
+				Underline(true)
 )
 
 // Status bar styles
