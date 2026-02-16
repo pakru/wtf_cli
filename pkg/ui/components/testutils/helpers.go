@@ -57,13 +57,22 @@ func NewShiftTabKeyPressMsg() tea.KeyPressMsg {
 	})
 }
 
+// NewCtrlEnterKeyPressMsg creates a Ctrl+Enter key message.
+func NewCtrlEnterKeyPressMsg() tea.KeyPressMsg {
+	return tea.KeyPressMsg(tea.Key{
+		Code: tea.KeyEnter,
+		Mod:  tea.ModCtrl,
+	})
+}
+
 // Common ctrl combinations
 var (
-	TestKeyCtrlC    = NewCtrlKeyPressMsg('c')
-	TestKeyCtrlD    = NewCtrlKeyPressMsg('d')
-	TestKeyCtrlT    = NewCtrlKeyPressMsg('t')
-	TestKeyCtrlW    = NewCtrlKeyPressMsg('w')
-	TestKeyCtrlZ    = NewCtrlKeyPressMsg('z')
-	TestKeyCtrlX    = NewCtrlKeyPressMsg('x')
-	TestKeyShiftTab = NewShiftTabKeyPressMsg()
+	TestKeyCtrlC     = NewCtrlKeyPressMsg('c')
+	TestKeyCtrlD     = NewCtrlKeyPressMsg('d')
+	TestKeyCtrlT     = NewCtrlKeyPressMsg('t')
+	TestKeyCtrlW     = NewCtrlKeyPressMsg('w')
+	TestKeyCtrlZ     = NewCtrlKeyPressMsg('z')
+	TestKeyCtrlX     = NewCtrlKeyPressMsg('x')
+	TestKeyCtrlEnter = NewCtrlEnterKeyPressMsg()
+	TestKeyShiftTab  = NewShiftTabKeyPressMsg()
 )

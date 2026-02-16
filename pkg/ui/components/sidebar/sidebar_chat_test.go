@@ -10,6 +10,11 @@ import (
 	"wtf_cli/pkg/ui/components/testutils"
 )
 
+const (
+	applyFooterHint = "Enter Apply | Up/Down Navigate | Shift+Tab TTY | Ctrl+T Hide"
+	sendFooterHint  = "Enter Send | Up/Down Scroll | Shift+Tab TTY | Ctrl+T Hide"
+)
+
 func TestSidebar_AppendUserMessage(t *testing.T) {
 	s := NewSidebar()
 
@@ -320,5 +325,311 @@ func TestSidebar_ScrollKeysScrollViewport(t *testing.T) {
 	}
 	if !s.follow {
 		t.Error("Expected follow to be true at bottom after scrolling down")
+	}
+}
+
+func TestSidebar_CommandMarkersAreStrippedAndFooterShown(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 20)
+	s.StartAssistantMessageWithContent("Run <cmd>ls -la</cmd> to inspect files.")
+	s.Show("WTF Analysis", "")
+
+	view := s.View()
+	if strings.Contains(view, "<cmd>") || strings.Contains(view, "</cmd>") {
+		t.Fatalf("Expected command markers to be stripped in view, got:\n%s", view)
+	}
+	if !strings.Contains(view, applyFooterHint) {
+		t.Fatalf("Expected command footer hint in view, got:\n%s", view)
+	}
+	if s.cmdSelectedIdx < 0 {
+		t.Fatalf("Expected an active command selection")
+	}
+}
+
+func TestSidebar_CtrlEnterDoesNotExecuteCommand(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 20)
+	s.StartAssistantMessageWithContent("Use <cmd>git status</cmd>.")
+	s.Show("WTF Analysis", "")
+	s.FocusInput()
+
+	cmd := s.Update(testutils.TestKeyCtrlEnter)
+	if cmd != nil {
+		t.Fatal("Expected ctrl+enter to be ignored")
+	}
+}
+
+func TestSidebar_CtrlJDoesNotExecuteCommand(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 20)
+	s.StartAssistantMessageWithContent("Use <cmd>git status</cmd>.")
+	s.Show("WTF Analysis", "")
+	s.FocusInput()
+
+	cmd := s.Update(testutils.NewCtrlKeyPressMsg('j'))
+	if cmd != nil {
+		t.Fatal("Expected ctrl+j to be ignored")
+	}
+}
+
+func TestSidebar_EnterOnEmptyInputEmitsCommandExecuteMsg(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 20)
+	s.StartAssistantMessageWithContent("Use <cmd>git status</cmd>.")
+	s.Show("WTF Analysis", "")
+	s.FocusInput()
+
+	cmd := s.Update(testutils.TestKeyEnter)
+	if cmd == nil {
+		t.Fatal("Expected enter on empty input to emit command execute message")
+	}
+
+	msg := cmd()
+	execMsg, ok := msg.(CommandExecuteMsg)
+	if !ok {
+		t.Fatalf("Expected CommandExecuteMsg, got %T", msg)
+	}
+	if execMsg.Command != "git status" {
+		t.Fatalf("Expected command %q, got %q", "git status", execMsg.Command)
+	}
+}
+
+func TestSidebar_EnterWithTextSubmitsChatMessage(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 20)
+	s.StartAssistantMessageWithContent("Use <cmd>git status</cmd>.")
+	s.Show("WTF Analysis", "")
+	s.FocusInput()
+	s.textarea.SetValue("why this command?")
+
+	cmd := s.Update(testutils.TestKeyEnter)
+	if cmd == nil {
+		t.Fatal("Expected enter with non-empty input to submit chat message")
+	}
+
+	msg := cmd()
+	chatMsg, ok := msg.(ChatSubmitMsg)
+	if !ok {
+		t.Fatalf("Expected ChatSubmitMsg, got %T", msg)
+	}
+	if chatMsg.Content != "why this command?" {
+		t.Fatalf("Expected chat content %q, got %q", "why this command?", chatMsg.Content)
+	}
+}
+
+func TestSidebar_FooterHintChangesWithInputState(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 20)
+	s.StartAssistantMessageWithContent("Use <cmd>git status</cmd>.")
+	s.Show("WTF Analysis", "")
+	s.FocusInput()
+
+	view := s.View()
+	if !strings.Contains(view, applyFooterHint) {
+		t.Fatalf("Expected apply footer hint when input is empty, got:\n%s", view)
+	}
+	if strings.Contains(view, sendFooterHint) {
+		t.Fatalf("Did not expect send hint when input is empty, got:\n%s", view)
+	}
+
+	s.textarea.SetValue("hello")
+	view = s.View()
+	if !strings.Contains(view, sendFooterHint) {
+		t.Fatalf("Expected send footer hint when input has text, got:\n%s", view)
+	}
+	if strings.Contains(view, applyFooterHint) {
+		t.Fatalf("Did not expect apply hint when input has text, got:\n%s", view)
+	}
+}
+
+func TestSidebar_FooterHintRendersBelowInput(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 20)
+	s.StartAssistantMessageWithContent("Use <cmd>git status</cmd>.")
+	s.Show("WTF Analysis", "")
+	s.FocusInput()
+
+	view := stripANSICodes(s.View())
+
+	inputIdx := strings.Index(view, "Type your message...")
+	if inputIdx < 0 {
+		t.Fatalf("Expected input placeholder in view, got:\n%s", view)
+	}
+	if strings.Contains(view, "1 Type your message...") {
+		t.Fatalf("Did not expect textarea line-number gutter in view, got:\n%s", view)
+	}
+	hintIdx := strings.Index(view, applyFooterHint)
+	if hintIdx < 0 {
+		t.Fatalf("Expected footer hint in view, got:\n%s", view)
+	}
+	if hintIdx < inputIdx {
+		t.Fatalf("Expected footer hint below input (hintIdx=%d inputIdx=%d), got:\n%s", hintIdx, inputIdx, view)
+	}
+
+	var hintLine string
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, applyFooterHint) {
+			hintLine = line
+			break
+		}
+	}
+	if hintLine == "" {
+		t.Fatalf("Expected footer hint line in view, got:\n%s", view)
+	}
+	if idx := strings.Index(hintLine, applyFooterHint); idx <= 3 {
+		t.Fatalf("Expected centered footer hint with left padding, got line: %q", hintLine)
+	}
+}
+
+func TestSidebar_CommandStyleDoesNotCorruptANSI(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 20)
+	s.StartAssistantMessageWithContent("Use <cmd>ls -la</cmd> now")
+	s.Show("WTF Analysis", "")
+
+	view := s.View()
+	if strings.Contains(view, "[4;97;4m[") {
+		t.Fatalf("Detected corrupted command ANSI rendering in view: %q", view)
+	}
+}
+
+func TestSidebar_ArrowKeysStepCommandsWhenScrollSelectionStaysStable(t *testing.T) {
+	s := NewSidebar()
+	s.visible = true
+	s.width = 80
+	s.height = 20
+	s.focused = FocusInput
+	s.cmdList = []CommandEntry{
+		{Command: "docker network prune"},
+		{Command: "nmcli dev wifi"},
+		{Command: "ip -c a"},
+	}
+	// Simulate a layout where viewport-center tracking keeps command 0 selected.
+	s.cmdRenderedLines = []int{0, 50, 100}
+	s.cmdSelectedIdx = 0
+	s.lines = make([]string, s.viewportHeight()) // maxScroll == 0
+	s.scrollY = s.maxScroll()
+	s.updateActiveCommand()
+
+	if s.cmdSelectedIdx != 0 {
+		t.Fatalf("Expected initial selected command index 0, got %d", s.cmdSelectedIdx)
+	}
+
+	s.Update(testutils.TestKeyDown)
+	if s.cmdSelectedIdx != 1 {
+		t.Fatalf("Expected down key to move selection to index 1, got %d", s.cmdSelectedIdx)
+	}
+
+	s.Update(testutils.TestKeyDown)
+	if s.cmdSelectedIdx != 2 {
+		t.Fatalf("Expected down key to move selection to index 2, got %d", s.cmdSelectedIdx)
+	}
+
+	s.Update(testutils.TestKeyUp)
+	if s.cmdSelectedIdx != 1 {
+		t.Fatalf("Expected up key to move selection back to index 1, got %d", s.cmdSelectedIdx)
+	}
+
+	s.Update(testutils.TestKeyUp)
+	if s.cmdSelectedIdx != 0 {
+		t.Fatalf("Expected up key to move selection back to index 0, got %d", s.cmdSelectedIdx)
+	}
+}
+
+func TestSidebar_ArrowKeysScrollWhenInputHasText(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 20)
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+		"line 6",
+		"line 7",
+		"line 8",
+		"line 9",
+		"line 10",
+		"<cmd>docker network prune</cmd>",
+		"<cmd>docker network ls</cmd>",
+	}, "\n"))
+	s.Show("WTF Analysis", "")
+	s.FocusInput()
+
+	if s.maxScroll() < 1 {
+		t.Fatalf("Expected scrollable content, maxScroll=%d", s.maxScroll())
+	}
+
+	s.textarea.SetValue("typed")
+	if s.commandSelectionEnabled() {
+		t.Fatal("Expected command selection to be disabled when input has text")
+	}
+
+	s.scrollY = 0
+	s.Update(testutils.TestKeyDown)
+
+	if s.scrollY <= 0 {
+		t.Fatalf("Expected down key to scroll content when input has text, got scrollY=%d", s.scrollY)
+	}
+}
+
+func TestSidebar_RefreshView_SelectsLastCommandWhenFollowing(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 20)
+	s.AppendUserMessage("Explain terminal output")
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"Try:",
+		"<cmd>docker network prune</cmd>",
+		"<cmd>docker network ls</cmd>",
+		"<cmd>ip -brief addr</cmd>",
+		"<cmd>nmcli dev wifi</cmd>",
+	}, "\n"))
+	s.Show("WTF Analysis", "")
+	s.FocusInput()
+
+	if len(s.cmdList) != 4 {
+		t.Fatalf("Expected 4 commands, got %d", len(s.cmdList))
+	}
+	if s.cmdSelectedIdx != 3 {
+		t.Fatalf("Expected last command to be selected initially, got %d", s.cmdSelectedIdx)
+	}
+}
+
+func TestSidebar_NavigatesAcrossAllRenderedCommands(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 20)
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"### Suggested Actions:",
+		"<cmd>docker network prune</cmd>",
+		"<cmd>docker network ls</cmd>",
+		"<cmd>ip -brief addr</cmd>",
+		"<cmd>nmcli dev wifi</cmd>",
+	}, "\n"))
+	s.Show("WTF Analysis", "")
+	s.FocusInput()
+
+	if len(s.cmdList) != 4 {
+		t.Fatalf("Expected 4 commands, got %d", len(s.cmdList))
+	}
+	if s.cmdSelectedIdx != 3 {
+		t.Fatalf("Expected initial selected command to be last index 3, got %d", s.cmdSelectedIdx)
+	}
+
+	s.Update(testutils.TestKeyUp)
+	if s.cmdSelectedIdx != 2 {
+		t.Fatalf("Expected selection index 2 after first up, got %d", s.cmdSelectedIdx)
+	}
+	s.Update(testutils.TestKeyUp)
+	if s.cmdSelectedIdx != 1 {
+		t.Fatalf("Expected selection index 1 after second up, got %d", s.cmdSelectedIdx)
+	}
+	s.Update(testutils.TestKeyUp)
+	if s.cmdSelectedIdx != 0 {
+		t.Fatalf("Expected selection index 0 after third up, got %d", s.cmdSelectedIdx)
+	}
+
+	s.Update(testutils.TestKeyDown)
+	if s.cmdSelectedIdx != 1 {
+		t.Fatalf("Expected selection index 1 after down, got %d", s.cmdSelectedIdx)
 	}
 }

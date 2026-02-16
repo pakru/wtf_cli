@@ -20,6 +20,7 @@ const (
 	sidebarBorderSize = 1
 	sidebarPaddingH   = 1
 	sidebarPaddingV   = 1
+	sidebarTextareaH  = 2
 )
 
 // FocusTarget indicates which part of the chat sidebar has focus.
@@ -43,22 +44,30 @@ type Sidebar struct {
 	follow  bool
 
 	// Chat fields
-	textarea  textarea.Model   // Chat input
-	focused   FocusTarget      // Input or Viewport
-	messages  []ai.ChatMessage // Persistent conversation history
-	streaming bool             // True while assistant response streaming
+	textarea         textarea.Model   // Chat input
+	focused          FocusTarget      // Input or Viewport
+	messages         []ai.ChatMessage // Persistent conversation history
+	streaming        bool             // True while assistant response streaming
+	cmdSelectedIdx   int              // Active command index (-1 = none)
+	cmdList          []CommandEntry   // Commands extracted from assistant messages
+	cmdRawLines      []int            // Raw line indices of command entries in stripped content
+	cmdRenderedLines []int            // Rendered line indices corresponding to cmdList entries
+	cmdDirty         bool             // True when command extraction needs refresh
 }
 
 // NewSidebar creates a new sidebar component.
 func NewSidebar() *Sidebar {
 	ta := textarea.New()
 	ta.Placeholder = "Type your message..."
-	ta.SetHeight(3)
+	ta.ShowLineNumbers = false
+	ta.SetHeight(sidebarTextareaH)
 	ta.Focus()
 
 	return &Sidebar{
-		textarea: ta,
-		focused:  FocusInput,
+		textarea:       ta,
+		focused:        FocusInput,
+		cmdSelectedIdx: -1,
+		cmdDirty:       true,
 	}
 }
 
@@ -97,15 +106,24 @@ func (s *Sidebar) SetSize(width, height int) {
 	s.width = width
 	s.height = height
 	s.reflow()
+	s.updateActiveCommand()
 }
 
 // SetContent updates the sidebar content.
 func (s *Sidebar) SetContent(content string) {
 	s.content = content
+	if len(s.messages) == 0 {
+		s.cmdList = nil
+		s.cmdRawLines = nil
+		s.cmdRenderedLines = nil
+		s.cmdSelectedIdx = -1
+		s.cmdDirty = false
+	}
 	s.reflow()
 	if s.follow {
 		s.scrollY = s.maxScroll()
 	}
+	s.updateActiveCommand()
 }
 
 // ShouldHandleKey returns true when the sidebar should intercept the key.
@@ -138,7 +156,7 @@ func (s *Sidebar) ShouldHandleKey(msg tea.KeyPressMsg) bool {
 
 	keyStr := msg.String()
 	switch keyStr {
-	case "esc", "up", "down", "pgup", "pgdown", "q", "y":
+	case "esc", "enter", "up", "down", "pgup", "pgdown", "q", "y":
 		return true
 	}
 
@@ -162,6 +180,10 @@ func (s *Sidebar) Update(msg tea.KeyPressMsg) tea.Cmd {
 					return func() tea.Msg {
 						return ChatSubmitMsg{Content: content}
 					}
+				}
+				// When input is empty, Enter applies the selected command.
+				if s.canApplySelectedCommand() {
+					return s.commandExecuteCmd()
 				}
 			}
 			return nil
@@ -187,6 +209,12 @@ func (s *Sidebar) Update(msg tea.KeyPressMsg) tea.Cmd {
 		s.Hide()
 		return nil
 
+	case "enter":
+		if s.canApplySelectedCommand() {
+			return s.commandExecuteCmd()
+		}
+		return nil
+
 	case "up", "down", "pgup", "pgdown":
 		return s.handleScroll(keyStr)
 
@@ -199,6 +227,17 @@ func (s *Sidebar) Update(msg tea.KeyPressMsg) tea.Cmd {
 
 // handleScroll processes scroll key events and returns nil command.
 func (s *Sidebar) handleScroll(key string) tea.Cmd {
+	if s.commandSelectionEnabled() {
+		switch key {
+		case "up":
+			s.stepCommandSelection(-1)
+			return nil
+		case "down":
+			s.stepCommandSelection(1)
+			return nil
+		}
+	}
+
 	maxScroll := s.maxScroll()
 
 	switch key {
@@ -226,12 +265,19 @@ func (s *Sidebar) handleScroll(key string) tea.Cmd {
 		s.follow = s.scrollY >= maxScroll
 	}
 
+	s.updateActiveCommand()
+
 	return nil
 }
 
 // ChatSubmitMsg is returned when the user submits a chat message.
 type ChatSubmitMsg struct {
 	Content string
+}
+
+// CommandExecuteMsg is emitted when a selected command should be applied to PTY input.
+type CommandExecuteMsg struct {
+	Command string
 }
 
 // View renders the sidebar.
@@ -248,16 +294,20 @@ func (s *Sidebar) View() string {
 
 func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
 	titleLine := truncateToWidth(s.title, contentWidth)
-
-	const textareaHeight = 3
-	const borderLines = 2 // title + separator
-
-	viewportHeight := contentHeight - textareaHeight - borderLines
-	if viewportHeight < 1 {
-		viewportHeight = 1
-	}
+	viewportHeight := s.viewportHeight()
 
 	lines := make([]string, 0, contentHeight)
+	commandLineSet := make(map[int]struct{}, len(s.cmdRenderedLines))
+	for _, idx := range s.cmdRenderedLines {
+		if idx >= 0 {
+			commandLineSet[idx] = struct{}{}
+		}
+	}
+
+	activeCommandLine := -1
+	if s.commandSelectionEnabled() && s.cmdSelectedIdx >= 0 && s.cmdSelectedIdx < len(s.cmdRenderedLines) {
+		activeCommandLine = s.cmdRenderedLines[s.cmdSelectedIdx]
+	}
 
 	// Title
 	if contentHeight >= 1 {
@@ -272,7 +322,16 @@ func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
 			end = len(s.lines)
 		}
 		for i := start; i < end; i++ {
-			lines = append(lines, padStyled(s.lines[i], contentWidth))
+			line := s.lines[i]
+			if _, ok := commandLineSet[i]; ok {
+				plain := stripANSICodes(line)
+				if activeCommandLine == i {
+					line = sidebarCommandActiveStyle.Render(plain)
+				} else {
+					line = sidebarCommandStyle.Render(plain)
+				}
+			}
+			lines = append(lines, padStyled(line, contentWidth))
 		}
 		// Pad remaining viewport space
 		for len(lines) < 1+viewportHeight {
@@ -288,12 +347,28 @@ func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
 	textareaView := s.textarea.View()
 	textareaLines := strings.Split(textareaView, "\n")
 	for i, line := range textareaLines {
-		if i >= textareaHeight {
+		if i >= sidebarTextareaH {
 			break
 		}
 		lines = append(lines, padStyled(line, contentWidth))
 	}
-	// Pad remaining textarea space if needed
+	for i := len(textareaLines); i < sidebarTextareaH; i++ {
+		lines = append(lines, strings.Repeat(" ", contentWidth))
+	}
+
+	// Shortcut hint goes at the very bottom, under the input.
+	if s.shouldShowCommandFooter() {
+		footerText := truncateToWidth(s.commandFooterText(), contentWidth)
+		footer := sidebarFooterStyle.
+			Width(contentWidth).
+			Align(lipgloss.Center).
+			Render(footerText)
+		lines = append(lines, footer)
+	}
+
+	if len(lines) > contentHeight {
+		lines = lines[:contentHeight]
+	}
 	for len(lines) < contentHeight {
 		lines = append(lines, strings.Repeat(" ", contentWidth))
 	}
@@ -314,10 +389,23 @@ func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
 }
 
 func (s *Sidebar) copyToClipboard() tea.Cmd {
-	text := s.content
+	text := StripCommandMarkers(s.content)
 	return func() tea.Msg {
 		_, _ = fmt.Fprint(os.Stdout, osc52.New(text))
 		return nil
+	}
+}
+
+func (s *Sidebar) commandExecuteCmd() tea.Cmd {
+	if !s.canApplySelectedCommand() {
+		return nil
+	}
+	if s.cmdSelectedIdx < 0 || s.cmdSelectedIdx >= len(s.cmdList) {
+		return nil
+	}
+	command := s.cmdList[s.cmdSelectedIdx].Command
+	return func() tea.Msg {
+		return CommandExecuteMsg{Command: command}
 	}
 }
 
@@ -365,6 +453,7 @@ func (s *Sidebar) AppendUserMessage(content string) {
 		Role:    "user",
 		Content: content,
 	})
+	s.cmdDirty = true
 }
 
 // StartAssistantMessage creates a new empty assistant message.
@@ -373,6 +462,7 @@ func (s *Sidebar) StartAssistantMessage() {
 		Role:    "assistant",
 		Content: "",
 	})
+	s.cmdDirty = true
 }
 
 // StartAssistantMessageWithContent creates a new assistant message with content.
@@ -381,6 +471,7 @@ func (s *Sidebar) StartAssistantMessageWithContent(content string) {
 		Role:    "assistant",
 		Content: content,
 	})
+	s.cmdDirty = true
 }
 
 // AppendErrorMessage adds an error message to the chat.
@@ -389,12 +480,14 @@ func (s *Sidebar) AppendErrorMessage(errMsg string) {
 		Role:    "assistant",
 		Content: errorPrefix() + errMsg,
 	})
+	s.cmdDirty = true
 }
 
 // UpdateLastMessage appends delta to the last assistant message.
 func (s *Sidebar) UpdateLastMessage(delta string) {
 	if len(s.messages) > 0 {
 		s.messages[len(s.messages)-1].Content += delta
+		s.cmdDirty = true
 	}
 }
 
@@ -402,6 +495,7 @@ func (s *Sidebar) UpdateLastMessage(delta string) {
 func (s *Sidebar) SetLastMessageContent(content string) {
 	if len(s.messages) > 0 {
 		s.messages[len(s.messages)-1].Content = content
+		s.cmdDirty = true
 	}
 }
 
@@ -409,6 +503,7 @@ func (s *Sidebar) SetLastMessageContent(content string) {
 func (s *Sidebar) RemoveLastMessage() {
 	if len(s.messages) > 0 {
 		s.messages = s.messages[:len(s.messages)-1]
+		s.cmdDirty = true
 	}
 }
 
@@ -433,7 +528,10 @@ func (s *Sidebar) RefreshView() {
 	s.reflow()
 	if s.follow {
 		s.scrollY = s.maxScroll()
+		s.selectLastCommand()
+		return
 	}
+	s.updateActiveCommand()
 }
 
 // RenderMessages renders all messages as markdown.
@@ -472,20 +570,69 @@ func (s *Sidebar) HandleMouse(msg tea.MouseMsg) tea.Cmd {
 	return nil
 }
 
+// RefreshCommands rebuilds extracted command metadata when command state is dirty.
+func (s *Sidebar) RefreshCommands() {
+	if !s.cmdDirty {
+		return
+	}
+
+	s.cmdList = s.cmdList[:0]
+	s.cmdRawLines = s.cmdRawLines[:0]
+
+	if len(s.messages) == 0 {
+		s.cmdDirty = false
+		s.cmdSelectedIdx = -1
+		return
+	}
+
+	currentLine := 0
+	for i, msg := range s.messages {
+		if i > 0 {
+			currentLine += 2 // blank line spacing between messages
+		}
+		if msg.Role == "user" && i > 0 {
+			currentLine += 2 // separator + blank line before user messages
+		}
+
+		if msg.Role == "assistant" {
+			entries := ExtractCommands(msg.Content)
+			for _, entry := range entries {
+				lineOffset := 0
+				if entry.SourceIndex > 0 && entry.SourceIndex <= len(msg.Content) {
+					lineOffset = strings.Count(msg.Content[:entry.SourceIndex], "\n")
+				}
+				s.cmdList = append(s.cmdList, entry)
+				s.cmdRawLines = append(s.cmdRawLines, currentLine+lineOffset)
+			}
+		}
+
+		currentLine += strings.Count(msg.Content, "\n")
+	}
+
+	s.cmdDirty = false
+}
+
 func (s *Sidebar) reflow() {
 	width := s.contentWidth()
 	if width <= 0 {
 		s.lines = nil
 		s.scrollY = 0
+		s.cmdRenderedLines = nil
+		s.cmdSelectedIdx = -1
 		return
 	}
-	s.lines = renderMarkdown(s.content, width)
+
+	s.RefreshCommands()
+	content := StripCommandMarkers(s.content)
+	s.lines, s.cmdRenderedLines = renderMarkdownWithCommandLines(content, width, s.cmdRawLines)
+
 	if s.scrollY > s.maxScroll() {
 		s.scrollY = s.maxScroll()
 	}
 	if s.scrollY < 0 {
 		s.scrollY = 0
 	}
+	s.updateActiveCommand()
 }
 
 func (s *Sidebar) contentWidth() int {
@@ -505,12 +652,7 @@ func (s *Sidebar) contentHeight() int {
 }
 
 func (s *Sidebar) maxScroll() int {
-	// Chat viewport excludes title, separator, and textarea.
-	viewportHeight := s.contentHeight() - 5
-
-	if viewportHeight < 1 {
-		viewportHeight = 1
-	}
+	viewportHeight := s.viewportHeight()
 
 	max := len(s.lines) - viewportHeight
 	if max < 0 {
@@ -519,12 +661,179 @@ func (s *Sidebar) maxScroll() int {
 	return max
 }
 
+func (s *Sidebar) chromeLines() int {
+	lines := 1 + 1 + sidebarTextareaH // title + separator + textarea
+	if s.shouldShowCommandFooter() {
+		lines++
+	}
+	return lines
+}
+
+func (s *Sidebar) viewportHeight() int {
+	viewportHeight := s.contentHeight() - s.chromeLines()
+	if viewportHeight < 1 {
+		return 1
+	}
+	return viewportHeight
+}
+
+func (s *Sidebar) shouldShowCommandFooter() bool {
+	return len(s.cmdList) > 0
+}
+
+func (s *Sidebar) commandFooterText() string {
+	if s.canApplySelectedCommand() {
+		return "Enter Apply | Up/Down Navigate | Shift+Tab TTY | Ctrl+T Hide"
+	}
+	return "Enter Send | Up/Down Scroll | Shift+Tab TTY | Ctrl+T Hide"
+}
+
+func (s *Sidebar) commandSelectionEnabled() bool {
+	return !s.streaming && s.textarea.Value() == "" && len(s.cmdList) > 0
+}
+
+func (s *Sidebar) canApplySelectedCommand() bool {
+	if !s.commandSelectionEnabled() {
+		return false
+	}
+	if s.cmdSelectedIdx < 0 || s.cmdSelectedIdx >= len(s.cmdList) {
+		return false
+	}
+	if s.cmdSelectedIdx >= len(s.cmdRenderedLines) {
+		return false
+	}
+	return s.cmdRenderedLines[s.cmdSelectedIdx] >= 0
+}
+
+func (s *Sidebar) updateActiveCommand() {
+	if len(s.cmdRenderedLines) == 0 || len(s.cmdList) == 0 {
+		s.cmdSelectedIdx = -1
+		return
+	}
+
+	center := s.scrollY + s.viewportHeight()/2
+	bestIdx := -1
+	bestDistance := 1 << 30
+
+	for i, lineIdx := range s.cmdRenderedLines {
+		if i >= len(s.cmdList) || lineIdx < 0 {
+			continue
+		}
+		distance := lineIdx - center
+		if distance < 0 {
+			distance = -distance
+		}
+		if distance < bestDistance {
+			bestDistance = distance
+			bestIdx = i
+		}
+	}
+
+	s.cmdSelectedIdx = bestIdx
+}
+
+func (s *Sidebar) stepCommandSelection(delta int) {
+	if delta == 0 || len(s.cmdList) == 0 {
+		return
+	}
+
+	isSelectable := func(i int) bool {
+		return i >= 0 && i < len(s.cmdRenderedLines) && s.cmdRenderedLines[i] >= 0
+	}
+
+	hasSelectable := false
+	for i := range s.cmdList {
+		if isSelectable(i) {
+			hasSelectable = true
+			break
+		}
+	}
+	if !hasSelectable {
+		return
+	}
+
+	idx := s.cmdSelectedIdx
+	if idx < 0 || !isSelectable(idx) {
+		if delta > 0 {
+			for i := 0; i < len(s.cmdList); i++ {
+				if isSelectable(i) {
+					idx = i
+					break
+				}
+			}
+		} else {
+			for i := len(s.cmdList) - 1; i >= 0; i-- {
+				if isSelectable(i) {
+					idx = i
+					break
+				}
+			}
+		}
+	}
+
+	next := idx + delta
+	for next >= 0 && next < len(s.cmdList) {
+		if isSelectable(next) {
+			break
+		}
+		next += delta
+	}
+	if next < 0 || next >= len(s.cmdList) {
+		return
+	}
+	if next == s.cmdSelectedIdx {
+		return
+	}
+
+	s.cmdSelectedIdx = next
+	s.revealSelectedCommand()
+}
+
+func (s *Sidebar) selectLastCommand() {
+	for i := len(s.cmdRenderedLines) - 1; i >= 0; i-- {
+		if s.cmdRenderedLines[i] < 0 {
+			continue
+		}
+		s.cmdSelectedIdx = i
+		s.revealSelectedCommand()
+		return
+	}
+	s.cmdSelectedIdx = -1
+}
+
+func (s *Sidebar) revealSelectedCommand() {
+	if s.cmdSelectedIdx < 0 || s.cmdSelectedIdx >= len(s.cmdRenderedLines) {
+		return
+	}
+	lineIdx := s.cmdRenderedLines[s.cmdSelectedIdx]
+	if lineIdx < 0 {
+		return
+	}
+
+	target := lineIdx - s.viewportHeight()/2
+	if target < 0 {
+		target = 0
+	}
+	maxScroll := s.maxScroll()
+	if target > maxScroll {
+		target = maxScroll
+	}
+
+	s.scrollY = target
+	s.follow = s.scrollY >= maxScroll
+}
+
 type markdownToken struct {
 	text string
 	bold bool
 }
 
 func renderMarkdown(content string, width int) []string {
+	lines, _ := renderMarkdownWithCommandLines(content, width, nil)
+	return lines
+}
+
+func renderMarkdownWithCommandLines(content string, width int, commandRawLines []int) ([]string, []int) {
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
 	normalized = sanitizeContent(normalized)
@@ -532,6 +841,27 @@ func renderMarkdown(content string, width int) []string {
 	normalized = strings.ReplaceAll(normalized, "<br/>", "\n")
 	normalized = strings.ReplaceAll(normalized, "<br />", "\n")
 	rawLines := strings.Split(normalized, "\n")
+
+	commandRawLineSet := make(map[int]struct{}, len(commandRawLines))
+	for _, rawLine := range commandRawLines {
+		if rawLine >= 0 {
+			commandRawLineSet[rawLine] = struct{}{}
+		}
+	}
+	rawLineToRendered := make(map[int]int, len(commandRawLines))
+	markCommandLine := func(rawLine, start, count int) {
+		if _, ok := commandRawLineSet[rawLine]; !ok {
+			return
+		}
+		if _, exists := rawLineToRendered[rawLine]; exists {
+			return
+		}
+		if count <= 0 {
+			rawLineToRendered[rawLine] = -1
+			return
+		}
+		rawLineToRendered[rawLine] = start
+	}
 
 	var rendered []string
 	inCode := false
@@ -546,11 +876,15 @@ func renderMarkdown(content string, width int) []string {
 		}
 
 		if inCode {
-			rendered = append(rendered, renderCodeLine(line, width)...)
+			start := len(rendered)
+			chunk := renderCodeLine(line, width)
+			rendered = append(rendered, chunk...)
+			markCommandLine(i, start, len(chunk))
 			continue
 		}
 
 		if isTableRow(line) {
+			blockStart := i
 			block := []string{}
 			for i < len(rawLines) && isTableRow(rawLines[i]) {
 				block = append(block, rawLines[i])
@@ -572,18 +906,35 @@ func renderMarkdown(content string, width int) []string {
 					header = true
 					rows = append(rows[:1], rows[2:]...)
 				}
-				rendered = append(rendered, renderTable(rows, header, width)...)
+				start := len(rendered)
+				chunk := renderTable(rows, header, width)
+				rendered = append(rendered, chunk...)
+				for rawLine := blockStart; rawLine <= i; rawLine++ {
+					markCommandLine(rawLine, start, len(chunk))
+				}
 				continue
 			}
 		}
 
-		rendered = append(rendered, renderMarkdownLine(line, width)...)
+		start := len(rendered)
+		chunk := renderMarkdownLine(line, width)
+		rendered = append(rendered, chunk...)
+		markCommandLine(i, start, len(chunk))
 	}
 
 	if len(rendered) == 0 {
-		return []string{""}
+		rendered = []string{""}
 	}
-	return rendered
+
+	cmdRenderedLines := make([]int, 0, len(commandRawLines))
+	for _, rawLine := range commandRawLines {
+		if idx, ok := rawLineToRendered[rawLine]; ok {
+			cmdRenderedLines = append(cmdRenderedLines, idx)
+			continue
+		}
+		cmdRenderedLines = append(cmdRenderedLines, -1)
+	}
+	return rendered, cmdRenderedLines
 }
 
 func renderMarkdownLine(line string, width int) []string {
@@ -1008,6 +1359,55 @@ func sanitizeContent(content string) string {
 	return sb.String()
 }
 
+func stripANSICodes(s string) string {
+	if s == "" {
+		return s
+	}
+
+	var sb strings.Builder
+	sb.Grow(len(s))
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if ch == 0x1b { // ESC
+			if i+1 >= len(s) {
+				continue
+			}
+			next := s[i+1]
+			switch next {
+			case '[': // CSI
+				i += 2
+				for i < len(s) {
+					ch = s[i]
+					if ch >= 0x40 && ch <= 0x7E {
+						break
+					}
+					i++
+				}
+			case ']': // OSC
+				i += 2
+				for i < len(s) {
+					if s[i] == 0x07 {
+						break
+					}
+					if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
+						i++
+						break
+					}
+					i++
+				}
+			default:
+				i++
+			}
+			continue
+		}
+
+		sb.WriteByte(ch)
+	}
+
+	return sb.String()
+}
+
 func messagePrefix(role string) string {
 	useEmoji := runtime.GOOS != "darwin"
 	switch role {
@@ -1036,9 +1436,11 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(styles.ColorBorder)
 
-	sidebarTitleStyle  = styles.TitleStyle
-	sidebarTextStyle   = styles.TextStyle
-	sidebarBoldStyle   = styles.TextBoldStyle
-	sidebarCodeStyle   = styles.CodeStyle
-	sidebarFooterStyle = styles.FooterStyle
+	sidebarTitleStyle         = styles.TitleStyle
+	sidebarTextStyle          = styles.TextStyle
+	sidebarBoldStyle          = styles.TextBoldStyle
+	sidebarCodeStyle          = styles.CodeStyle
+	sidebarFooterStyle        = styles.FooterStyle
+	sidebarCommandStyle       = styles.CommandStyle
+	sidebarCommandActiveStyle = styles.CommandActiveStyle
 )

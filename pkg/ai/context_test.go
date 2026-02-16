@@ -65,6 +65,9 @@ func TestBuildWtfMessages_IncludesMetadata(t *testing.T) {
 	if !strings.Contains(messages[0].Content, "You are a terminal assistant.") {
 		t.Fatalf("Expected base system prompt text, got %q", messages[0].Content)
 	}
+	if !strings.Contains(messages[0].Content, "<cmd>") {
+		t.Fatalf("Expected global system prompt to include <cmd> instruction, got %q", messages[0].Content)
+	}
 	if !strings.Contains(ctx.UserPrompt, "cwd: /tmp") {
 		t.Fatalf("Expected working dir in prompt, got %q", ctx.UserPrompt)
 	}

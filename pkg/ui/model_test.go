@@ -19,6 +19,7 @@ import (
 	"wtf_cli/pkg/ui/components/palette"
 	"wtf_cli/pkg/ui/components/picker"
 	"wtf_cli/pkg/ui/components/settings"
+	"wtf_cli/pkg/ui/components/sidebar"
 	"wtf_cli/pkg/ui/components/testutils"
 	"wtf_cli/pkg/ui/input"
 
@@ -541,6 +542,63 @@ func TestModel_HistoryPickerFlow_FromCommand(t *testing.T) {
 	expected := append([]byte{21}, []byte("echo two")...)
 	if !bytes.Equal(data, expected) {
 		t.Errorf("Expected PTY output %q, got %q", expected, data)
+	}
+}
+
+func TestModel_CommandExecuteMsg_AppliesCommandToPTY(t *testing.T) {
+	tmpDir := t.TempDir()
+	ptyFile, err := os.CreateTemp(tmpDir, "pty")
+	if err != nil {
+		t.Fatalf("Failed to create temp PTY file: %v", err)
+	}
+	defer ptyFile.Close()
+
+	m := NewModel(ptyFile, buffer.New(100), capture.NewSessionContext(), nil)
+	m.setTerminalFocused(false)
+
+	newModel, _ := m.Update(sidebar.CommandExecuteMsg{Command: "  git status  "})
+	m = newModel.(Model)
+
+	if !m.terminalFocused {
+		t.Fatal("Expected terminal to be focused after command execute")
+	}
+
+	if _, err := ptyFile.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("Failed to seek PTY file: %v", err)
+	}
+	data, err := io.ReadAll(ptyFile)
+	if err != nil {
+		t.Fatalf("Failed to read PTY output: %v", err)
+	}
+
+	expected := append([]byte{21}, []byte("git status")...)
+	if !bytes.Equal(data, expected) {
+		t.Fatalf("Expected PTY output %q, got %q", expected, data)
+	}
+}
+
+func TestModel_CommandExecuteMsg_RejectsMultilineCommand(t *testing.T) {
+	tmpDir := t.TempDir()
+	ptyFile, err := os.CreateTemp(tmpDir, "pty")
+	if err != nil {
+		t.Fatalf("Failed to create temp PTY file: %v", err)
+	}
+	defer ptyFile.Close()
+
+	m := NewModel(ptyFile, buffer.New(100), capture.NewSessionContext(), nil)
+
+	newModel, _ := m.Update(sidebar.CommandExecuteMsg{Command: "echo one\necho two"})
+	m = newModel.(Model)
+
+	if _, err := ptyFile.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("Failed to seek PTY file: %v", err)
+	}
+	data, err := io.ReadAll(ptyFile)
+	if err != nil {
+		t.Fatalf("Failed to read PTY output: %v", err)
+	}
+	if len(data) != 0 {
+		t.Fatalf("Expected no PTY output for invalid command, got %q", data)
 	}
 }
 
