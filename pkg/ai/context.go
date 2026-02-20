@@ -54,6 +54,24 @@ func BuildWtfMessages(lines [][]byte, meta TerminalMetadata) ([]Message, Termina
 	return messages, ctx
 }
 
+// BuildChatContext assembles prompts for the chat sidebar with terminal output
+// treated as background context rather than something to diagnose.
+func BuildChatContext(lines [][]byte, meta TerminalMetadata) TerminalContext {
+	limited := limitLines(lines, DefaultContextLines)
+	output := sanitizeLines(limited)
+	output, truncated := truncateOutput(output, DefaultContextBytes)
+
+	ctx := TerminalContext{
+		Output:       output,
+		LineCount:    len(limited),
+		Truncated:    truncated,
+		SystemPrompt: chatSystemPrompt(),
+	}
+	ctx.UserPrompt = buildChatUserPrompt(meta, ctx)
+
+	return ctx
+}
+
 func limitLines(lines [][]byte, maxLines int) [][]byte {
 	if maxLines <= 0 || len(lines) <= maxLines {
 		return lines
@@ -134,7 +152,7 @@ func buildUserPrompt(meta TerminalMetadata, ctx TerminalContext) string {
 func wtfSystemPrompt() string {
 	platform := GetPlatformInfo()
 	return strings.Join([]string{
-		"You are a terminal assistant.",
+		"You are a helpful terminal assistant.",
 		platform.PromptText(),
 		"Use the provided terminal output and metadata to diagnose issues.",
 		"When suggesting CLI commands the user can run, wrap each command in <cmd>...</cmd> tags, e.g. <cmd>ls -la</cmd>. Only wrap safe, single-line shell commands. Do not wrap multi-line scripts, code snippets, or explanations.",
@@ -144,6 +162,49 @@ func wtfSystemPrompt() string {
 		"Provide concise, actionable suggestions and likely causes.",
 		"If you need more information, ask focused questions.",
 	}, " ")
+}
+
+func chatSystemPrompt() string {
+	platform := GetPlatformInfo()
+	return strings.Join([]string{
+		"You are a helpful terminal assistant.",
+		platform.PromptText(),
+		"Terminal context may be provided below as background — use it to inform your answers if relevant, but do not proactively diagnose unless the user asks.",
+		"When suggesting CLI commands the user can run, wrap each command in <cmd>...</cmd> tags, e.g. <cmd>ls -la</cmd>. Only wrap safe, single-line shell commands. Do not wrap multi-line scripts, code snippets, or explanations.",
+		"If a metadata field is missing, do not assume or invent it.",
+		"Field definitions: cwd is the current working directory; last_command is the most recent captured command; last_exit_code is the exit code for last_command; output_lines is the number of lines in the output block; output may be truncated when noted.",
+		"Be concise and helpful. If you need more information, ask focused questions.",
+	}, " ")
+}
+
+func buildChatUserPrompt(meta TerminalMetadata, ctx TerminalContext) string {
+	workingDir := strings.TrimSpace(meta.WorkingDir)
+	lastCommand := strings.TrimSpace(meta.LastCommand)
+	output := ctx.Output
+	if strings.TrimSpace(output) == "" {
+		output = "<no output captured>"
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Below is the user's recent terminal activity for context. Use it only if relevant to the conversation.\n")
+	sb.WriteString("Terminal metadata (captured fields):\n")
+	if workingDir != "" {
+		sb.WriteString(fmt.Sprintf("cwd: %s\n", workingDir))
+	}
+	if lastCommand != "" {
+		sb.WriteString(fmt.Sprintf("last_command: %s\n", lastCommand))
+	}
+	if meta.ExitCode >= 0 {
+		sb.WriteString(fmt.Sprintf("last_exit_code: %d\n", meta.ExitCode))
+	}
+	sb.WriteString(fmt.Sprintf("output_lines: %d\n", ctx.LineCount))
+	if ctx.Truncated {
+		sb.WriteString("note: output truncated\n")
+	}
+	sb.WriteString("\nRecent output (most recent lines, oldest -> newest):\n")
+	sb.WriteString(output)
+
+	return sb.String()
 }
 
 func stripANSICodes(s string) string {
