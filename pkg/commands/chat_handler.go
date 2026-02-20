@@ -140,8 +140,8 @@ func buildChatMessages(
 	// Use existing helper (pulls last command/exit code from session)
 	meta := buildTerminalMetadata(ctx)
 
-	// Use existing BuildTerminalContext which returns SystemPrompt + UserPrompt
-	termCtx := ai.BuildTerminalContext(lines, meta)
+	// Use chat-specific context builder (background context framing, not diagnostic)
+	termCtx := ai.BuildChatContext(lines, meta)
 
 	// Build messages: system + TTY context as developer message + history
 	msgs := []ai.Message{

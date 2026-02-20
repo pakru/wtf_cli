@@ -256,3 +256,40 @@ func TestChatHandler_Execute(t *testing.T) {
 		t.Errorf("Expected action ResultActionToggleChat, got %q", result.Action)
 	}
 }
+
+func TestChatHandler_buildChatMessages_UsesNonDiagnosticPrompt(t *testing.T) {
+	buf := buffer.New(100)
+	buf.Write([]byte("some terminal output"))
+
+	sess := capture.NewSessionContext()
+	sess.AddCommand(capture.CommandRecord{
+		Command:    "ls -la",
+		WorkingDir: "/home/user",
+		ExitCode:   0,
+	})
+
+	ctx := NewContext(buf, sess, "/home/user")
+	messages := buildChatMessages([]ai.ChatMessage{}, ctx)
+
+	if len(messages) < 2 {
+		t.Fatalf("Expected at least 2 messages, got %d", len(messages))
+	}
+
+	systemMsg := messages[0]
+	developerMsg := messages[1]
+
+	// System prompt must NOT contain /explain diagnostic wording
+	if strings.Contains(systemMsg.Content, "diagnose issues") {
+		t.Errorf("Chat system prompt must not contain 'diagnose issues', got: %q", systemMsg.Content)
+	}
+
+	// Developer (context) message must NOT contain /explain user prompt wording
+	if strings.Contains(developerMsg.Content, "explain what's going on") {
+		t.Errorf("Chat developer message must not contain 'explain what's going on', got: %q", developerMsg.Content)
+	}
+
+	// System prompt must still have <cmd> instruction
+	if !strings.Contains(systemMsg.Content, "<cmd>") {
+		t.Errorf("Chat system prompt must contain <cmd> instruction, got: %q", systemMsg.Content)
+	}
+}
