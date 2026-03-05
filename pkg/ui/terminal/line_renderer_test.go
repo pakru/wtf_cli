@@ -390,3 +390,224 @@ func TestLineRenderer_InsertMode(t *testing.T) {
 		t.Fatalf("expected %q, got %q", "abcXdef", got)
 	}
 }
+
+// CSI A — Cursor Up
+
+func TestLineRenderer_CursorUp(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("line 0\nline 1\nline 2"))
+	// Cursor at row 2. Move up 2 → row 0.
+	r.Append([]byte("\x1b[2A\rNEW 0"))
+
+	expected := "NEW 00\nline 1\nline 2"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_CursorUp_ClampToZero(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("only\nrow"))
+	// Cursor at row 1. Move up 10 → clamps to 0.
+	r.Append([]byte("\x1b[10A\rX"))
+
+	expected := "Xnly\nrow"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_CursorUp_DefaultParam(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("r0\nr1\nr2"))
+	// CSI A without param → up 1
+	r.Append([]byte("\x1b[A\rX"))
+
+	expected := "r0\nX1\nr2"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+// CSI B — Cursor Down
+
+func TestLineRenderer_CursorDown(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("row 0\nrow 1\nrow 2"))
+	r.Append([]byte("\x1b[1;1H")) // Go to top-left
+	r.Append([]byte("\x1b[2B"))   // Down 2
+	r.Append([]byte("\rNEW"))
+
+	expected := "row 0\nrow 1\nNEW 2"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_CursorDown_Extends(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("only"))
+	// Down 3 from row 0 → ensures rows exist
+	r.Append([]byte("\x1b[3Bhello"))
+
+	row, _ := r.CursorPosition()
+	if row != 3 {
+		t.Fatalf("expected row 3, got %d", row)
+	}
+}
+
+// CSI G — Cursor Horizontal Absolute
+
+func TestLineRenderer_CursorHorizontalAbsolute(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("abcdef"))
+	r.Append([]byte("\x1b[1Gxyz"))
+
+	expected := "xyzdef"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_CursorHorizontalAbsolute_DefaultParam(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("hello"))
+	r.Append([]byte("\x1b[GX"))
+
+	expected := "Xello"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_CursorHorizontalAbsolute_Spinner(t *testing.T) {
+	// Simulates npm spinner with CSI G
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[?25l")) // hide cursor
+	r.Append([]byte("⠙"))
+	r.Append([]byte("\x1b[1G⠹"))
+	r.Append([]byte("\x1b[1G⠸"))
+	r.Append([]byte("\x1b[1G⠼"))
+
+	if got := r.Content(); got != "⠼" {
+		t.Fatalf("expected single spinner char %q, got %q", "⠼", got)
+	}
+}
+
+// CSI J — Erase in Display
+
+func TestLineRenderer_EraseDisplay_CursorToEnd(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("line 0\nline 1\nline 2"))
+	r.Append([]byte("\x1b[1;1H")) // Go to top-left
+	r.Append([]byte("\x1b[J"))    // Erase from cursor (param 0)
+
+	// Row 0 truncated from col 0 = empty, rows 1-2 deleted
+	expected := ""
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_EraseDisplay_CursorToEnd_MidLine(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("hello\nworld\nfoo"))
+	r.Append([]byte("\x1b[2;3H")) // Row 2, col 3 (0-indexed: row 1, col 2)
+	r.Append([]byte("\x1b[J"))    // Erase from cursor
+
+	// Row 1 truncated from col 2 = "wo", rows after deleted
+	expected := "hello\nwo"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_EraseDisplay_All(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("line 0\nline 1\nline 2"))
+	r.Append([]byte("\x1b[2J")) // Erase all
+
+	if got := r.Content(); got != "" {
+		t.Fatalf("expected empty after CSI 2J, got %q", got)
+	}
+	row, col := r.CursorPosition()
+	if row != 0 || col != 0 {
+		t.Fatalf("expected cursor at (0,0), got (%d,%d)", row, col)
+	}
+}
+
+// CSI K param 2 — Erase Entire Line
+
+func TestLineRenderer_ClearEntireLine(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("hello world"))
+	r.Append([]byte("\x1b[2K"))
+
+	if got := r.Content(); got != "" {
+		t.Fatalf("expected empty line after CSI 2K, got %q", got)
+	}
+}
+
+func TestLineRenderer_ClearEntireLine_MultiRow(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("row 0\nrow 1 content\nrow 2"))
+	r.Append([]byte("\x1b[2;1H")) // Go to row 2 (1-indexed), col 1
+	r.Append([]byte("\x1b[2K"))   // Clear entire row 1
+
+	expected := "row 0\n\nrow 2"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+// CSI H no-params fix
+
+func TestLineRenderer_CursorHome_NoParams(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("old content\nmore old"))
+	r.Append([]byte("\x1b[H"))
+
+	row, col := r.CursorPosition()
+	if row != 0 || col != 0 {
+		t.Fatalf("expected (0,0) after CSI H, got (%d,%d)", row, col)
+	}
+}
+
+func TestLineRenderer_CursorHome_NoParams_ThenWrite(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("old content\nmore old"))
+	r.Append([]byte("\x1b[HNEW"))
+
+	expected := "NEW content\nmore old"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+// Integration: Ink render cycle
+
+func TestLineRenderer_InkRenderCycle(t *testing.T) {
+	r := NewLineRenderer()
+
+	// Frame 1
+	r.Append([]byte("> Type your message\n"))
+	r.Append([]byte("~ no sandbox\n"))
+	r.Append([]byte("shift+tab to accept"))
+
+	frame1 := "> Type your message\n~ no sandbox\nshift+tab to accept"
+	if got := r.Content(); got != frame1 {
+		t.Fatalf("frame 1: expected %q, got %q", frame1, got)
+	}
+
+	// Frame 2: cursor up 3, CR, erase to end, redraw
+	r.Append([]byte("\x1b[3A"))  // up 3
+	r.Append([]byte("\r\x1b[J")) // CR + erase to end of display
+	r.Append([]byte("> d\n"))
+	r.Append([]byte("~ no sandbox\n"))
+	r.Append([]byte("shift+tab to accept"))
+
+	frame2 := "> d\n~ no sandbox\nshift+tab to accept"
+	if got := r.Content(); got != frame2 {
+		t.Fatalf("frame 2: expected %q, got %q", frame2, got)
+	}
+}

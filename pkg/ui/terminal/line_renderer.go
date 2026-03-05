@@ -387,6 +387,22 @@ func (r *LineRenderer) handleCSI(final byte) {
 		}
 		seq += "m"
 		r.lines[r.row].insertZeroWidthAt(r.col, seq)
+	case 'A':
+		n := 1
+		if len(r.csiParams) > 0 && r.csiParams[0] > 0 {
+			n = r.csiParams[0]
+		}
+		r.row -= n
+		if r.row < 0 {
+			r.row = 0
+		}
+	case 'B':
+		n := 1
+		if len(r.csiParams) > 0 && r.csiParams[0] > 0 {
+			n = r.csiParams[0]
+		}
+		r.row += n
+		r.ensureLine(r.row)
 	case 'D':
 		n := 1
 		if len(r.csiParams) > 0 && r.csiParams[0] > 0 {
@@ -399,12 +415,48 @@ func (r *LineRenderer) handleCSI(final byte) {
 			n = r.csiParams[0]
 		}
 		r.moveCursorRight(n)
+	case 'G':
+		col := 1
+		if len(r.csiParams) > 0 && r.csiParams[0] > 0 {
+			col = r.csiParams[0]
+		}
+		r.col = col - 1
+		if r.col < 0 {
+			r.col = 0
+		}
 	case 'F':
 		r.ensureLine(r.row)
 		r.col = r.lines[r.row].visibleLen()
+	case 'J':
+		param := 0
+		if len(r.csiParams) > 0 {
+			param = r.csiParams[0]
+		}
+		switch param {
+		case 0: // Erase from cursor to end of display
+			r.ensureLine(r.row)
+			r.lines[r.row].truncateFromCol(r.col)
+			if r.row+1 < len(r.lines) {
+				r.lines = r.lines[:r.row+1]
+			}
+		case 2: // Erase entire display
+			r.lines = r.lines[:0]
+			r.row = 0
+			r.col = 0
+			r.ensureLine(0)
+		}
 	case 'K':
 		r.ensureLine(r.row)
-		r.lines[r.row].truncateFromCol(r.col)
+		param := 0
+		if len(r.csiParams) > 0 {
+			param = r.csiParams[0]
+		}
+		switch param {
+		case 0: // Clear from cursor to end of line
+			r.lines[r.row].truncateFromCol(r.col)
+		case 2: // Clear entire line
+			r.lines[r.row] = lineBuffer{}
+		}
 	case 'P':
 		n := 1
 		if len(r.csiParams) > 0 && r.csiParams[0] > 0 {
@@ -438,7 +490,9 @@ func (r *LineRenderer) handleCSI(final byte) {
 		}
 	case 'H', 'f':
 		if len(r.csiParams) == 0 {
+			r.row = 0
 			r.col = 0
+			r.ensureLine(0)
 			break
 		}
 		row := 1
