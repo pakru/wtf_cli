@@ -8,7 +8,6 @@ import (
 
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
-	"wtf_cli/pkg/config"
 
 	"github.com/charmbracelet/x/exp/golden"
 )
@@ -77,7 +76,6 @@ func TestModelViewGolden(t *testing.T) {
 	m.ready = true
 	m.width = 80
 	m.height = 24
-	m.statusBar.SetModel(config.Default().OpenRouter.Model)
 
 	// Initialize viewport with fixed size
 	m.viewport.SetSize(80, 23) // Height - 1 for status bar
@@ -100,7 +98,6 @@ func TestModelViewGolden_Palette(t *testing.T) {
 	m.ready = true
 	m.width = 80
 	m.height = 24
-	m.statusBar.SetModel(config.Default().OpenRouter.Model)
 	m.viewport.SetSize(80, 23)
 
 	// Open palette
