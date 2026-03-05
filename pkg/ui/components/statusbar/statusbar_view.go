@@ -1,7 +1,6 @@
 package statusbar
 
 import (
-	"fmt"
 	"os"
 	"strings"
 
@@ -22,7 +21,6 @@ type StatusBarView struct {
 	currentDir  string
 	gitBranch   string
 	message     string
-	model       string
 	width       int
 	statusStyle lipgloss.Style
 }
@@ -56,11 +54,6 @@ func (s *StatusBarView) GetMessage() string {
 	return s.message
 }
 
-// SetModel updates the active model displayed.
-func (s *StatusBarView) SetModel(model string) {
-	s.model = strings.TrimSpace(model)
-}
-
 // SetWidth updates the width for rendering
 func (s *StatusBarView) SetWidth(width int) {
 	s.width = width
@@ -68,18 +61,14 @@ func (s *StatusBarView) SetWidth(width int) {
 
 // Render returns the styled status bar string
 func (s *StatusBarView) Render() string {
-	modelLabel := s.model
-	if modelLabel == "" {
-		modelLabel = "unknown"
-	}
 	const (
 		minGap         = 2
 		contentPadding = 2
 	)
 
-	rightContent := fmt.Sprintf("[llm]: %s", modelLabel)
+	rightContent := ""
 	if s.message == "" {
-		rightContent = fmt.Sprintf("[llm]: %s | Press / for commands", modelLabel)
+		rightContent = "Press / for commands"
 	}
 	rightWidth := ansi.StringWidth(rightContent)
 

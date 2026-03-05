@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	llmLabelPrefix  = "LLM: unknown-unknown | "
 	applyFooterHint = "Enter Apply | Up/Down Navigate | Shift+Tab TTY | Ctrl+T Hide"
 	sendFooterHint  = "Enter Send | Up/Down Scroll | Shift+Tab TTY | Ctrl+T Hide"
 )
@@ -334,11 +335,11 @@ func TestSidebar_CommandMarkersAreStrippedAndFooterShown(t *testing.T) {
 	s.StartAssistantMessageWithContent("Run <cmd>ls -la</cmd> to inspect files.")
 	s.Show("WTF Analysis", "")
 
-	view := s.View()
+	view := stripANSICodes(s.View())
 	if strings.Contains(view, "<cmd>") || strings.Contains(view, "</cmd>") {
 		t.Fatalf("Expected command markers to be stripped in view, got:\n%s", view)
 	}
-	if !strings.Contains(view, applyFooterHint) {
+	if !strings.Contains(view, "LLM: unknown-unknown | Apply") {
 		t.Fatalf("Expected command footer hint in view, got:\n%s", view)
 	}
 	if s.cmdSelectedIdx < 0 {
@@ -424,20 +425,20 @@ func TestSidebar_FooterHintChangesWithInputState(t *testing.T) {
 	s.Show("WTF Analysis", "")
 	s.FocusInput()
 
-	view := s.View()
-	if !strings.Contains(view, applyFooterHint) {
+	view := stripANSICodes(s.View())
+	if !strings.Contains(view, "LLM: unknown-unknown | Apply") {
 		t.Fatalf("Expected apply footer hint when input is empty, got:\n%s", view)
 	}
-	if strings.Contains(view, sendFooterHint) {
+	if strings.Contains(view, "LLM: unknown-unknown | Send") {
 		t.Fatalf("Did not expect send hint when input is empty, got:\n%s", view)
 	}
 
 	s.textarea.SetValue("hello")
-	view = s.View()
-	if !strings.Contains(view, sendFooterHint) {
+	view = stripANSICodes(s.View())
+	if !strings.Contains(view, "LLM: unknown-unknown | Send") {
 		t.Fatalf("Expected send footer hint when input has text, got:\n%s", view)
 	}
-	if strings.Contains(view, applyFooterHint) {
+	if strings.Contains(view, "LLM: unknown-unknown | Apply") {
 		t.Fatalf("Did not expect apply hint when input has text, got:\n%s", view)
 	}
 }
@@ -458,7 +459,7 @@ func TestSidebar_FooterHintRendersBelowInput(t *testing.T) {
 	if strings.Contains(view, "1 Type your message...") {
 		t.Fatalf("Did not expect textarea line-number gutter in view, got:\n%s", view)
 	}
-	hintIdx := strings.Index(view, applyFooterHint)
+	hintIdx := strings.Index(view, "LLM: unknown-unknown")
 	if hintIdx < 0 {
 		t.Fatalf("Expected footer hint in view, got:\n%s", view)
 	}
@@ -468,7 +469,7 @@ func TestSidebar_FooterHintRendersBelowInput(t *testing.T) {
 
 	var hintLine string
 	for _, line := range strings.Split(view, "\n") {
-		if strings.Contains(line, applyFooterHint) {
+		if strings.Contains(line, "LLM: unknown-unknown") {
 			hintLine = line
 			break
 		}
@@ -476,8 +477,31 @@ func TestSidebar_FooterHintRendersBelowInput(t *testing.T) {
 	if hintLine == "" {
 		t.Fatalf("Expected footer hint line in view, got:\n%s", view)
 	}
-	if idx := strings.Index(hintLine, applyFooterHint); idx <= 3 {
+	if idx := strings.Index(hintLine, "LLM: unknown-unknown"); idx <= 3 {
 		t.Fatalf("Expected centered footer hint with left padding, got line: %q", hintLine)
+	}
+}
+
+func TestSidebar_FooterAlwaysShownWithoutCommands(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 12)
+	s.Show("WTF Analysis", "")
+
+	view := stripANSICodes(s.View())
+	if !strings.Contains(view, "LLM: unknown-unknown | Send") {
+		t.Fatalf("Expected footer with LLM label even without command entries, got:\n%s", view)
+	}
+}
+
+func TestSidebar_SetActiveLLM_UpdatesFooterLabel(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(90, 14)
+	s.SetActiveLLM("openai", "gpt-4o")
+	s.Show("WTF Analysis", "")
+
+	view := stripANSICodes(s.View())
+	if !strings.Contains(view, "LLM: openai-gpt-4o") {
+		t.Fatalf("Expected provider-model label in footer, got:\n%s", view)
 	}
 }
 

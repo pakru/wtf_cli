@@ -38,8 +38,6 @@ func TestStatusBarView_SetDirectory(t *testing.T) {
 func TestStatusBarView_SetMessage(t *testing.T) {
 	sb := NewStatusBarView()
 	sb.SetWidth(100)
-	sb.SetModel("test-model")
-
 	sb.SetMessage("Important notification")
 
 	rendered := sb.Render()
@@ -57,7 +55,6 @@ func TestStatusBarView_Render(t *testing.T) {
 	sb := NewStatusBarView()
 	sb.SetWidth(80)
 	sb.SetDirectory("/test")
-	sb.SetModel("model-1")
 
 	rendered := sb.Render()
 
@@ -69,11 +66,6 @@ func TestStatusBarView_Render(t *testing.T) {
 	// Should contain directory
 	if !strings.Contains(rendered, "/test") {
 		t.Error("Expected directory")
-	}
-
-	// Should contain model label
-	if !strings.Contains(rendered, "[llm]: model-1") {
-		t.Error("Expected model indicator")
 	}
 
 	// Should contain help text
@@ -106,12 +98,11 @@ func TestStatusBarView_LayoutAlignment(t *testing.T) {
 	sb := NewStatusBarView()
 	sb.SetWidth(80)
 	sb.SetDirectory("/home/user/projects/wtf_cli/pkg/ui/components")
-	sb.SetModel("model-1")
 
 	rendered := sb.Render()
 	stripped := ansi.Strip(rendered)
 	trimmed := strings.TrimSpace(stripped)
-	right := "[llm]: model-1 | Press / for commands"
+	right := "Press / for commands"
 
 	if !strings.HasPrefix(trimmed, "[wtf_cli]") {
 		t.Fatalf("expected left content to start with [wtf_cli], got %q", trimmed)
@@ -194,7 +185,6 @@ func TestStatusBarView_FullWidth(t *testing.T) {
 	sb := NewStatusBarView()
 	sb.SetWidth(80)
 	sb.SetDirectory("/home/user/projects/wtf_cli")
-	sb.SetModel("model-1")
 
 	rendered := sb.Render()
 	stripped := ansi.Strip(rendered)
@@ -207,7 +197,6 @@ func TestStatusBarView_NarrowTerminal(t *testing.T) {
 	sb := NewStatusBarView()
 	sb.SetWidth(40)
 	sb.SetDirectory("/home/user/projects/wtf_cli/pkg/ui/components")
-	sb.SetModel("model-1")
 
 	rendered := sb.Render()
 	stripped := ansi.Strip(rendered)
@@ -218,8 +207,8 @@ func TestStatusBarView_NarrowTerminal(t *testing.T) {
 	if strings.Contains(stripped, "/home/user/projects") {
 		t.Fatalf("expected path to be truncated or omitted at narrow width, got %q", stripped)
 	}
-	if !strings.Contains(stripped, "[llm]: model-1") {
-		t.Fatalf("expected model label to remain visible at narrow width, got %q", stripped)
+	if !strings.Contains(stripped, "Press / for commands") {
+		t.Fatalf("expected command hint to remain visible at narrow width, got %q", stripped)
 	}
 }
 
@@ -228,17 +217,12 @@ func TestStatusBarView_MessagePriority(t *testing.T) {
 	sb.SetWidth(100)
 	sb.SetDirectory("/home")
 	sb.SetMessage("Alert!")
-	sb.SetModel("model-2")
 
 	rendered := sb.Render()
 
 	// Message should be shown
 	if !strings.Contains(rendered, "Alert!") {
 		t.Error("Expected message to be displayed")
-	}
-
-	if !strings.Contains(rendered, "[llm]: model-2") {
-		t.Error("Expected model indicator")
 	}
 
 	// Clear message
@@ -255,7 +239,6 @@ func TestStatusBarView_GitBranchShown(t *testing.T) {
 	sb := NewStatusBarView()
 	sb.SetWidth(120)
 	sb.SetDirectory("/home/user/projects/repo")
-	sb.SetModel("model-1")
 	sb.SetGitBranch("feature/foo")
 
 	rendered := ansi.Strip(sb.Render())
@@ -268,7 +251,6 @@ func TestStatusBarView_GitBranchHiddenWhenMessageActive(t *testing.T) {
 	sb := NewStatusBarView()
 	sb.SetWidth(120)
 	sb.SetDirectory("/home/user/projects/repo")
-	sb.SetModel("model-1")
 	sb.SetGitBranch("main")
 	sb.SetMessage("Important notification")
 
@@ -282,7 +264,6 @@ func TestStatusBarView_GitBranchDroppedOnNarrowWidth(t *testing.T) {
 	sb := NewStatusBarView()
 	sb.SetWidth(58)
 	sb.SetDirectory("/home/user/repo")
-	sb.SetModel("model-1")
 	sb.SetGitBranch("very-long-feature/branch-name")
 
 	rendered := ansi.Strip(sb.Render())

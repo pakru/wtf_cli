@@ -120,9 +120,9 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 	viewport.AppendOutput([]byte(welcome.WelcomeMessage()))
 
 	statusBar := statusbar.NewStatusBarView()
-	statusBar.SetModel(loadModelFromConfig())
+	provider, model := loadProviderAndModelFromConfig()
 
-	return Model{
+	m := Model{
 		ptyFile:        ptyFile,
 		cwdFunc:        cwdFunc,
 		secretDetector: pty.IsSecretInputMode,
@@ -150,6 +150,8 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		streamThrottleDelay: 50 * time.Millisecond, // Throttle stream updates
 		terminalFocused:     true,
 	}
+	m.sidebar.SetActiveLLM(provider, model)
+	return m
 }
 
 // Init initializes the model (Bubble Tea lifecycle method)
@@ -542,7 +544,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cfg, _ := config.Load(config.GetConfigPath())
 			m.settingsPanel.SetSize(m.width, m.height)
 			m.settingsPanel.Show(cfg, config.GetConfigPath())
-			m.statusBar.SetModel(cfg.OpenRouter.Model)
 			if cfg.LLMProvider == "copilot" {
 				return m, fetchCopilotAuthStatusCmd(false)
 			}
@@ -715,7 +716,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 			logging.SetLevel(msg.Config.LogLevel)
 		}
-		m.statusBar.SetModel(getModelForProvider(msg.Config))
+		provider, model := getProviderAndModel(msg.Config)
+		m.sidebar.SetActiveLLM(provider, model)
 		return m, nil
 
 	case input.CtrlDPressedMsg:
@@ -1266,19 +1268,36 @@ func getCurrentDir() string {
 	return dir
 }
 
-func loadModelFromConfig() string {
+func loadProviderAndModelFromConfig() (string, string) {
 	path := config.GetConfigPath()
 	if path == "" {
-		return config.Default().OpenRouter.Model
+		return getProviderAndModel(config.Default())
 	}
 	if _, err := os.Stat(path); err != nil {
-		return config.Default().OpenRouter.Model
+		return getProviderAndModel(config.Default())
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
-		return config.Default().OpenRouter.Model
+		return getProviderAndModel(config.Default())
 	}
-	return getModelForProvider(cfg)
+	return getProviderAndModel(cfg)
+}
+
+func loadModelFromConfig() string {
+	_, model := loadProviderAndModelFromConfig()
+	return model
+}
+
+func getProviderAndModel(cfg config.Config) (string, string) {
+	provider := strings.TrimSpace(cfg.LLMProvider)
+	if provider == "" {
+		provider = "openrouter"
+	}
+	model := strings.TrimSpace(getModelForProvider(cfg))
+	if model == "" {
+		model = "unknown"
+	}
+	return provider, model
 }
 
 // getModelForProvider returns the model name for the currently selected provider

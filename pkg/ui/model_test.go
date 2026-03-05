@@ -997,6 +997,22 @@ func TestModel_Update_CopilotAuthStatusMsg_PreservesSettingsPanelEdits(t *testin
 	}
 }
 
+func TestModel_Update_SettingsSaveMsg_UpdatesSidebarLLMLabel(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	cfg := config.Default()
+	cfg.LLMProvider = "openai"
+	cfg.Providers.OpenAI.Model = "gpt-4.1-mini"
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+
+	newModel, _ := m.Update(settings.SettingsSaveMsg{ConfigPath: cfgPath, Config: cfg})
+	m = newModel.(Model)
+
+	if got := m.sidebar.ActiveLLMLabel(); got != "LLM: openai-gpt-4.1-mini" {
+		t.Fatalf("Expected updated sidebar LLM label, got %q", got)
+	}
+}
+
 func TestModel_FocusSwitch_ShiftTab(t *testing.T) {
 	tmpDir := t.TempDir()
 	ptyFile, err := os.CreateTemp(tmpDir, "pty")
