@@ -53,6 +53,8 @@ type Sidebar struct {
 	cmdRawLines      []int            // Raw line indices of command entries in stripped content
 	cmdRenderedLines []int            // Rendered line indices corresponding to cmdList entries
 	cmdDirty         bool             // True when command extraction needs refresh
+	activeProvider   string           // Currently selected LLM provider
+	activeModel      string           // Currently selected LLM model
 }
 
 // NewSidebar creates a new sidebar component.
@@ -68,6 +70,8 @@ func NewSidebar() *Sidebar {
 		focused:        FocusInput,
 		cmdSelectedIdx: -1,
 		cmdDirty:       true,
+		activeProvider: "unknown",
+		activeModel:    "unknown",
 	}
 }
 
@@ -357,14 +361,12 @@ func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
 	}
 
 	// Shortcut hint goes at the very bottom, under the input.
-	if s.shouldShowCommandFooter() {
-		footerText := truncateToWidth(s.commandFooterText(), contentWidth)
-		footer := sidebarFooterStyle.
-			Width(contentWidth).
-			Align(lipgloss.Center).
-			Render(footerText)
-		lines = append(lines, footer)
-	}
+	footerText := truncateToWidth(s.commandFooterText(contentWidth), contentWidth)
+	footer := sidebarFooterStyle.
+		Width(contentWidth).
+		Align(lipgloss.Left).
+		Render(footerText)
+	lines = append(lines, footer)
 
 	if len(lines) > contentHeight {
 		lines = lines[:contentHeight]
@@ -382,7 +384,7 @@ func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
 
 	box := sidebarBoxStyle.
 		Width(boxWidth).
-		Padding(sidebarPaddingV, sidebarPaddingH).
+		Padding(sidebarPaddingV, sidebarPaddingH, 0).
 		Render(content)
 
 	return box
@@ -445,6 +447,33 @@ func (s *Sidebar) IsStreaming() bool {
 // SetStreaming sets the streaming state.
 func (s *Sidebar) SetStreaming(active bool) {
 	s.streaming = active
+}
+
+// SetActiveLLM updates the active provider/model shown in the footer.
+func (s *Sidebar) SetActiveLLM(provider, model string) {
+	provider = strings.TrimSpace(provider)
+	model = strings.TrimSpace(model)
+	if provider == "" {
+		provider = "unknown"
+	}
+	if model == "" {
+		model = "unknown"
+	}
+	s.activeProvider = provider
+	s.activeModel = model
+}
+
+// ActiveLLMLabel returns the formatted footer label for the active provider/model.
+func (s *Sidebar) ActiveLLMLabel() string {
+	provider := strings.TrimSpace(s.activeProvider)
+	if provider == "" {
+		provider = "unknown"
+	}
+	model := strings.TrimSpace(s.activeModel)
+	if model == "" {
+		model = "unknown"
+	}
+	return "LLM: " + provider + "-" + model
 }
 
 // AppendUserMessage adds a user message to the chat history.
@@ -644,7 +673,8 @@ func (s *Sidebar) contentWidth() int {
 }
 
 func (s *Sidebar) contentHeight() int {
-	height := s.height - 2*(sidebarBorderSize+sidebarPaddingV)
+	// Top padding + top border + bottom border (no bottom padding).
+	height := s.height - 2*sidebarBorderSize - sidebarPaddingV
 	if height < 1 {
 		return 1
 	}
@@ -662,11 +692,7 @@ func (s *Sidebar) maxScroll() int {
 }
 
 func (s *Sidebar) chromeLines() int {
-	lines := 1 + 1 + sidebarTextareaH // title + separator + textarea
-	if s.shouldShowCommandFooter() {
-		lines++
-	}
-	return lines
+	return 1 + 1 + sidebarTextareaH + 1 // title + separator + textarea + footer
 }
 
 func (s *Sidebar) viewportHeight() int {
@@ -677,15 +703,17 @@ func (s *Sidebar) viewportHeight() int {
 	return viewportHeight
 }
 
-func (s *Sidebar) shouldShowCommandFooter() bool {
-	return len(s.cmdList) > 0
-}
-
-func (s *Sidebar) commandFooterText() string {
+func (s *Sidebar) commandFooterText(contentWidth int) string {
+	label := s.ActiveLLMLabel()
 	if s.canApplySelectedCommand() {
-		return "Enter Apply | Up/Down Navigate | Shift+Tab TTY | Ctrl+T Hide"
+		hint := "Enter Apply | Up/Down Navigate | Shift+Tab TTY | Ctrl+T Hide"
+		full := label + " | " + hint
+		if runewidth.StringWidth(full) <= contentWidth {
+			return full
+		}
+		return label + " | Apply"
 	}
-	return "Enter Send | Up/Down Scroll | Shift+Tab TTY | Ctrl+T Hide"
+	return label
 }
 
 func (s *Sidebar) commandSelectionEnabled() bool {

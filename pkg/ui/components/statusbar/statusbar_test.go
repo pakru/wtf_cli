@@ -32,7 +32,6 @@ func TestSetMessage(t *testing.T) {
 	sb := NewStatusBar()
 
 	sb.SetMessage("Test message")
-	sb.SetModel("test-model")
 
 	output := sb.Render()
 	if !strings.Contains(output, "Test message") {
@@ -45,7 +44,6 @@ func TestRender(t *testing.T) {
 	sb.termWidth = 80
 	sb.termHeight = 24
 	sb.currentDir = "/test"
-	sb.model = "model-3"
 
 	output := sb.Render()
 
@@ -64,8 +62,8 @@ func TestRender(t *testing.T) {
 		t.Error("Expected directory in output")
 	}
 
-	if !strings.Contains(output, "[llm]: model-3") {
-		t.Error("Expected model indicator in output")
+	if !strings.Contains(output, "Press / for commands") {
+		t.Error("Expected command hint in output")
 	}
 }
 
