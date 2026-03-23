@@ -22,6 +22,7 @@ import (
 	"wtf_cli/pkg/ui/components/sidebar"
 	"wtf_cli/pkg/ui/components/testutils"
 	"wtf_cli/pkg/ui/input"
+	"wtf_cli/pkg/updatecheck"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -1240,5 +1241,47 @@ func TestGetModelForProvider_Google(t *testing.T) {
 	cfg.Providers.Google.Model = ""
 	if got := getModelForProvider(cfg); got != "gemini-3-flash-preview" {
 		t.Fatalf("Expected Google fallback model, got %q", got)
+	}
+}
+
+func TestModel_Update_UpdateCheckMsg_ShowsWelcomeUpdate(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 24)
+
+	res := updatecheck.Result{
+		CurrentVersion:  "v0.1.0",
+		LatestVersion:   "v0.2.0",
+		ReleaseURL:      "https://github.com/pakru/wtf_cli/releases",
+		UpgradeCommand:  "curl -fsSL https://raw.githubusercontent.com/pakru/wtf_cli/main/install.sh | bash",
+		UpdateAvailable: true,
+	}
+
+	newModel, _ := m.Update(updateCheckMsg{Result: res})
+	updated := newModel.(Model)
+
+	if !updated.startupUpdateShown {
+		t.Fatal("expected startup update notice to be shown")
+	}
+	content := updated.viewport.GetContent()
+	if !strings.Contains(content, "Update available:") {
+		t.Fatalf("expected viewport content to include update section, got %q", content)
+	}
+}
+
+func TestModel_Update_UpdateCheckMsg_ErrorNoUserNotice(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 24)
+	original := m.viewport.GetContent()
+
+	newModel, _ := m.Update(updateCheckMsg{Err: fmt.Errorf("network down")})
+	updated := newModel.(Model)
+
+	if updated.startupUpdateShown {
+		t.Fatal("expected no startup update shown on error")
+	}
+	if updated.viewport.GetContent() != original {
+		t.Fatal("expected viewport to remain unchanged on update-check error")
 	}
 }

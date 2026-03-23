@@ -32,6 +32,13 @@ func TestDefault(t *testing.T) {
 	if cfg.ContextWindow != 1000 {
 		t.Errorf("Expected ContextWindow 1000, got %d", cfg.ContextWindow)
 	}
+
+	if !cfg.UpdateCheck.Enabled {
+		t.Error("Expected update check enabled by default")
+	}
+	if cfg.UpdateCheck.IntervalHours != 24 {
+		t.Errorf("Expected update check interval 24h, got %d", cfg.UpdateCheck.IntervalHours)
+	}
 }
 
 func TestLoad_CreateDefault(t *testing.T) {
@@ -349,4 +356,15 @@ func TestGetConfigPath(t *testing.T) {
 
 func contains(s, substr string) bool {
 	return filepath.Base(filepath.Dir(s)) == ".wtf_cli" || filepath.Dir(s) == ".wtf_cli"
+}
+
+func TestValidate_InvalidUpdateCheckInterval(t *testing.T) {
+	cfg := Default()
+	cfg.OpenRouter.APIKey = "test"
+	cfg.UpdateCheck.IntervalHours = 0
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Expected error for non-positive update_check.interval_hours, got nil")
+	}
 }

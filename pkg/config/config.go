@@ -11,15 +11,16 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	LLMProvider   string           `json:"llm_provider"`
-	OpenRouter    OpenRouterConfig `json:"openrouter"`
-	Providers     ProvidersConfig  `json:"providers"`
-	BufferSize    int              `json:"buffer_size"`
-	ContextWindow int              `json:"context_window"`
-	StatusBar     StatusBarConfig  `json:"status_bar"`
-	LogFile       string           `json:"log_file"`
-	LogFormat     string           `json:"log_format"`
-	LogLevel      string           `json:"log_level"`
+	LLMProvider   string            `json:"llm_provider"`
+	OpenRouter    OpenRouterConfig  `json:"openrouter"`
+	Providers     ProvidersConfig   `json:"providers"`
+	BufferSize    int               `json:"buffer_size"`
+	ContextWindow int               `json:"context_window"`
+	StatusBar     StatusBarConfig   `json:"status_bar"`
+	UpdateCheck   UpdateCheckConfig `json:"update_check"`
+	LogFile       string            `json:"log_file"`
+	LogFormat     string            `json:"log_format"`
+	LogLevel      string            `json:"log_level"`
 }
 
 // ProvidersConfig holds configuration for all LLM providers.
@@ -85,6 +86,12 @@ type StatusBarConfig struct {
 	Colors   string `json:"colors"`   // "auto"
 }
 
+// UpdateCheckConfig holds startup update-check configuration
+type UpdateCheckConfig struct {
+	Enabled       bool `json:"enabled"`
+	IntervalHours int  `json:"interval_hours"`
+}
+
 // Default returns a configuration with default values
 func Default() Config {
 	return Config{
@@ -113,6 +120,10 @@ func Default() Config {
 		StatusBar: StatusBarConfig{
 			Position: "bottom",
 			Colors:   "auto",
+		},
+		UpdateCheck: UpdateCheckConfig{
+			Enabled:       true,
+			IntervalHours: 24,
 		},
 		LogFile:   defaultLogFilePath(),
 		LogFormat: "json",
@@ -221,6 +232,10 @@ func (c Config) Validate() error {
 		return fmt.Errorf("context_window must be positive, got: %d", c.ContextWindow)
 	}
 
+	if c.UpdateCheck.IntervalHours <= 0 {
+		return fmt.Errorf("update_check.interval_hours must be positive, got: %d", c.UpdateCheck.IntervalHours)
+	}
+
 	if strings.TrimSpace(c.LogLevel) != "" {
 		switch strings.ToLower(strings.TrimSpace(c.LogLevel)) {
 		case "trace", "debug", "info", "warn", "warning", "error":
@@ -322,6 +337,10 @@ type configPresence struct {
 		Position *string `json:"position"`
 		Colors   *string `json:"colors"`
 	} `json:"status_bar"`
+	UpdateCheck *struct {
+		Enabled       *bool `json:"enabled"`
+		IntervalHours *int  `json:"interval_hours"`
+	} `json:"update_check"`
 	LogFile   *string `json:"log_file"`
 	LogFormat *string `json:"log_format"`
 	LogLevel  *string `json:"log_level"`
@@ -403,6 +422,17 @@ func applyDefaults(cfg Config, data []byte) Config {
 		}
 		if presence.StatusBar.Colors == nil || strings.TrimSpace(cfg.StatusBar.Colors) == "" {
 			cfg.StatusBar.Colors = defaults.StatusBar.Colors
+		}
+	}
+
+	if presence.UpdateCheck == nil {
+		cfg.UpdateCheck = defaults.UpdateCheck
+	} else {
+		if presence.UpdateCheck.Enabled == nil {
+			cfg.UpdateCheck.Enabled = defaults.UpdateCheck.Enabled
+		}
+		if presence.UpdateCheck.IntervalHours == nil || cfg.UpdateCheck.IntervalHours <= 0 {
+			cfg.UpdateCheck.IntervalHours = defaults.UpdateCheck.IntervalHours
 		}
 	}
 

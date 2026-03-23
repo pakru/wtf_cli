@@ -11,10 +11,22 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// WelcomeMessage returns the welcome box string to print to PTY
-func WelcomeMessage() string {
-	const boxWidth = 53 // Total inner width
+const boxWidth = 53 // Total inner width
 
+type UpdateNotice struct {
+	CurrentVersion string
+	LatestVersion  string
+	ReleaseURL     string
+	UpgradeCommand string
+}
+
+// WelcomeMessage returns the welcome box string to print to PTY.
+func WelcomeMessage() string {
+	return WelcomeMessageWithUpdate(nil)
+}
+
+// WelcomeMessageWithUpdate renders the welcome box and optional update details.
+func WelcomeMessageWithUpdate(update *UpdateNotice) string {
 	// Helper: create a line with content padded to boxWidth
 	makeLine := func(content string, visualWidth int) string {
 		pad := boxWidth - visualWidth
@@ -61,6 +73,30 @@ func WelcomeMessage() string {
 		lines = append(lines, makeLine(line, lineWidth))
 	}
 
+	if update != nil {
+		lines = append(lines, empty)
+		updateHeader := "  Update available:"
+		lines = append(lines, makeLine(styles.WelcomeHeaderStyle.Render(updateHeader), runewidth.StringWidth(updateHeader)))
+
+		cur := withFallback(strings.TrimSpace(update.CurrentVersion), version.Summary())
+		latest := withFallback(strings.TrimSpace(update.LatestVersion), "unknown")
+
+		updateLines := []string{
+			"    Current: " + cur,
+			"    Latest:  " + latest,
+			"    Releases: " + withFallback(strings.TrimSpace(update.ReleaseURL), "https://github.com/pakru/wtf_cli/releases"),
+			"    Upgrade:  " + withFallback(strings.TrimSpace(update.UpgradeCommand), "curl -fsSL https://raw.githubusercontent.com/pakru/wtf_cli/main/install.sh | bash"),
+		}
+		for _, raw := range updateLines {
+			line := raw
+			if runewidth.StringWidth(line) > boxWidth {
+				line = utils.TruncateToWidth(line, boxWidth)
+			}
+			lineWidth := runewidth.StringWidth(line)
+			lines = append(lines, makeLine(styles.TextStyle.Render(line), lineWidth))
+		}
+	}
+
 	lines = append(lines, empty)
 
 	// Version at bottom (centered, dimmed)
@@ -77,4 +113,11 @@ func WelcomeMessage() string {
 	lines = append(lines, "")
 
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func withFallback(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
