@@ -1018,12 +1018,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ReleaseURL:     msg.Result.ReleaseURL,
 			UpgradeCommand: msg.Result.UpgradeCommand,
 		}
-		if !m.startupPTYOutputSeen {
-			m.viewport.Clear()
-			m.viewport.AppendOutput([]byte(welcome.WelcomeMessageWithUpdate(notice)))
-		} else {
-			m.viewport.AppendOutput([]byte("\n" + welcome.WelcomeMessageWithUpdate(notice)))
-		}
+		m.viewport.AppendOutput([]byte(welcome.UpdateBanner(notice)))
 		m.startupUpdateShown = true
 		slog.Info("update_check_success", "current", msg.Result.CurrentVersion, "latest", msg.Result.LatestVersion, "update_available", true)
 		return m, nil

@@ -188,6 +188,21 @@ var (
 	// WelcomeVersionStyle for version info (dimmed)
 	WelcomeVersionStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("244"))
+
+	// WelcomeURLStyle for clickable URLs (blue + underline = universal "link" signal)
+	WelcomeURLStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("111")).
+			Underline(true)
+
+	// WelcomeCommandStyle for copy-paste shell commands
+	WelcomeCommandStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("156")).
+				Bold(true)
+
+	// WelcomeUpdateVersionStyle for the new version number (green = success)
+	WelcomeUpdateVersionStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("114")).
+					Bold(true)
 )
 
 // Full-screen panel styles

@@ -22,11 +22,44 @@ type UpdateNotice struct {
 
 // WelcomeMessage returns the welcome box string to print to PTY.
 func WelcomeMessage() string {
-	return WelcomeMessageWithUpdate(nil)
+	return buildWelcomeBox()
 }
 
-// WelcomeMessageWithUpdate renders the welcome box and optional update details.
+// WelcomeMessageWithUpdate renders the welcome box.
+// The update section is now rendered separately via UpdateBanner.
+// This function is kept for backward compatibility.
 func WelcomeMessageWithUpdate(update *UpdateNotice) string {
+	return buildWelcomeBox()
+}
+
+// UpdateBanner renders a compact, box-free update notification.
+// URLs and commands render at full terminal width — never truncated.
+func UpdateBanner(notice *UpdateNotice) string {
+	if notice == nil {
+		return ""
+	}
+
+	cur := withFallback(strings.TrimSpace(notice.CurrentVersion), version.Summary())
+	latest := withFallback(strings.TrimSpace(notice.LatestVersion), "unknown")
+	releaseURL := withFallback(strings.TrimSpace(notice.ReleaseURL), "https://github.com/pakru/wtf_cli/releases")
+	upgradeCmd := withFallback(strings.TrimSpace(notice.UpgradeCommand), "curl -fsSL https://raw.githubusercontent.com/pakru/wtf_cli/main/install.sh | bash")
+
+	// Header: 🆕 Update available: v0.4.14 → v0.4.15
+	header := styles.WelcomeHeaderStyle.Render("  🆕 Update available: ") +
+		styles.WelcomeVersionStyle.Render(cur) +
+		styles.WelcomeHeaderStyle.Render(" → ") +
+		styles.WelcomeUpdateVersionStyle.Render(latest)
+
+	// URL line (blue, underlined, full width)
+	urlLine := "     " + styles.WelcomeHeaderStyle.Render("Releases: ") + styles.WelcomeURLStyle.Render(releaseURL)
+
+	// Command line (green, bold, full width)
+	cmdLine := "     " + styles.WelcomeHeaderStyle.Render("Upgrade:  ") + styles.WelcomeCommandStyle.Render(upgradeCmd)
+
+	return "\n" + header + "\n" + urlLine + "\n" + cmdLine + "\n\n"
+}
+
+func buildWelcomeBox() string {
 	// Helper: create a line with content padded to boxWidth
 	makeLine := func(content string, visualWidth int) string {
 		pad := boxWidth - visualWidth
@@ -71,30 +104,6 @@ func WelcomeMessageWithUpdate(update *UpdateNotice) string {
 		line := styles.WelcomeKeyStyle.Render(keyFormatted) + styles.TextStyle.Render(s.desc)
 		lineWidth := runewidth.StringWidth(keyFormatted) + runewidth.StringWidth(s.desc)
 		lines = append(lines, makeLine(line, lineWidth))
-	}
-
-	if update != nil {
-		lines = append(lines, empty)
-		updateHeader := "  Update available:"
-		lines = append(lines, makeLine(styles.WelcomeHeaderStyle.Render(updateHeader), runewidth.StringWidth(updateHeader)))
-
-		cur := withFallback(strings.TrimSpace(update.CurrentVersion), version.Summary())
-		latest := withFallback(strings.TrimSpace(update.LatestVersion), "unknown")
-
-		updateLines := []string{
-			"    Current: " + cur,
-			"    Latest:  " + latest,
-			"    Releases: " + withFallback(strings.TrimSpace(update.ReleaseURL), "https://github.com/pakru/wtf_cli/releases"),
-			"    Upgrade:  " + withFallback(strings.TrimSpace(update.UpgradeCommand), "curl -fsSL https://raw.githubusercontent.com/pakru/wtf_cli/main/install.sh | bash"),
-		}
-		for _, raw := range updateLines {
-			line := raw
-			if runewidth.StringWidth(line) > boxWidth {
-				line = utils.TruncateToWidth(line, boxWidth)
-			}
-			lineWidth := runewidth.StringWidth(line)
-			lines = append(lines, makeLine(styles.TextStyle.Render(line), lineWidth))
-		}
 	}
 
 	lines = append(lines, empty)
