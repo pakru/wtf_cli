@@ -28,6 +28,8 @@ import (
 	"wtf_cli/pkg/ui/input"
 	"wtf_cli/pkg/ui/render"
 	"wtf_cli/pkg/ui/terminal"
+	"wtf_cli/pkg/updatecheck"
+	"wtf_cli/pkg/version"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -103,6 +105,9 @@ type Model struct {
 	fullScreenMode  bool
 	fullScreenPanel *fullscreen.FullScreenPanel
 	altScreenState  *terminal.AltScreenState
+
+	startupPTYOutputSeen bool
+	startupUpdateShown   bool
 }
 
 // NewModel creates a new Bubble Tea model
@@ -160,6 +165,7 @@ func (m Model) Init() tea.Cmd {
 		listenToPTY(m.ptyFile), // Start listening to PTY output
 		tickDirectory(),        // Start directory update ticker
 		resolveGitBranchCmd(m.currentDir, m.gitBranchResolver),
+		fetchUpdateCheckCmd(),
 	)
 }
 
@@ -995,11 +1001,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case updateCheckMsg:
+		if msg.SkipReason != "" {
+			slog.Info("update_check_skipped", "reason", msg.SkipReason)
+			return m, nil
+		}
+		if msg.Err != nil {
+			slog.Warn("update_check_error", "error", msg.Err)
+			return m, nil
+		}
+		if !msg.Result.UpdateAvailable || m.startupUpdateShown {
+			return m, nil
+		}
+
+		notice := &welcome.UpdateNotice{
+			CurrentVersion: msg.Result.CurrentVersion,
+			LatestVersion:  msg.Result.LatestVersion,
+			ReleaseURL:     msg.Result.ReleaseURL,
+			UpgradeCommand: msg.Result.UpgradeCommand,
+		}
+		m.viewport.AppendOutput([]byte(welcome.UpdateBanner(notice)))
+		m.startupUpdateShown = true
+		slog.Info("update_check_success", "current", msg.Result.CurrentVersion, "latest", msg.Result.LatestVersion, "update_available", true)
+		return m, nil
+
 	case ptyOutputMsg:
 		// Suppress PTY output briefly after resize to prevent prompt reprint from showing
 		if !m.resizeTime.IsZero() && time.Since(m.resizeTime) < 100*time.Millisecond {
 			// Skip appending to viewport but still schedule next read
 			return m, listenToPTY(m.ptyFile)
+		}
+
+		if len(msg.data) > 0 {
+			m.startupPTYOutputSeen = true
 		}
 
 		// Append to batch buffer
@@ -1691,6 +1725,46 @@ func applyPasteToOverlay(content string, update func(tea.KeyPressMsg) tea.Cmd) t
 		return cmds[0]
 	}
 	return tea.Batch(cmds...)
+}
+
+type updateCheckMsg struct {
+	Result     updatecheck.Result
+	Err        error
+	SkipReason string
+}
+
+func fetchUpdateCheckCmd() tea.Cmd {
+	return func() tea.Msg {
+		cfg, err := config.Load(config.GetConfigPath())
+		if err != nil {
+			return updateCheckMsg{SkipReason: "config_error"}
+		}
+		if !cfg.UpdateCheck.Enabled {
+			return updateCheckMsg{SkipReason: "disabled"}
+		}
+
+		current := strings.TrimSpace(version.Version)
+		if current == "" || strings.EqualFold(current, "dev") {
+			return updateCheckMsg{SkipReason: "dev_build"}
+		}
+
+		slog.Info("update_check_start")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		result, err := updatecheck.CheckLatest(ctx, current, updatecheck.CheckOptions{
+			Interval: time.Duration(cfg.UpdateCheck.IntervalHours) * time.Hour,
+		})
+		if err != nil {
+			return updateCheckMsg{Err: err}
+		}
+
+		if !result.UpdateAvailable {
+			slog.Info("update_check_success", "current", result.CurrentVersion, "latest", result.LatestVersion, "update_available", false)
+		}
+
+		return updateCheckMsg{Result: result}
+	}
 }
 
 // Copilot auth status message type.

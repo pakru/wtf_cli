@@ -11,10 +11,55 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// WelcomeMessage returns the welcome box string to print to PTY
-func WelcomeMessage() string {
-	const boxWidth = 53 // Total inner width
+const boxWidth = 53 // Total inner width
 
+type UpdateNotice struct {
+	CurrentVersion string
+	LatestVersion  string
+	ReleaseURL     string
+	UpgradeCommand string
+}
+
+// WelcomeMessage returns the welcome box string to print to PTY.
+func WelcomeMessage() string {
+	return buildWelcomeBox()
+}
+
+// WelcomeMessageWithUpdate renders the welcome box.
+// The update section is now rendered separately via UpdateBanner.
+// This function is kept for backward compatibility.
+func WelcomeMessageWithUpdate(update *UpdateNotice) string {
+	return buildWelcomeBox()
+}
+
+// UpdateBanner renders a compact, box-free update notification.
+// URLs and commands render at full terminal width — never truncated.
+func UpdateBanner(notice *UpdateNotice) string {
+	if notice == nil {
+		return ""
+	}
+
+	cur := withFallback(strings.TrimSpace(notice.CurrentVersion), version.Summary())
+	latest := withFallback(strings.TrimSpace(notice.LatestVersion), "unknown")
+	releaseURL := withFallback(strings.TrimSpace(notice.ReleaseURL), "https://github.com/pakru/wtf_cli/releases")
+	upgradeCmd := withFallback(strings.TrimSpace(notice.UpgradeCommand), "curl -fsSL https://raw.githubusercontent.com/pakru/wtf_cli/main/install.sh | bash")
+
+	// Header: 🆕 Update available: v0.4.14 → v0.4.15
+	header := styles.WelcomeHeaderStyle.Render("  🆕 Update available: ") +
+		styles.WelcomeVersionStyle.Render(cur) +
+		styles.WelcomeHeaderStyle.Render(" → ") +
+		styles.WelcomeUpdateVersionStyle.Render(latest)
+
+	// URL line (blue, underlined, full width)
+	urlLine := "     " + styles.WelcomeHeaderStyle.Render("Releases: ") + styles.WelcomeURLStyle.Render(releaseURL)
+
+	// Command line (green, bold, full width)
+	cmdLine := "     " + styles.WelcomeHeaderStyle.Render("Upgrade:  ") + styles.WelcomeCommandStyle.Render(upgradeCmd)
+
+	return "\n" + header + "\n" + urlLine + "\n" + cmdLine + "\n\n"
+}
+
+func buildWelcomeBox() string {
 	// Helper: create a line with content padded to boxWidth
 	makeLine := func(content string, visualWidth int) string {
 		pad := boxWidth - visualWidth
@@ -77,4 +122,11 @@ func WelcomeMessage() string {
 	lines = append(lines, "")
 
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func withFallback(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
