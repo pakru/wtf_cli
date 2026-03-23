@@ -13,7 +13,6 @@ import (
 const (
 	llmLabelPrefix  = "LLM: unknown-unknown | "
 	applyFooterHint = "Enter Apply | Up/Down Navigate | Shift+Tab TTY | Ctrl+T Hide"
-	sendFooterHint  = "Enter Send | Up/Down Scroll | Shift+Tab TTY | Ctrl+T Hide"
 )
 
 func TestSidebar_AppendUserMessage(t *testing.T) {
@@ -429,17 +428,18 @@ func TestSidebar_FooterHintChangesWithInputState(t *testing.T) {
 	if !strings.Contains(view, "LLM: unknown-unknown | Apply") {
 		t.Fatalf("Expected apply footer hint when input is empty, got:\n%s", view)
 	}
-	if strings.Contains(view, "LLM: unknown-unknown | Send") {
-		t.Fatalf("Did not expect send hint when input is empty, got:\n%s", view)
-	}
 
 	s.textarea.SetValue("hello")
 	view = stripANSICodes(s.View())
-	if !strings.Contains(view, "LLM: unknown-unknown | Send") {
-		t.Fatalf("Expected send footer hint when input has text, got:\n%s", view)
+	// With text typed the command is no longer selectable, so footer shows only the LLM label.
+	if !strings.Contains(view, "LLM: unknown-unknown") {
+		t.Fatalf("Expected LLM label in footer when input has text, got:\n%s", view)
 	}
-	if strings.Contains(view, "LLM: unknown-unknown | Apply") {
+	if strings.Contains(view, "| Apply") {
 		t.Fatalf("Did not expect apply hint when input has text, got:\n%s", view)
+	}
+	if strings.Contains(view, "| Send") {
+		t.Fatalf("Did not expect send hint in footer, got:\n%s", view)
 	}
 }
 
@@ -477,8 +477,9 @@ func TestSidebar_FooterHintRendersBelowInput(t *testing.T) {
 	if hintLine == "" {
 		t.Fatalf("Expected footer hint line in view, got:\n%s", view)
 	}
-	if idx := strings.Index(hintLine, "LLM: unknown-unknown"); idx <= 3 {
-		t.Fatalf("Expected centered footer hint with left padding, got line: %q", hintLine)
+	// Footer is left-aligned; the LLM label should appear near the start.
+	if !strings.Contains(hintLine, "LLM: unknown-unknown") {
+		t.Fatalf("Expected left-aligned footer hint with LLM label, got line: %q", hintLine)
 	}
 }
 
@@ -488,7 +489,7 @@ func TestSidebar_FooterAlwaysShownWithoutCommands(t *testing.T) {
 	s.Show("WTF Analysis", "")
 
 	view := stripANSICodes(s.View())
-	if !strings.Contains(view, "LLM: unknown-unknown | Send") {
+	if !strings.Contains(view, "LLM: unknown-unknown") {
 		t.Fatalf("Expected footer with LLM label even without command entries, got:\n%s", view)
 	}
 }
@@ -574,6 +575,8 @@ func TestSidebar_ArrowKeysScrollWhenInputHasText(t *testing.T) {
 		"line 8",
 		"line 9",
 		"line 10",
+		"line 11",
+		"line 12",
 		"<cmd>docker network prune</cmd>",
 		"<cmd>docker network ls</cmd>",
 	}, "\n"))

@@ -364,7 +364,7 @@ func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
 	footerText := truncateToWidth(s.commandFooterText(contentWidth), contentWidth)
 	footer := sidebarFooterStyle.
 		Width(contentWidth).
-		Align(lipgloss.Center).
+		Align(lipgloss.Left).
 		Render(footerText)
 	lines = append(lines, footer)
 
@@ -384,7 +384,7 @@ func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
 
 	box := sidebarBoxStyle.
 		Width(boxWidth).
-		Padding(sidebarPaddingV, sidebarPaddingH).
+		Padding(sidebarPaddingV, sidebarPaddingH, 0).
 		Render(content)
 
 	return box
@@ -673,7 +673,8 @@ func (s *Sidebar) contentWidth() int {
 }
 
 func (s *Sidebar) contentHeight() int {
-	height := s.height - 2*(sidebarBorderSize+sidebarPaddingV)
+	// Top padding + top border + bottom border (no bottom padding).
+	height := s.height - 2*sidebarBorderSize - sidebarPaddingV
 	if height < 1 {
 		return 1
 	}
@@ -703,22 +704,16 @@ func (s *Sidebar) viewportHeight() int {
 }
 
 func (s *Sidebar) commandFooterText(contentWidth int) string {
-	hint := "Enter Send | Up/Down Scroll | Shift+Tab TTY | Ctrl+T Hide"
-	if s.canApplySelectedCommand() {
-		hint = "Enter Apply | Up/Down Navigate | Shift+Tab TTY | Ctrl+T Hide"
-	}
 	label := s.ActiveLLMLabel()
-	full := label + " | " + hint
-	if runewidth.StringWidth(full) <= contentWidth {
-		return full
-	}
-	compactHint := "Enter"
 	if s.canApplySelectedCommand() {
-		compactHint = "Apply"
-	} else {
-		compactHint = "Send"
+		hint := "Enter Apply | Up/Down Navigate | Shift+Tab TTY | Ctrl+T Hide"
+		full := label + " | " + hint
+		if runewidth.StringWidth(full) <= contentWidth {
+			return full
+		}
+		return label + " | Apply"
 	}
-	return label + " | " + compactHint
+	return label
 }
 
 func (s *Sidebar) commandSelectionEnabled() bool {
