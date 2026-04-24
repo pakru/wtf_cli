@@ -36,8 +36,8 @@ func TestDefault(t *testing.T) {
 	if !cfg.UpdateCheck.Enabled {
 		t.Error("Expected update check enabled by default")
 	}
-	if cfg.UpdateCheck.IntervalHours != 24 {
-		t.Errorf("Expected update check interval 24h, got %d", cfg.UpdateCheck.IntervalHours)
+	if cfg.UpdateCheck.IntervalHours != 1 {
+		t.Errorf("Expected update check interval 1h, got %d", cfg.UpdateCheck.IntervalHours)
 	}
 }
 

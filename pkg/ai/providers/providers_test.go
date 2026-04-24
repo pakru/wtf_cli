@@ -14,6 +14,8 @@ import (
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/config"
+
+	copilot "github.com/github/copilot-sdk/go"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -583,6 +585,35 @@ func TestCopilotProvider_BuildCopilotPrompt_EmptyMessages(t *testing.T) {
 	_, _, err := buildCopilotPrompt(ai.ChatRequest{})
 	if err == nil {
 		t.Fatal("expected error for empty messages")
+	}
+}
+
+func TestCopilotProvider_SessionConfigSetsPermissionHandler(t *testing.T) {
+	cfg := newCopilotSessionConfig("claude-haiku-4.5", true, "system rules")
+	if cfg.Model != "claude-haiku-4.5" {
+		t.Fatalf("expected model to be set, got %q", cfg.Model)
+	}
+	if !cfg.Streaming {
+		t.Fatal("expected streaming to be enabled")
+	}
+	if cfg.SystemMessage == nil || cfg.SystemMessage.Content != "system rules" {
+		t.Fatalf("expected system message to be set, got %#v", cfg.SystemMessage)
+	}
+	if cfg.OnPermissionRequest == nil {
+		t.Fatal("expected permission handler to be set")
+	}
+
+	result, err := cfg.OnPermissionRequest(
+		copilot.PermissionRequest{
+			Kind: copilot.PermissionRequestedDataPermissionRequestKindShell,
+		},
+		copilot.PermissionInvocation{SessionID: "test-session"},
+	)
+	if err != nil {
+		t.Fatalf("permission handler error: %v", err)
+	}
+	if result.Kind != copilot.PermissionRequestResultKindDeniedCouldNotRequestFromUser {
+		t.Fatalf("expected deny result, got %q", result.Kind)
 	}
 }
 

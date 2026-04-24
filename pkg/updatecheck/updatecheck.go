@@ -69,7 +69,7 @@ func CheckLatest(ctx context.Context, currentVersion string, opts CheckOptions) 
 	}
 	interval := opts.Interval
 	if interval <= 0 {
-		interval = 24 * time.Hour
+		interval = time.Hour
 	}
 	nowFn := opts.Now
 	if nowFn == nil {
