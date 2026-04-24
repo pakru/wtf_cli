@@ -301,23 +301,23 @@ func TestFetchGoogleModels_EmptyAPIKey(t *testing.T) {
 }
 
 type stubCopilotClient struct {
-	startErr   error
-	listErr    error
-	statusErr  error
-	models     []copilot.ModelInfo
-	status     *copilot.GetAuthStatusResponse
-	stopErrors []error
+	startErr  error
+	listErr   error
+	statusErr error
+	models    []copilot.ModelInfo
+	status    *copilot.GetAuthStatusResponse
+	stopErr   error
 }
 
-func (s *stubCopilotClient) Start() error {
+func (s *stubCopilotClient) Start(context.Context) error {
 	return s.startErr
 }
 
-func (s *stubCopilotClient) Stop() []error {
-	return s.stopErrors
+func (s *stubCopilotClient) Stop() error {
+	return s.stopErr
 }
 
-func (s *stubCopilotClient) GetAuthStatus() (*copilot.GetAuthStatusResponse, error) {
+func (s *stubCopilotClient) GetAuthStatus(context.Context) (*copilot.GetAuthStatusResponse, error) {
 	if s.statusErr != nil {
 		return nil, s.statusErr
 	}
@@ -327,7 +327,7 @@ func (s *stubCopilotClient) GetAuthStatus() (*copilot.GetAuthStatusResponse, err
 	return s.status, nil
 }
 
-func (s *stubCopilotClient) ListModels() ([]copilot.ModelInfo, error) {
+func (s *stubCopilotClient) ListModels(context.Context) ([]copilot.ModelInfo, error) {
 	if s.listErr != nil {
 		return nil, s.listErr
 	}

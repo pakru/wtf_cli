@@ -30,17 +30,17 @@ func init() {
 }
 
 type copilotClient interface {
-	Start() error
-	Stop() []error
-	GetAuthStatus() (*copilot.GetAuthStatusResponse, error)
-	CreateSession(config *copilot.SessionConfig) (copilotSession, error)
+	Start(context.Context) error
+	Stop() error
+	GetAuthStatus(context.Context) (*copilot.GetAuthStatusResponse, error)
+	CreateSession(context.Context, *copilot.SessionConfig) (copilotSession, error)
 }
 
 type copilotSession interface {
-	Send(options copilot.MessageOptions) (string, error)
-	SendAndWait(options copilot.MessageOptions, timeout time.Duration) (*copilot.SessionEvent, error)
+	Send(context.Context, copilot.MessageOptions) (string, error)
+	SendAndWait(context.Context, copilot.MessageOptions) (*copilot.SessionEvent, error)
 	On(handler copilot.SessionEventHandler) func()
-	Abort() error
+	Abort(context.Context) error
 	Destroy() error
 }
 
@@ -48,20 +48,20 @@ type sdkCopilotClient struct {
 	client *copilot.Client
 }
 
-func (c *sdkCopilotClient) Start() error {
-	return c.client.Start()
+func (c *sdkCopilotClient) Start(ctx context.Context) error {
+	return c.client.Start(ctx)
 }
 
-func (c *sdkCopilotClient) Stop() []error {
+func (c *sdkCopilotClient) Stop() error {
 	return c.client.Stop()
 }
 
-func (c *sdkCopilotClient) GetAuthStatus() (*copilot.GetAuthStatusResponse, error) {
-	return c.client.GetAuthStatus()
+func (c *sdkCopilotClient) GetAuthStatus(ctx context.Context) (*copilot.GetAuthStatusResponse, error) {
+	return c.client.GetAuthStatus(ctx)
 }
 
-func (c *sdkCopilotClient) CreateSession(config *copilot.SessionConfig) (copilotSession, error) {
-	session, err := c.client.CreateSession(config)
+func (c *sdkCopilotClient) CreateSession(ctx context.Context, config *copilot.SessionConfig) (copilotSession, error) {
+	session, err := c.client.CreateSession(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -72,20 +72,20 @@ type sdkCopilotSession struct {
 	session *copilot.Session
 }
 
-func (s *sdkCopilotSession) Send(options copilot.MessageOptions) (string, error) {
-	return s.session.Send(options)
+func (s *sdkCopilotSession) Send(ctx context.Context, options copilot.MessageOptions) (string, error) {
+	return s.session.Send(ctx, options)
 }
 
-func (s *sdkCopilotSession) SendAndWait(options copilot.MessageOptions, timeout time.Duration) (*copilot.SessionEvent, error) {
-	return s.session.SendAndWait(options, timeout)
+func (s *sdkCopilotSession) SendAndWait(ctx context.Context, options copilot.MessageOptions) (*copilot.SessionEvent, error) {
+	return s.session.SendAndWait(ctx, options)
 }
 
 func (s *sdkCopilotSession) On(handler copilot.SessionEventHandler) func() {
 	return s.session.On(handler)
 }
 
-func (s *sdkCopilotSession) Abort() error {
-	return s.session.Abort()
+func (s *sdkCopilotSession) Abort(ctx context.Context) error {
+	return s.session.Abort(ctx)
 }
 
 func (s *sdkCopilotSession) Destroy() error {
@@ -134,6 +134,11 @@ func NewCopilotProvider(cfg ai.ProviderConfig) (ai.Provider, error) {
 
 // CreateChatCompletion sends a non-streaming chat completion request.
 func (p *CopilotProvider) CreateChatCompletion(ctx context.Context, req ai.ChatRequest) (ai.ChatResponse, error) {
+	ctx = normalizeCopilotContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return ai.ChatResponse{}, err
+	}
+
 	systemMsg, prompt, err := buildCopilotPrompt(req)
 	if err != nil {
 		return ai.ChatResponse{}, err
@@ -150,17 +155,17 @@ func (p *CopilotProvider) CreateChatCompletion(ctx context.Context, req ai.ChatR
 	)
 	logCopilotUnsupportedOptions(req, p.defaultTemperature, p.defaultMaxTokens)
 
-	if err := p.client.Start(); err != nil {
+	if err := p.client.Start(ctx); err != nil {
 		return ai.ChatResponse{}, fmt.Errorf("copilot client start: %w", err)
 	}
 	defer stopCopilotClient(p.client)
 
-	if err := ensureCopilotAuthenticated(p.client); err != nil {
+	if err := ensureCopilotAuthenticated(ctx, p.client); err != nil {
 		return ai.ChatResponse{}, err
 	}
 
 	slog.Debug("copilot_session_create_start", "model", model, "streaming", false)
-	session, err := p.client.CreateSession(&copilot.SessionConfig{
+	session, err := p.client.CreateSession(ctx, &copilot.SessionConfig{
 		Model:         model,
 		Streaming:     false,
 		SystemMessage: copilotSystemMessage(systemMsg),
@@ -171,19 +176,23 @@ func (p *CopilotProvider) CreateChatCompletion(ctx context.Context, req ai.ChatR
 	slog.Debug("copilot_session_create_done", "model", model)
 	defer session.Destroy()
 
-	abortDone := watchCopilotContext(ctx, session)
+	sendCtx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+	abortDone := watchCopilotContext(sendCtx, session)
 	defer close(abortDone)
 
 	slog.Debug("copilot_session_send_start", "prompt_chars", len(prompt))
-	resp, err := session.SendAndWait(copilot.MessageOptions{Prompt: prompt}, requestTimeout)
+	resp, err := session.SendAndWait(sendCtx, copilot.MessageOptions{Prompt: prompt})
 	if err != nil {
 		return ai.ChatResponse{}, err
 	}
 	slog.Debug("copilot_session_send_done")
 
 	content := ""
-	if resp != nil && resp.Data.Content != nil {
-		content = *resp.Data.Content
+	if resp != nil {
+		if data, ok := resp.Data.(*copilot.AssistantMessageData); ok {
+			content = data.Content
+		}
 	}
 
 	return ai.ChatResponse{
@@ -194,6 +203,11 @@ func (p *CopilotProvider) CreateChatCompletion(ctx context.Context, req ai.ChatR
 
 // CreateChatCompletionStream sends a streaming chat completion request.
 func (p *CopilotProvider) CreateChatCompletionStream(ctx context.Context, req ai.ChatRequest) (ai.ChatStream, error) {
+	ctx = normalizeCopilotContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	systemMsg, prompt, err := buildCopilotPrompt(req)
 	if err != nil {
 		return nil, err
@@ -209,17 +223,17 @@ func (p *CopilotProvider) CreateChatCompletionStream(ctx context.Context, req ai
 	)
 	logCopilotUnsupportedOptions(req, p.defaultTemperature, p.defaultMaxTokens)
 
-	if err := p.client.Start(); err != nil {
+	if err := p.client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("copilot client start: %w", err)
 	}
 
-	if err := ensureCopilotAuthenticated(p.client); err != nil {
+	if err := ensureCopilotAuthenticated(ctx, p.client); err != nil {
 		stopCopilotClient(p.client)
 		return nil, err
 	}
 
 	slog.Debug("copilot_session_create_start", "model", model, "streaming", true)
-	session, err := p.client.CreateSession(&copilot.SessionConfig{
+	session, err := p.client.CreateSession(ctx, &copilot.SessionConfig{
 		Model:         model,
 		Streaming:     true,
 		SystemMessage: copilotSystemMessage(systemMsg),
@@ -259,19 +273,24 @@ func selectCopilotTimeout(ctx context.Context, fallback time.Duration) time.Dura
 	return fallback
 }
 
+func normalizeCopilotContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
+}
+
 func stopCopilotClient(client copilotClient) {
 	if client == nil {
 		return
 	}
-	for _, err := range client.Stop() {
-		if err != nil {
-			slog.Debug("copilot_client_stop_error", "error", err)
-		}
+	if err := client.Stop(); err != nil {
+		slog.Debug("copilot_client_stop_error", "error", err)
 	}
 }
 
-func ensureCopilotAuthenticated(client copilotClient) error {
-	status, err := client.GetAuthStatus()
+func ensureCopilotAuthenticated(ctx context.Context, client copilotClient) error {
+	status, err := client.GetAuthStatus(ctx)
 	if err != nil {
 		return fmt.Errorf("copilot auth status: %w", err)
 	}
@@ -355,6 +374,7 @@ type copilotStreamEvent struct {
 }
 
 type copilotStream struct {
+	ctx          context.Context
 	events       chan copilotStreamEvent
 	current      string
 	err          error
@@ -372,6 +392,7 @@ type copilotStream struct {
 func newCopilotStream(ctx context.Context, client copilotClient, session copilotSession) *copilotStream {
 	events := make(chan copilotStreamEvent, 32)
 	stream := &copilotStream{
+		ctx:    normalizeCopilotContext(ctx),
 		events: events,
 		cleanup: func() {
 			if session != nil {
@@ -392,12 +413,12 @@ func newCopilotStream(ctx context.Context, client copilotClient, session copilot
 		stream.handleEvent(event)
 	})
 
-	if ctx != nil {
+	if done := stream.ctx.Done(); done != nil {
 		go func() {
-			<-ctx.Done()
-			slog.Debug("copilot_session_abort", "reason", ctx.Err())
-			_ = session.Abort()
-			stream.sendEvent(copilotStreamEvent{err: ctx.Err(), done: true})
+			<-done
+			slog.Debug("copilot_session_abort", "reason", stream.ctx.Err())
+			abortCopilotSession(session)
+			stream.sendEvent(copilotStreamEvent{err: stream.ctx.Err(), done: true})
 			stream.closeEvents()
 		}()
 	}
@@ -422,31 +443,31 @@ func (s *copilotStream) sessionSend(prompt string) (string, error) {
 	if s == nil {
 		return "", fmt.Errorf("stream not initialized")
 	}
-	return s.session.Send(copilot.MessageOptions{Prompt: prompt})
+	return s.session.Send(s.ctx, copilot.MessageOptions{Prompt: prompt})
 }
 
 func (s *copilotStream) handleEvent(event copilot.SessionEvent) {
 	s.eventCount++
 	switch event.Type {
-	case copilot.AssistantMessageDelta:
-		if event.Data.DeltaContent != nil {
+	case copilot.SessionEventTypeAssistantMessageDelta:
+		if data, ok := event.Data.(*copilot.AssistantMessageDeltaData); ok && data.DeltaContent != "" {
 			s.sawDelta = true
 			s.deltaCount++
-			s.sendEvent(copilotStreamEvent{delta: *event.Data.DeltaContent})
+			s.sendEvent(copilotStreamEvent{delta: data.DeltaContent})
 		}
-	case copilot.AssistantMessage:
-		if !s.sawDelta && event.Data.Content != nil {
-			s.sendEvent(copilotStreamEvent{delta: *event.Data.Content})
+	case copilot.SessionEventTypeAssistantMessage:
+		if data, ok := event.Data.(*copilot.AssistantMessageData); ok && !s.sawDelta && data.Content != "" {
+			s.sendEvent(copilotStreamEvent{delta: data.Content})
 		}
-	case copilot.SessionError:
+	case copilot.SessionEventTypeSessionError:
 		errMsg := "copilot session error"
-		if event.Data.Message != nil {
-			errMsg = *event.Data.Message
+		if data, ok := event.Data.(*copilot.SessionErrorData); ok && strings.TrimSpace(data.Message) != "" {
+			errMsg = strings.TrimSpace(data.Message)
 		}
 		slog.Debug("copilot_session_error", "message", errMsg)
 		s.sendEvent(copilotStreamEvent{err: errors.New(errMsg), done: true})
 		s.closeEvents()
-	case copilot.SessionIdle:
+	case copilot.SessionEventTypeSessionIdle:
 		slog.Debug("copilot_session_idle", "events", s.eventCount, "deltas", s.deltaCount)
 		s.sendEvent(copilotStreamEvent{done: true})
 		s.closeEvents()
@@ -502,17 +523,26 @@ func (s *copilotStream) Close() error {
 
 func watchCopilotContext(ctx context.Context, session copilotSession) chan struct{} {
 	done := make(chan struct{})
-	if ctx == nil {
+	if ctx == nil || session == nil {
 		return done
 	}
 	go func() {
 		select {
 		case <-ctx.Done():
-			_ = session.Abort()
+			abortCopilotSession(session)
 		case <-done:
 		}
 	}()
 	return done
+}
+
+func abortCopilotSession(session copilotSession) {
+	if session == nil {
+		return
+	}
+	abortCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = session.Abort(abortCtx)
 }
 
 // Ensure interface compliance

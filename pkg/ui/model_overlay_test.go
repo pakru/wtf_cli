@@ -16,8 +16,8 @@ func TestAddOverlayLayerCentersOddSizes(t *testing.T) {
 	if layer.GetX() != 3 || layer.GetY() != 2 {
 		t.Fatalf("unexpected position: x=%d y=%d", layer.GetX(), layer.GetY())
 	}
-	if layer.GetWidth() != 3 || layer.GetHeight() != 1 {
-		t.Fatalf("unexpected size: w=%d h=%d", layer.GetWidth(), layer.GetHeight())
+	if gotW, gotH := lipgloss.Width(layer.GetContent()), lipgloss.Height(layer.GetContent()); gotW != 3 || gotH != 1 {
+		t.Fatalf("unexpected size: w=%d h=%d", gotW, gotH)
 	}
 	if layer.GetZ() != 2 {
 		t.Fatalf("unexpected z-index: %d", layer.GetZ())
@@ -31,8 +31,8 @@ func TestAddOverlayLayerANSIAndUnicodeWidth(t *testing.T) {
 		t.Fatalf("expected 1 layer, got %d", len(layers))
 	}
 	layer := layers[0]
-	if layer.GetWidth() != 4 || layer.GetHeight() != 1 {
-		t.Fatalf("unexpected size: w=%d h=%d", layer.GetWidth(), layer.GetHeight())
+	if gotW, gotH := lipgloss.Width(layer.GetContent()), lipgloss.Height(layer.GetContent()); gotW != 4 || gotH != 1 {
+		t.Fatalf("unexpected size: w=%d h=%d", gotW, gotH)
 	}
 	if layer.GetX() != 3 || layer.GetY() != 1 {
 		t.Fatalf("unexpected position: x=%d y=%d", layer.GetX(), layer.GetY())
@@ -46,8 +46,8 @@ func TestAddOverlayLayerClampsToScreen(t *testing.T) {
 		t.Fatalf("expected 1 layer, got %d", len(layers))
 	}
 	layer := layers[0]
-	if layer.GetWidth() != 8 || layer.GetHeight() != 1 {
-		t.Fatalf("unexpected size: w=%d h=%d", layer.GetWidth(), layer.GetHeight())
+	if gotW, gotH := lipgloss.Width(layer.GetContent()), lipgloss.Height(layer.GetContent()); gotW != 20 || gotH != 1 {
+		t.Fatalf("unexpected size: w=%d h=%d", gotW, gotH)
 	}
 	if layer.GetX() != 0 || layer.GetY() != 1 {
 		t.Fatalf("unexpected position: x=%d y=%d", layer.GetX(), layer.GetY())
@@ -61,8 +61,7 @@ func TestOverlayLayersRespectZOrder(t *testing.T) {
 	layers = addOverlayLayer(layers, "under", 5, 1, 1)
 	layers = addOverlayLayer(layers, "over", 5, 1, 2)
 
-	canvas := lipgloss.NewCanvas(layers...)
-	out := canvas.Render()
+	out := lipgloss.NewCanvas(5, 1).Compose(lipgloss.NewCompositor(layers...)).Render()
 
 	if !strings.Contains(out, "over") {
 		t.Fatalf("expected top overlay content, got %q", out)

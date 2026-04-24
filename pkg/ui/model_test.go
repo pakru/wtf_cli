@@ -198,7 +198,7 @@ func TestModel_View_NotReady(t *testing.T) {
 
 	view := m.View()
 	// View should have content set even when not ready
-	if view.Content == nil {
+	if view.Content == "" {
 		t.Error("Expected View.Content to be set")
 	}
 }
@@ -211,7 +211,7 @@ func TestModel_View_Ready(t *testing.T) {
 
 	view := m.View()
 	// View should have content set when ready
-	if view.Content == nil {
+	if view.Content == "" {
 		t.Error("Expected View.Content to be set")
 	}
 }
