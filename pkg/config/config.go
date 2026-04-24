@@ -92,6 +92,10 @@ type UpdateCheckConfig struct {
 	IntervalHours int  `json:"interval_hours"`
 }
 
+const (
+	defaultUpdateCheckIntervalHours = 1
+)
+
 // Default returns a configuration with default values
 func Default() Config {
 	return Config{
@@ -123,7 +127,7 @@ func Default() Config {
 		},
 		UpdateCheck: UpdateCheckConfig{
 			Enabled:       true,
-			IntervalHours: 24,
+			IntervalHours: defaultUpdateCheckIntervalHours,
 		},
 		LogFile:   defaultLogFilePath(),
 		LogFormat: "json",

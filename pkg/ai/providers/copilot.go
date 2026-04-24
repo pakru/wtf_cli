@@ -165,11 +165,7 @@ func (p *CopilotProvider) CreateChatCompletion(ctx context.Context, req ai.ChatR
 	}
 
 	slog.Debug("copilot_session_create_start", "model", model, "streaming", false)
-	session, err := p.client.CreateSession(ctx, &copilot.SessionConfig{
-		Model:         model,
-		Streaming:     false,
-		SystemMessage: copilotSystemMessage(systemMsg),
-	})
+	session, err := p.client.CreateSession(ctx, newCopilotSessionConfig(model, false, systemMsg))
 	if err != nil {
 		return ai.ChatResponse{}, fmt.Errorf("copilot session create: %w", err)
 	}
@@ -233,11 +229,7 @@ func (p *CopilotProvider) CreateChatCompletionStream(ctx context.Context, req ai
 	}
 
 	slog.Debug("copilot_session_create_start", "model", model, "streaming", true)
-	session, err := p.client.CreateSession(ctx, &copilot.SessionConfig{
-		Model:         model,
-		Streaming:     true,
-		SystemMessage: copilotSystemMessage(systemMsg),
-	})
+	session, err := p.client.CreateSession(ctx, newCopilotSessionConfig(model, true, systemMsg))
 	if err != nil {
 		stopCopilotClient(p.client)
 		return nil, fmt.Errorf("copilot session create: %w", err)
@@ -304,6 +296,25 @@ func ensureCopilotAuthenticated(ctx context.Context, client copilotClient) error
 	}
 	slog.Debug("copilot_auth_status_not_authenticated", "message", msg)
 	return errors.New(msg)
+}
+
+func newCopilotSessionConfig(model string, streaming bool, systemMsg string) *copilot.SessionConfig {
+	return &copilot.SessionConfig{
+		Model:               model,
+		Streaming:           streaming,
+		SystemMessage:       copilotSystemMessage(systemMsg),
+		OnPermissionRequest: denyCopilotPermission,
+	}
+}
+
+func denyCopilotPermission(request copilot.PermissionRequest, invocation copilot.PermissionInvocation) (copilot.PermissionRequestResult, error) {
+	slog.Debug("copilot_permission_denied",
+		"kind", request.Kind,
+		"session_id", invocation.SessionID,
+	)
+	return copilot.PermissionRequestResult{
+		Kind: copilot.PermissionRequestResultKindDeniedCouldNotRequestFromUser,
+	}, nil
 }
 
 func copilotSystemMessage(content string) *copilot.SystemMessageConfig {
