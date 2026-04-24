@@ -307,30 +307,30 @@ type CopilotAuthStatus struct {
 }
 
 type copilotSDKClient interface {
-	Start() error
-	Stop() []error
-	GetAuthStatus() (*copilot.GetAuthStatusResponse, error)
-	ListModels() ([]copilot.ModelInfo, error)
+	Start(context.Context) error
+	Stop() error
+	GetAuthStatus(context.Context) (*copilot.GetAuthStatusResponse, error)
+	ListModels(context.Context) ([]copilot.ModelInfo, error)
 }
 
 type copilotSDKClientWrapper struct {
 	client *copilot.Client
 }
 
-func (c *copilotSDKClientWrapper) Start() error {
-	return c.client.Start()
+func (c *copilotSDKClientWrapper) Start(ctx context.Context) error {
+	return c.client.Start(ctx)
 }
 
-func (c *copilotSDKClientWrapper) Stop() []error {
+func (c *copilotSDKClientWrapper) Stop() error {
 	return c.client.Stop()
 }
 
-func (c *copilotSDKClientWrapper) GetAuthStatus() (*copilot.GetAuthStatusResponse, error) {
-	return c.client.GetAuthStatus()
+func (c *copilotSDKClientWrapper) GetAuthStatus(ctx context.Context) (*copilot.GetAuthStatusResponse, error) {
+	return c.client.GetAuthStatus(ctx)
 }
 
-func (c *copilotSDKClientWrapper) ListModels() ([]copilot.ModelInfo, error) {
-	return c.client.ListModels()
+func (c *copilotSDKClientWrapper) ListModels(ctx context.Context) ([]copilot.ModelInfo, error) {
+	return c.client.ListModels(ctx)
 }
 
 var copilotClientFactory = func() copilotSDKClient {
@@ -369,14 +369,14 @@ func FetchCopilotAuthStatus(ctx context.Context) (CopilotAuthStatus, error) {
 
 	slog.Debug("copilot_auth_status_start")
 	client := copilotClientFactory()
-	if err := client.Start(); err != nil {
+	if err := client.Start(ctx); err != nil {
 		return CopilotAuthStatus{}, fmt.Errorf("start Copilot client: %w", err)
 	}
 	defer func() {
-		logCopilotStopErrors(client.Stop())
+		logCopilotStopError(client.Stop())
 	}()
 
-	status, err := client.GetAuthStatus()
+	status, err := client.GetAuthStatus(ctx)
 	if err != nil {
 		return CopilotAuthStatus{}, fmt.Errorf("get Copilot auth status: %w", err)
 	}
@@ -413,14 +413,14 @@ func FetchCopilotModels(ctx context.Context) ([]ModelInfo, error) {
 
 	slog.Debug("copilot_models_fetch_start")
 	client := copilotClientFactory()
-	if err := client.Start(); err != nil {
+	if err := client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("start Copilot client: %w", err)
 	}
 	defer func() {
-		logCopilotStopErrors(client.Stop())
+		logCopilotStopError(client.Stop())
 	}()
 
-	models, err := client.ListModels()
+	models, err := client.ListModels(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list Copilot models: %w", err)
 	}
@@ -531,11 +531,9 @@ func GetProviderModels(provider string) []ModelInfo {
 	}
 }
 
-func logCopilotStopErrors(errors []error) {
-	for _, err := range errors {
-		if err != nil {
-			slog.Debug("copilot_client_stop_error", "error", err)
-		}
+func logCopilotStopError(err error) {
+	if err != nil {
+		slog.Debug("copilot_client_stop_error", "error", err)
 	}
 }
 

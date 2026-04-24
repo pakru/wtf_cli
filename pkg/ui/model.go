@@ -1115,7 +1115,7 @@ func (m Model) View() tea.View {
 		// v.MouseMode = tea.MouseModeCellMotion
 	}
 
-	v.SetContent(m.renderCanvas())
+	v.SetContent(m.renderCanvas().Render())
 	return v
 }
 
@@ -1451,20 +1451,28 @@ func (m Model) renderCanvas() *lipgloss.Canvas {
 		overlayLayerZ  = 2
 	)
 
-	if m.width <= 0 || m.height <= 0 {
-		return lipgloss.NewCanvas()
+	width := m.width
+	height := m.height
+	if width <= 0 {
+		width = m.viewport.Viewport.Width()
+	}
+	if height <= 0 {
+		height = m.viewport.Viewport.Height() + 1
+	}
+	if width <= 0 || height <= 0 {
+		return lipgloss.NewCanvas(0, 0)
 	}
 
 	// Update status bar width and directory for this frame.
-	m.statusBar.SetWidth(m.width)
+	m.statusBar.SetWidth(width)
 	m.statusBar.SetDirectory(m.currentDir)
 	m.statusBar.SetGitBranch(m.gitBranch)
 
-	viewportHeight := render.ViewportHeight(m.height)
-	viewportWidth := m.width
+	viewportHeight := render.ViewportHeight(height)
+	viewportWidth := width
 	sidebarWidth := 0
 	if m.sidebar != nil && m.sidebar.IsVisible() {
-		left, right := splitSidebarWidths(m.width)
+		left, right := splitSidebarWidths(width)
 		viewportWidth = left
 		sidebarWidth = right
 	}
@@ -1474,7 +1482,6 @@ func (m Model) renderCanvas() *lipgloss.Canvas {
 	if viewportWidth > 0 && viewportHeight > 0 {
 		viewportLayer := lipgloss.NewLayer(m.viewport.View()).
 			X(0).Y(0).
-			Width(viewportWidth).Height(viewportHeight).
 			Z(baseLayerZ)
 		layers = append(layers, viewportLayer)
 	}
@@ -1482,34 +1489,32 @@ func (m Model) renderCanvas() *lipgloss.Canvas {
 	if sidebarWidth > 0 && viewportHeight > 0 && m.sidebar != nil && m.sidebar.IsVisible() {
 		sidebarLayer := lipgloss.NewLayer(m.sidebar.View()).
 			X(viewportWidth).Y(0).
-			Width(sidebarWidth).Height(viewportHeight).
 			Z(baseLayerZ)
 		layers = append(layers, sidebarLayer)
 	}
 
 	statusLayer := lipgloss.NewLayer(m.statusBar.Render()).
 		X(0).Y(viewportHeight).
-		Width(m.width).Height(1).
 		Z(baseLayerZ)
 	layers = append(layers, statusLayer)
 
 	if m.settingsPanel.IsVisible() {
-		layers = addOverlayLayer(layers, m.settingsPanel.View(), m.width, m.height, settingsLayerZ)
+		layers = addOverlayLayer(layers, m.settingsPanel.View(), width, height, settingsLayerZ)
 	}
 
 	if m.optionPicker != nil && m.optionPicker.IsVisible() {
-		layers = addOverlayLayer(layers, m.optionPicker.View(), m.width, m.height, overlayLayerZ)
+		layers = addOverlayLayer(layers, m.optionPicker.View(), width, height, overlayLayerZ)
 	} else if m.modelPicker != nil && m.modelPicker.IsVisible() {
-		layers = addOverlayLayer(layers, m.modelPicker.View(), m.width, m.height, overlayLayerZ)
+		layers = addOverlayLayer(layers, m.modelPicker.View(), width, height, overlayLayerZ)
 	} else if m.resultPanel.IsVisible() {
-		layers = addOverlayLayer(layers, m.resultPanel.View(), m.width, viewportHeight, overlayLayerZ)
+		layers = addOverlayLayer(layers, m.resultPanel.View(), width, viewportHeight, overlayLayerZ)
 	} else if m.palette.IsVisible() {
-		layers = addOverlayLayer(layers, m.palette.View(), m.width, m.height, overlayLayerZ)
+		layers = addOverlayLayer(layers, m.palette.View(), width, height, overlayLayerZ)
 	} else if m.historyPicker != nil && m.historyPicker.IsVisible() {
-		layers = addOverlayLayer(layers, m.historyPicker.View(), m.width, m.height, overlayLayerZ)
+		layers = addOverlayLayer(layers, m.historyPicker.View(), width, height, overlayLayerZ)
 	}
 
-	return lipgloss.NewCanvas(layers...)
+	return lipgloss.NewCanvas(width, height).Compose(lipgloss.NewCompositor(layers...))
 }
 
 func resolveGitBranchCmd(dir string, resolver func(string) string) tea.Cmd {
@@ -1537,7 +1542,6 @@ func addOverlayLayer(layers []*lipgloss.Layer, view string, screenW, screenH, z 
 	}
 	layer := lipgloss.NewLayer(view).
 		X(x).Y(y).
-		Width(w).Height(h).
 		Z(z)
 	return append(layers, layer)
 }
