@@ -81,6 +81,7 @@ type Model struct {
 	height          int
 	ready           bool
 	terminalFocused bool
+	scrollMode      bool // True when user is browsing scrollback (auto-scroll paused)
 
 	exitPending   bool
 	exitConfirmID int
@@ -267,8 +268,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tea.MouseWheelMsg:
+		// Mouse wheel scrolls the terminal viewport (when terminal focused) or
+		// the chat sidebar (when sidebar focused). Full-screen mode passes mouse
+		// events to the PTY application directly via the normal input path.
+		if m.fullScreenMode {
+			return m, nil
+		}
+		m2 := msg.Mouse()
+		if !m.terminalFocused && m.sidebar != nil && m.sidebar.IsVisible() {
+			// Sidebar has focus — let sidebar handle wheel
+			cmd := m.sidebar.HandleMouse(msg)
+			return m, cmd
+		}
+		switch m2.Button {
+		case tea.MouseWheelUp:
+			m.viewport.ScrollUp()
+			if !m.viewport.IsAtBottom() {
+				m.setScrollMode(true)
+			}
+		case tea.MouseWheelDown:
+			m.viewport.ScrollDown()
+			if m.viewport.IsAtBottom() {
+				m.setScrollMode(false)
+			}
+		}
+		return m, nil
+
 	case tea.MouseMsg:
-		// Route to sidebar when visible.
+		// Non-wheel mouse events: route click events to sidebar when visible.
 		if m.sidebar != nil && m.sidebar.IsVisible() {
 			cmd := m.sidebar.HandleMouse(msg)
 			return m, cmd
@@ -467,8 +495,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Note: ClearLineBuffer for password entry is only done in fullscreen mode
 		// where programs like sudo actually disable echo. In normal mode, BubbleTea's
 		// raw terminal mode disables echo, but that's not password entry.
+
+		// Scroll-key interception — only when terminal has focus and not in full-screen mode.
+		// Handled here (not in InputHandler) so sidebar focus is respected automatically.
+		// Alt+Up/Down are used instead of Shift+Up/Down because Konsole and most terminal
+		// emulators intercept the Shift variants for their own scrollback.
+		if m.terminalFocused && !m.fullScreenMode {
+			switch msg.String() {
+			case "alt+up":
+				m.viewport.ScrollUp()
+				if !m.viewport.IsAtBottom() {
+					m.setScrollMode(true)
+				}
+				return m, nil
+			case "alt+down":
+				m.viewport.ScrollDown()
+				if m.viewport.IsAtBottom() {
+					m.setScrollMode(false)
+				}
+				return m, nil
+			case "pgup":
+				m.viewport.PageUp()
+				if !m.viewport.IsAtBottom() {
+					m.setScrollMode(true)
+				}
+				return m, nil
+			case "pgdown":
+				m.viewport.PageDown()
+				if m.viewport.IsAtBottom() {
+					m.setScrollMode(false)
+				}
+				return m, nil
+			case "esc":
+				if m.scrollMode {
+					m.setScrollMode(false)
+					return m, nil
+				}
+			}
+		}
+
 		handled, cmd := m.inputHandler.HandleKey(msg)
 		if handled {
+			// If the user types anything that reaches the PTY or triggers a UI
+			// action, exit scroll mode so they see the output of what they typed.
+			if m.scrollMode {
+				m.setScrollMode(false)
+			}
 			return m, cmd
 		}
 
@@ -1108,11 +1180,11 @@ func (m Model) View() tea.View {
 		return v
 	}
 
-	// Enable mouse wheel when sidebar is visible.
-	if m.sidebar != nil && m.sidebar.IsVisible() {
-		// Mouse mode is disabled until HandleMouse implements wheel scrolling
-		// TODO: Re-enable once mouse scrolling is properly implemented in sidebar
-		// v.MouseMode = tea.MouseModeCellMotion
+	// Enable mouse wheel reporting so the application receives wheel events
+	// instead of the terminal emulator consuming them for its own scrollback.
+	// MouseModeCellMotion enables click, release, and wheel events.
+	if !m.fullScreenMode {
+		v.MouseMode = tea.MouseModeCellMotion
 	}
 
 	v.SetContent(m.renderCanvas().Render())
@@ -1148,6 +1220,7 @@ func hasFutureEnter(chunks []terminal.AltScreenChunk) bool {
 
 func (m *Model) enterFullScreen(dataLen int) {
 	slog.Info("fullscreen_enter", "data_len", dataLen)
+	m.setScrollMode(false)
 	m.fullScreenMode = true
 	if m.fullScreenPanel != nil {
 		m.fullScreenPanel.Show()
@@ -1211,6 +1284,14 @@ func (m *Model) setTerminalFocused(focused bool) {
 		return
 	}
 	m.sidebar.FocusInput()
+}
+
+// setScrollMode activates or deactivates scroll mode, keeping viewport auto-scroll
+// and the status bar badge in sync.
+func (m *Model) setScrollMode(active bool) {
+	m.scrollMode = active
+	m.viewport.SetAutoScroll(!active)
+	m.statusBar.SetScrollMode(active)
 }
 
 func (m *Model) applyLayout() {

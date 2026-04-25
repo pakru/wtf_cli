@@ -21,6 +21,7 @@ type StatusBarView struct {
 	currentDir  string
 	gitBranch   string
 	message     string
+	scrollMode  bool
 	width       int
 	statusStyle lipgloss.Style
 }
@@ -59,6 +60,12 @@ func (s *StatusBarView) SetWidth(width int) {
 	s.width = width
 }
 
+// SetScrollMode sets whether the terminal is in scroll (auto-scroll paused) mode.
+// When active, the status bar right content shows a [SCROLL PAUSED] badge.
+func (s *StatusBarView) SetScrollMode(active bool) {
+	s.scrollMode = active
+}
+
 // Render returns the styled status bar string
 func (s *StatusBarView) Render() string {
 	const (
@@ -67,7 +74,9 @@ func (s *StatusBarView) Render() string {
 	)
 
 	rightContent := ""
-	if s.message == "" {
+	if s.scrollMode {
+		rightContent = "[AUTOSCROLL DISABLED]  Esc to resume"
+	} else if s.message == "" {
 		rightContent = "Press / for commands"
 	}
 	rightWidth := ansi.StringWidth(rightContent)

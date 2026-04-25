@@ -1301,3 +1301,168 @@ func TestModel_Update_UpdateCheckMsg_ErrorNoUserNotice(t *testing.T) {
 		t.Fatal("expected viewport to remain unchanged on update-check error")
 	}
 }
+
+// --- Scroll mode tests ---
+
+// fillViewport adds enough lines to create real scrollback.
+func fillViewport(m *Model, lines int) {
+	for i := 0; i < lines; i++ {
+		m.viewport.AppendOutput([]byte("scrollback line\n"))
+	}
+}
+
+func TestModel_ScrollUp_EntersScrollMode(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 5)
+	fillViewport(&m, 30)
+
+	newModel, _ := m.Update(testutils.NewAltUpKeyPressMsg())
+	updated := newModel.(Model)
+
+	if !updated.scrollMode {
+		t.Error("expected scrollMode=true after shift+up with scrollback")
+	}
+}
+
+func TestModel_ScrollUp_ShortOutput_NoScrollMode(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 24)
+	// Only one line — viewport fits it; scrolling up cannot leave the bottom
+	m.viewport.AppendOutput([]byte("short\n"))
+
+	newModel, _ := m.Update(testutils.NewAltUpKeyPressMsg())
+	updated := newModel.(Model)
+
+	if updated.scrollMode {
+		t.Error("expected scrollMode=false when output fits in viewport")
+	}
+}
+
+func TestModel_ScrollDown_ExitsScrollModeAtBottom(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 5)
+	fillViewport(&m, 30)
+
+	// Enter scroll mode via shift+up
+	m2, _ := m.Update(testutils.NewAltUpKeyPressMsg())
+	m = m2.(Model)
+	if !m.scrollMode {
+		t.Fatal("precondition: expected scroll mode after shift+up")
+	}
+
+	// Scroll all the way down — use pgdown to reach bottom quickly
+	for i := 0; i < 10; i++ {
+		m2, _ = m.Update(testutils.TestKeyPgDown)
+		m = m2.(Model)
+		if !m.scrollMode {
+			break
+		}
+	}
+
+	if m.scrollMode {
+		t.Error("expected scrollMode=false after scrolling back to bottom")
+	}
+}
+
+func TestModel_Esc_ExitsScrollMode(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 5)
+	fillViewport(&m, 30)
+
+	m2, _ := m.Update(testutils.NewAltUpKeyPressMsg())
+	m = m2.(Model)
+	if !m.scrollMode {
+		t.Fatal("precondition: expected scroll mode")
+	}
+
+	m2, _ = m.Update(testutils.TestKeyEsc)
+	m = m2.(Model)
+
+	if m.scrollMode {
+		t.Error("expected scrollMode=false after Esc")
+	}
+	if !m.viewport.IsAtBottom() {
+		t.Error("expected viewport snapped to bottom after Esc exits scroll mode")
+	}
+}
+
+func TestModel_ScrollKeys_NoEffect_WhenSidebarFocused(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 5)
+	fillViewport(&m, 30)
+
+	// Give sidebar focus
+	m.terminalFocused = false
+
+	m2, _ := m.Update(testutils.NewAltUpKeyPressMsg())
+	updated := m2.(Model)
+
+	if updated.scrollMode {
+		t.Error("scroll keys should be ignored when sidebar has focus")
+	}
+}
+
+func TestModel_ScrollKeys_NoEffect_InFullScreenMode(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 5)
+	fillViewport(&m, 30)
+
+	m.fullScreenMode = true
+
+	m2, _ := m.Update(testutils.NewAltUpKeyPressMsg())
+	updated := m2.(Model)
+
+	if updated.scrollMode {
+		t.Error("scroll keys should be ignored in full-screen mode")
+	}
+}
+
+func TestModel_AutoScroll_PausedDuringScrollMode(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 5)
+	fillViewport(&m, 30)
+
+	// Enter scroll mode
+	m2, _ := m.Update(testutils.NewAltUpKeyPressMsg())
+	m = m2.(Model)
+	if !m.scrollMode {
+		t.Fatal("precondition: expected scroll mode")
+	}
+
+	// Simulate new PTY output arriving while in scroll mode
+	m.viewport.AppendOutput([]byte("new output while scrolled\n"))
+
+	// Viewport must NOT snap to bottom — user is still scrolled back
+	if m.viewport.IsAtBottom() {
+		t.Error("auto-scroll should be paused: viewport must not snap to bottom on new output")
+	}
+}
+
+func TestModel_Typing_ExitsScrollMode(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.ready = true
+	m.viewport.SetSize(80, 5)
+	fillViewport(&m, 30)
+
+	// Enter scroll mode
+	m2, _ := m.Update(testutils.NewAltUpKeyPressMsg())
+	m = m2.(Model)
+	if !m.scrollMode {
+		t.Fatal("precondition: expected scroll mode after alt+up")
+	}
+
+	// Type a regular character — should exit scroll mode
+	m2, _ = m.Update(testutils.NewTextKeyPressMsg("a"))
+	m = m2.(Model)
+
+	if m.scrollMode {
+		t.Error("expected scrollMode=false after typing a character")
+	}
+}

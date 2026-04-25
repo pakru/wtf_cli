@@ -234,3 +234,51 @@ func TestPTYViewport_ANSIPreserved(t *testing.T) {
 		t.Error("Expected ANSI color codes to be preserved")
 	}
 }
+
+func TestPTYViewport_SetAutoScroll_SuppressesGotoBottom(t *testing.T) {
+	vp := NewPTYViewport()
+	vp.SetSize(80, 5)
+
+	// Fill viewport so there is scrollback
+	for i := 0; i < 20; i++ {
+		vp.AppendOutput([]byte("line\n"))
+	}
+	if !vp.IsAtBottom() {
+		t.Fatal("expected at bottom after filling")
+	}
+
+	// Scroll up then disable auto-scroll
+	vp.ScrollUp()
+	vp.SetAutoScroll(false)
+
+	if vp.IsAtBottom() {
+		t.Fatal("expected not at bottom after scrolling up")
+	}
+
+	// New output must NOT snap back to bottom
+	vp.AppendOutput([]byte("new line\n"))
+	if vp.IsAtBottom() {
+		t.Error("auto-scroll disabled: AppendOutput should not snap to bottom")
+	}
+}
+
+func TestPTYViewport_SetAutoScroll_ReenableSnapsToBottom(t *testing.T) {
+	vp := NewPTYViewport()
+	vp.SetSize(80, 5)
+
+	for i := 0; i < 20; i++ {
+		vp.AppendOutput([]byte("line\n"))
+	}
+	vp.ScrollUp()
+	vp.SetAutoScroll(false)
+
+	if vp.IsAtBottom() {
+		t.Fatal("expected not at bottom after scrolling up")
+	}
+
+	// Re-enabling should snap to bottom immediately
+	vp.SetAutoScroll(true)
+	if !vp.IsAtBottom() {
+		t.Error("SetAutoScroll(true) should snap viewport to bottom")
+	}
+}
