@@ -257,7 +257,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					left, _ := splitSidebarWidths(m.width)
 					viewportWidth = left
 				}
-				terminal.ResizePTY(m.ptyFile, viewportWidth, viewportHeight)
+				m.resizePTYViewport(viewportWidth, viewportHeight)
 				// Track resize time to suppress prompt reprint output
 				// Skip suppression on initial resize (first time we get correct size)
 				if m.initialResize {
@@ -1294,6 +1294,18 @@ func (m *Model) setScrollMode(active bool) {
 	m.statusBar.SetScrollMode(active)
 }
 
+// resizePTYViewport resizes the PTY to the given viewport dimensions.
+// It is a no-op when dimensions are not valid, which avoids uint16 overflow
+// before the first WindowSizeMsg has initialized model dimensions.
+func (m *Model) resizePTYViewport(width, height int) {
+	if m.ptyFile == nil || width <= 0 || height <= 0 {
+		return
+	}
+	if err := terminal.ResizePTY(m.ptyFile, width, height); err != nil {
+		slog.Warn("pty_resize_failed", "width", width, "height", height, "error", err)
+	}
+}
+
 func (m *Model) applyLayout() {
 	if m.fullScreenMode {
 		if m.fullScreenPanel != nil {
@@ -1317,6 +1329,9 @@ func (m *Model) applyLayout() {
 
 	m.viewport.SetSize(viewportWidth, viewportHeight)
 	m.palette.SetSize(m.width, m.height)
+	// Keep shell wrapping in sync with the visible terminal pane when sidebar
+	// visibility changes.
+	m.resizePTYViewport(viewportWidth, viewportHeight)
 	resultHeight := m.height
 	if resultHeight > 0 {
 		resultHeight--
@@ -1329,8 +1344,6 @@ func (m *Model) applyLayout() {
 	if m.optionPicker != nil {
 		m.optionPicker.SetSize(m.width, m.height)
 	}
-	// NOTE: PTY resize is handled by the debounced resizeApplyMsg handler
-	// to avoid duplicate prompts during terminal resize
 }
 
 func splitSidebarWidths(total int) (left int, right int) {
