@@ -11,13 +11,14 @@ import (
 
 // PTYViewport wraps Bubble Tea's viewport for displaying PTY output
 type PTYViewport struct {
-	Viewport      viewport.Model
-	content       string
-	cursorTracker *terminal.CursorTracker
-	lineRenderer  *terminal.LineRenderer
-	showCursor    bool
-	ready         bool
-	dirty         bool // True if content changed since last View()
+	Viewport        viewport.Model
+	content         string
+	cursorTracker   *terminal.CursorTracker
+	lineRenderer    *terminal.LineRenderer
+	showCursor      bool
+	ready           bool
+	dirty           bool // True if content changed since last View()
+	pauseAutoScroll bool // When true, AppendOutput does not auto-scroll to bottom
 }
 
 // NewPTYViewport creates a new PTY viewport
@@ -62,8 +63,10 @@ func (v *PTYViewport) AppendOutput(data []byte) {
 	// Set content with cursor overlay
 	v.renderContent()
 
-	// Auto-scroll to bottom when new content arrives
-	v.Viewport.GotoBottom()
+	// Auto-scroll to bottom when new content arrives (suppressed in scroll mode)
+	if !v.pauseAutoScroll {
+		v.Viewport.GotoBottom()
+	}
 }
 
 // SetCursorVisible toggles cursor overlay visibility and re-renders content.
@@ -110,6 +113,16 @@ func (v *PTYViewport) View() string {
 }
 
 // Scrolling helpers
+
+// SetAutoScroll enables or disables auto-scrolling on new output.
+// When disabled, AppendOutput will not move the viewport to the bottom.
+// Re-enabling also snaps the viewport to the bottom immediately.
+func (v *PTYViewport) SetAutoScroll(enabled bool) {
+	v.pauseAutoScroll = !enabled
+	if enabled {
+		v.Viewport.GotoBottom()
+	}
+}
 
 // ScrollUp scrolls the viewport up
 func (v *PTYViewport) ScrollUp() {

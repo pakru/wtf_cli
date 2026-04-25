@@ -57,6 +57,38 @@ func NewShiftTabKeyPressMsg() tea.KeyPressMsg {
 	})
 }
 
+// NewShiftUpKeyPressMsg creates a Shift+Up key message.
+func NewShiftUpKeyPressMsg() tea.KeyPressMsg {
+	return tea.KeyPressMsg(tea.Key{
+		Code: tea.KeyUp,
+		Mod:  tea.ModShift,
+	})
+}
+
+// NewShiftDownKeyPressMsg creates a Shift+Down key message.
+func NewShiftDownKeyPressMsg() tea.KeyPressMsg {
+	return tea.KeyPressMsg(tea.Key{
+		Code: tea.KeyDown,
+		Mod:  tea.ModShift,
+	})
+}
+
+// NewAltUpKeyPressMsg creates an Alt+Up key message.
+func NewAltUpKeyPressMsg() tea.KeyPressMsg {
+	return tea.KeyPressMsg(tea.Key{
+		Code: tea.KeyUp,
+		Mod:  tea.ModAlt,
+	})
+}
+
+// NewAltDownKeyPressMsg creates an Alt+Down key message.
+func NewAltDownKeyPressMsg() tea.KeyPressMsg {
+	return tea.KeyPressMsg(tea.Key{
+		Code: tea.KeyDown,
+		Mod:  tea.ModAlt,
+	})
+}
+
 // NewCtrlEnterKeyPressMsg creates a Ctrl+Enter key message.
 func NewCtrlEnterKeyPressMsg() tea.KeyPressMsg {
 	return tea.KeyPressMsg(tea.Key{

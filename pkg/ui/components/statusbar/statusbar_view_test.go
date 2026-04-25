@@ -304,3 +304,50 @@ func TestGetCurrentWorkingDir(t *testing.T) {
 		t.Error("Expected valid directory path or ~")
 	}
 }
+
+func TestStatusBarView_SetScrollMode_ShowsBadge(t *testing.T) {
+	sb := NewStatusBarView()
+	sb.SetWidth(100)
+	sb.SetDirectory("/home/user")
+
+	sb.SetScrollMode(true)
+	rendered := ansi.Strip(sb.Render())
+
+	if !strings.Contains(rendered, "[AUTOSCROLL DISABLED]") {
+		t.Errorf("expected [AUTOSCROLL DISABLED] badge in status bar, got %q", rendered)
+	}
+	if strings.Contains(rendered, "Press / for commands") {
+		t.Errorf("normal hint should be replaced by scroll badge, got %q", rendered)
+	}
+}
+
+func TestStatusBarView_SetScrollMode_ClearsBadge(t *testing.T) {
+	sb := NewStatusBarView()
+	sb.SetWidth(100)
+	sb.SetDirectory("/home/user")
+
+	sb.SetScrollMode(true)
+	sb.SetScrollMode(false)
+	rendered := ansi.Strip(sb.Render())
+
+	if strings.Contains(rendered, "[AUTOSCROLL DISABLED]") {
+		t.Errorf("badge should be gone after SetScrollMode(false), got %q", rendered)
+	}
+	if !strings.Contains(rendered, "Press / for commands") {
+		t.Errorf("normal hint should be restored after SetScrollMode(false), got %q", rendered)
+	}
+}
+
+func TestStatusBarView_ScrollModeWidthPreserved(t *testing.T) {
+	sb := NewStatusBarView()
+	sb.SetWidth(80)
+	sb.SetDirectory("/home/user")
+
+	sb.SetScrollMode(true)
+	rendered := sb.Render()
+	stripped := ansi.Strip(rendered)
+
+	if width := ansi.StringWidth(stripped); width != 80 {
+		t.Fatalf("expected width 80 in scroll mode, got %d", width)
+	}
+}
