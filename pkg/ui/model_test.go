@@ -22,9 +22,11 @@ import (
 	"wtf_cli/pkg/ui/components/sidebar"
 	"wtf_cli/pkg/ui/components/testutils"
 	"wtf_cli/pkg/ui/input"
+	"wtf_cli/pkg/ui/terminal"
 	"wtf_cli/pkg/updatecheck"
 
 	tea "charm.land/bubbletea/v2"
+	cpty "github.com/creack/pty"
 )
 
 func TestNewModel(t *testing.T) {
@@ -348,6 +350,78 @@ func TestModel_Update_ResizeApply_SetsInitialResize(t *testing.T) {
 	// resizeTime should be zero since no PTY
 	if !m.resizeTime.IsZero() {
 		t.Error("Expected resizeTime to be zero without ptyFile")
+	}
+}
+
+func TestModel_ResizePTYViewport_NilPTY(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	m.resizePTYViewport(80, 24)
+	m.resizePTYViewport(0, 24)
+	m.resizePTYViewport(80, 0)
+	m.resizePTYViewport(-1, 24)
+}
+
+func TestModel_ResizePTYViewport_Guard(t *testing.T) {
+	ptm, pts := openTestPTY(t)
+	defer ptm.Close()
+	defer pts.Close()
+
+	if err := terminal.ResizePTY(ptm, 80, 24); err != nil {
+		t.Fatalf("ResizePTY baseline failed: %v", err)
+	}
+
+	m := NewModel(ptm, buffer.New(100), capture.NewSessionContext(), nil)
+	m.resizePTYViewport(0, 24)
+	m.resizePTYViewport(80, 0)
+	m.resizePTYViewport(-1, 24)
+	m.resizePTYViewport(80, -1)
+
+	assertPTYSize(t, ptm, 80, 24)
+}
+
+func TestModel_ApplyLayout_ResizesPTYOnSidebarToggle(t *testing.T) {
+	ptm, pts := openTestPTY(t)
+	defer ptm.Close()
+	defer pts.Close()
+
+	m := NewModel(ptm, buffer.New(100), capture.NewSessionContext(), nil)
+
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = newModel.(Model)
+	newModel, _ = m.Update(resizeApplyMsg{id: m.resizeDebounceID, width: 120, height: 30})
+	m = newModel.(Model)
+	assertPTYSize(t, ptm, 120, 29)
+
+	newModel, _ = m.Update(input.ToggleChatMsg{})
+	m = newModel.(Model)
+	left, _ := splitSidebarWidths(120)
+	assertPTYSize(t, ptm, left, 29)
+
+	newModel, _ = m.Update(input.ToggleChatMsg{})
+	m = newModel.(Model)
+	assertPTYSize(t, ptm, 120, 29)
+}
+
+func openTestPTY(t *testing.T) (*os.File, *os.File) {
+	t.Helper()
+
+	ptm, pts, err := cpty.Open()
+	if err != nil {
+		t.Skipf("pty.Open not available: %v", err)
+	}
+	return ptm, pts
+}
+
+func assertPTYSize(t *testing.T, ptyFile *os.File, wantWidth, wantHeight int) {
+	t.Helper()
+
+	width, height, err := terminal.GetPTYSize(ptyFile)
+	if err != nil {
+		t.Fatalf("GetPTYSize failed: %v", err)
+	}
+	if width != wantWidth || height != wantHeight {
+		t.Fatalf("Expected PTY size %dx%d, got %dx%d", wantWidth, wantHeight, width, height)
 	}
 }
 
