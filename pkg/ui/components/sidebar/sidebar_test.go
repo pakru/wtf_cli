@@ -43,3 +43,40 @@ func TestRenderMarkdown_TableFallback(t *testing.T) {
 		t.Fatalf("Expected fallback to include cell text, got:\n%s", joined)
 	}
 }
+
+func TestSidebarSelectionPointMapsMessageViewport(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(40, 12)
+	s.Show("Title", "alpha\nbravo\ncharlie")
+
+	originX := 10
+	row, col, ok := s.SelectionPoint(originX+sidebarBorderSize+sidebarPaddingH+1, sidebarBorderSize+sidebarPaddingV+1, originX)
+	if !ok {
+		t.Fatal("expected message viewport point to be selectable")
+	}
+	if row != 0 || col != 1 {
+		t.Fatalf("expected row=0 col=1, got row=%d col=%d", row, col)
+	}
+
+	if _, _, ok := s.SelectionPoint(originX+sidebarBorderSize+sidebarPaddingH+1, sidebarBorderSize+sidebarPaddingV, originX); ok {
+		t.Fatal("expected title row to be outside selectable message viewport")
+	}
+}
+
+func TestSidebarFinishSelectionExtractsText(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(40, 12)
+	s.Show("Title", "alpha\nbravo\ncharlie")
+
+	s.StartSelection(0, 1)
+	s.UpdateSelection(1, 3)
+
+	got := s.FinishSelection()
+	want := "lpha\nbra"
+	if got != want {
+		t.Fatalf("expected selected text %q, got %q", want, got)
+	}
+	if s.HasActiveSelection() {
+		t.Fatal("expected selection to be inactive after finish")
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"wtf_cli/pkg/ai"
+	"wtf_cli/pkg/ui/components/selection"
 	"wtf_cli/pkg/ui/styles"
 
 	"charm.land/bubbles/v2/textarea"
@@ -42,6 +43,7 @@ type Sidebar struct {
 	scrollY int
 	lines   []string
 	follow  bool
+	sel     selection.Selection
 
 	// Chat fields
 	textarea         textarea.Model   // Chat input
@@ -93,6 +95,7 @@ func (s *Sidebar) Show(title, content string) {
 // Hide hides the sidebar.
 func (s *Sidebar) Hide() {
 	s.visible = false
+	s.sel.Clear()
 }
 
 // IsVisible returns whether the sidebar is visible.
@@ -107,6 +110,9 @@ func (s *Sidebar) GetTitle() string {
 
 // SetSize sets the sidebar dimensions.
 func (s *Sidebar) SetSize(width, height int) {
+	if s.width != width || s.height != height {
+		s.sel.Clear()
+	}
 	s.width = width
 	s.height = height
 	s.reflow()
@@ -116,6 +122,7 @@ func (s *Sidebar) SetSize(width, height int) {
 // SetContent updates the sidebar content.
 func (s *Sidebar) SetContent(content string) {
 	s.content = content
+	s.sel.Clear()
 	if len(s.messages) == 0 {
 		s.cmdList = nil
 		s.cmdRawLines = nil
@@ -334,6 +341,9 @@ func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
 				} else {
 					line = sidebarCommandStyle.Render(plain)
 				}
+			}
+			if left, right, ok := selection.LineBounds(s.sel, i, lipgloss.Width(line)); ok {
+				line = selection.ApplyLineHighlight(line, left, right)
 			}
 			lines = append(lines, padStyled(line, contentWidth))
 		}
@@ -554,6 +564,7 @@ func (s *Sidebar) SubmitMessage() (string, bool) {
 // RefreshView re-renders the viewport from messages.
 func (s *Sidebar) RefreshView() {
 	s.content = s.RenderMessages()
+	s.sel.Clear()
 	s.reflow()
 	if s.follow {
 		s.scrollY = s.maxScroll()
@@ -591,12 +602,75 @@ func (s *Sidebar) HandlePaste(content string) {
 	}
 }
 
-// HandleMouse handles mouse wheel scrolling.
-// TODO: Implement mouse scrolling once correct Bubble Tea mouse API is confirmed
-func (s *Sidebar) HandleMouse(msg tea.MouseMsg) tea.Cmd {
-	// Mouse event support can be tested and implemented in follow-up
-	// The Bubble Tea MouseMsg API varies by version
+// HandleWheel handles mouse wheel scrolling.
+func (s *Sidebar) HandleWheel(msg tea.MouseWheelMsg) tea.Cmd {
+	switch msg.Mouse().Button {
+	case tea.MouseWheelUp:
+		return s.handleScroll("up")
+	case tea.MouseWheelDown:
+		return s.handleScroll("down")
+	}
 	return nil
+}
+
+// SelectionPoint translates a screen coordinate into a message line coordinate.
+func (s *Sidebar) SelectionPoint(screenX, screenY, originX int) (row, col int, ok bool) {
+	if !s.visible || s.width <= 0 || s.height <= 0 {
+		return 0, 0, false
+	}
+
+	contentLeft := originX + sidebarBorderSize + sidebarPaddingH
+	contentTop := sidebarBorderSize + sidebarPaddingV
+	contentCol := screenX - contentLeft
+	contentRow := screenY - contentTop
+	if contentCol < 0 || contentCol >= s.contentWidth() {
+		return 0, 0, false
+	}
+
+	viewportRow := contentRow - 1 // row 0 is the title
+	if viewportRow < 0 || viewportRow >= s.viewportHeight() {
+		return 0, 0, false
+	}
+
+	lineRow := s.scrollY + viewportRow
+	if lineRow < 0 || lineRow >= len(s.lines) {
+		return 0, 0, false
+	}
+	return lineRow, contentCol, true
+}
+
+// StartSelection begins a sidebar text selection in message-line coordinates.
+func (s *Sidebar) StartSelection(row, col int) {
+	s.sel.Start(row, col)
+}
+
+// UpdateSelection moves the active sidebar selection endpoint.
+func (s *Sidebar) UpdateSelection(row, col int) {
+	if !s.sel.Active {
+		return
+	}
+	s.sel.Update(row, col)
+}
+
+// FinishSelection returns the selected sidebar text and clears the highlight.
+func (s *Sidebar) FinishSelection() string {
+	if !s.sel.Active && s.sel.IsEmpty() {
+		return ""
+	}
+	s.sel.Finish()
+	text := selection.ExtractText(s.lines, s.sel)
+	s.sel.Clear()
+	return text
+}
+
+// ClearSelection removes the current sidebar selection.
+func (s *Sidebar) ClearSelection() {
+	s.sel.Clear()
+}
+
+// HasActiveSelection reports whether a sidebar drag selection is in progress.
+func (s *Sidebar) HasActiveSelection() bool {
+	return s.sel.Active
 }
 
 // RefreshCommands rebuilds extracted command metadata when command state is dirty.

@@ -35,7 +35,10 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-const streamThinkingPlaceholder = "Thinking..."
+const (
+	streamThinkingPlaceholder = "Thinking..."
+	selectedTextCopiedMessage = "Selected text copied to clipboard"
+)
 
 // Model represents the Bubble Tea application state
 type Model struct {
@@ -194,6 +197,8 @@ type resizeApplyMsg struct {
 	height int
 }
 
+type clearStatusMsgMsg struct{}
+
 // Update handles messages and updates model state (Bubble Tea lifecycle method)
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -272,13 +277,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Mouse wheel scrolls the terminal viewport (when terminal focused) or
 		// the chat sidebar (when sidebar focused). Full-screen mode passes mouse
 		// events to the PTY application directly via the normal input path.
-		if m.fullScreenMode {
+		if m.hasBlockingOverlay() {
 			return m, nil
 		}
 		m2 := msg.Mouse()
 		if !m.terminalFocused && m.sidebar != nil && m.sidebar.IsVisible() {
-			// Sidebar has focus — let sidebar handle wheel
-			cmd := m.sidebar.HandleMouse(msg)
+			// Sidebar has focus; let sidebar handle wheel.
+			cmd := m.sidebar.HandleWheel(msg)
 			return m, cmd
 		}
 		switch m2.Button {
@@ -295,11 +300,86 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.MouseMsg:
-		// Non-wheel mouse events: route click events to sidebar when visible.
+	case tea.MouseClickMsg:
+		if m.hasBlockingOverlay() {
+			return m, nil
+		}
+		mouse := msg.Mouse()
+		if mouse.Button != tea.MouseLeft {
+			return m, nil
+		}
+		viewportHeight := m.height - 1
+		if viewportHeight <= 0 || mouse.Y < 0 || mouse.Y >= viewportHeight {
+			return m, nil
+		}
+		viewportWidth := m.width
 		if m.sidebar != nil && m.sidebar.IsVisible() {
-			cmd := m.sidebar.HandleMouse(msg)
-			return m, cmd
+			left, _ := splitSidebarWidths(m.width)
+			viewportWidth = left
+			if mouse.X >= viewportWidth {
+				if row, col, ok := m.sidebar.SelectionPoint(mouse.X, mouse.Y, viewportWidth); ok {
+					m.viewport.ClearSelection()
+					m.sidebar.StartSelection(row, col)
+				}
+				return m, nil
+			}
+		}
+		if mouse.X >= 0 && mouse.X < viewportWidth {
+			if m.sidebar != nil {
+				m.sidebar.ClearSelection()
+			}
+			m.viewport.StartSelection(mouse.Y, mouse.X)
+		}
+		return m, nil
+
+	case tea.MouseMotionMsg:
+		if m.hasBlockingOverlay() {
+			return m, nil
+		}
+		mouse := msg.Mouse()
+		viewportWidth := m.width
+		if m.sidebar != nil && m.sidebar.IsVisible() {
+			left, _ := splitSidebarWidths(m.width)
+			viewportWidth = left
+			if m.sidebar.HasActiveSelection() {
+				if row, col, ok := m.sidebar.SelectionPoint(mouse.X, mouse.Y, viewportWidth); ok {
+					m.sidebar.UpdateSelection(row, col)
+				}
+				return m, nil
+			}
+		}
+		if m.viewport.HasActiveSelection() {
+			if mouse.X < viewportWidth {
+				m.viewport.UpdateSelection(mouse.Y, mouse.X)
+			} else {
+				m.viewport.UpdateSelection(mouse.Y, viewportWidth)
+			}
+		}
+		return m, nil
+
+	case tea.MouseReleaseMsg:
+		if m.hasBlockingOverlay() {
+			return m, nil
+		}
+		mouse := msg.Mouse()
+		viewportWidth := m.width
+		if m.sidebar != nil && m.sidebar.IsVisible() {
+			left, _ := splitSidebarWidths(m.width)
+			viewportWidth = left
+			if m.sidebar.HasActiveSelection() {
+				if row, col, ok := m.sidebar.SelectionPoint(mouse.X, mouse.Y, viewportWidth); ok {
+					m.sidebar.UpdateSelection(row, col)
+				}
+				return m, m.copySelectedText(m.sidebar.FinishSelection())
+			}
+		}
+		if m.viewport.HasActiveSelection() {
+			if mouse.X < viewportWidth {
+				m.viewport.UpdateSelection(mouse.Y, mouse.X)
+			} else {
+				m.viewport.UpdateSelection(mouse.Y, viewportWidth)
+			}
+			return m, m.copySelectedText(m.viewport.FinishSelection())
 		}
 		return m, nil
 
@@ -407,6 +487,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			handled, cmd := m.inputHandler.HandleKey(msg)
 			if handled {
+				m.clearTextSelections()
 				return m, cmd
 			}
 			return m, nil // Always return here to avoid fallthrough
@@ -418,6 +499,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if secretMode {
 				handled, cmd := m.inputHandler.HandleKey(msg)
 				if handled {
+					m.clearTextSelections()
 					return m, cmd
 				}
 				return m, nil
@@ -536,6 +618,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		handled, cmd := m.inputHandler.HandleKey(msg)
 		if handled {
+			m.clearTextSelections()
 			// If the user types anything that reaches the PTY or triggers a UI
 			// action, exit scroll mode so they see the output of what they typed.
 			if m.scrollMode {
@@ -820,6 +903,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case exitConfirmTimeoutMsg:
 		if m.exitPending && msg.id == m.exitConfirmID {
 			m.exitPending = false
+			m.statusBar.SetMessage("")
+		}
+		return m, nil
+
+	case clearStatusMsgMsg:
+		if m.statusBar != nil && m.statusBar.GetMessage() == selectedTextCopiedMessage {
 			m.statusBar.SetMessage("")
 		}
 		return m, nil
@@ -1164,6 +1253,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) copySelectedText(text string) tea.Cmd {
+	if text == "" {
+		return nil
+	}
+	if m.statusBar != nil {
+		m.statusBar.SetMessage(selectedTextCopiedMessage)
+	}
+	return tea.Batch(
+		tea.SetClipboard(text),
+		tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return clearStatusMsgMsg{}
+		}),
+	)
+}
+
+func (m *Model) clearTextSelections() {
+	m.viewport.ClearSelection()
+	if m.sidebar != nil {
+		m.sidebar.ClearSelection()
+	}
+}
+
 // View renders the UI (Bubble Tea lifecycle method)
 // View renders the UI (Bubble Tea lifecycle method)
 func (m Model) View() tea.View {
@@ -1180,9 +1291,8 @@ func (m Model) View() tea.View {
 		return v
 	}
 
-	// Enable mouse wheel reporting so the application receives wheel events
-	// instead of the terminal emulator consuming them for its own scrollback.
-	// MouseModeCellMotion enables click, release, and wheel events.
+	// Enable mouse reporting for scrollback, sidebar scrolling, and in-app
+	// drag selection. Cell motion reports drags without sending idle movement.
 	if !m.fullScreenMode {
 		v.MouseMode = tea.MouseModeCellMotion
 	}
