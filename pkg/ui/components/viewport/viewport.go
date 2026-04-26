@@ -3,6 +3,7 @@ package viewport
 import (
 	"strings"
 
+	"wtf_cli/pkg/ui/components/selection"
 	"wtf_cli/pkg/ui/terminal"
 
 	"charm.land/bubbles/v2/viewport"
@@ -19,6 +20,7 @@ type PTYViewport struct {
 	ready           bool
 	dirty           bool // True if content changed since last View()
 	pauseAutoScroll bool // When true, AppendOutput does not auto-scroll to bottom
+	sel             selection.Selection
 }
 
 // NewPTYViewport creates a new PTY viewport
@@ -43,6 +45,9 @@ func (v *PTYViewport) SetSize(width, height int) {
 func (v *PTYViewport) AppendOutput(data []byte) {
 	if len(data) == 0 {
 		return
+	}
+	if !v.sel.IsEmpty() || v.sel.Active {
+		v.sel.Clear()
 	}
 
 	if v.lineRenderer != nil {
@@ -87,6 +92,7 @@ func (v *PTYViewport) GetContent() string {
 // Clear empties the viewport
 func (v *PTYViewport) Clear() {
 	v.content = ""
+	v.sel.Clear()
 	if v.lineRenderer != nil {
 		v.lineRenderer.Reset()
 	}
@@ -171,14 +177,103 @@ func (v *PTYViewport) RenderLines() string {
 	return strings.TrimSpace(view)
 }
 
+// StartSelection begins a mouse text selection from viewport-local screen
+// coordinates.
+func (v *PTYViewport) StartSelection(screenRow, screenCol int) {
+	row, col, ok := v.selectionContentPoint(screenRow, screenCol, false)
+	if !ok {
+		return
+	}
+	v.sel.Start(row, col)
+	v.renderContent()
+	v.dirty = true
+}
+
+// UpdateSelection moves the active selection endpoint.
+func (v *PTYViewport) UpdateSelection(screenRow, screenCol int) {
+	if !v.sel.Active {
+		return
+	}
+	row, col, ok := v.selectionContentPoint(screenRow, screenCol, true)
+	if !ok {
+		return
+	}
+	v.sel.Update(row, col)
+	v.renderContent()
+	v.dirty = true
+}
+
+// FinishSelection returns the selected text and clears the visible highlight.
+func (v *PTYViewport) FinishSelection() string {
+	if !v.sel.Active && v.sel.IsEmpty() {
+		return ""
+	}
+	v.sel.Finish()
+	text := selection.ExtractText(strings.Split(v.content, "\n"), v.sel)
+	v.sel.Clear()
+	v.renderContent()
+	v.dirty = true
+	return text
+}
+
+// ClearSelection removes the current selection.
+func (v *PTYViewport) ClearSelection() {
+	if !v.sel.Active && v.sel.IsEmpty() {
+		return
+	}
+	v.sel.Clear()
+	v.renderContent()
+	v.dirty = true
+}
+
+// HasActiveSelection reports whether a drag selection is in progress.
+func (v *PTYViewport) HasActiveSelection() bool {
+	return v.sel.Active
+}
+
+// HasSelection reports whether a non-empty selection range exists.
+func (v *PTYViewport) HasSelection() bool {
+	return !v.sel.IsEmpty()
+}
+
 func (v *PTYViewport) renderContent() {
+	content := v.content
+	if !v.sel.IsEmpty() {
+		content = selection.ApplyHighlight(content, v.sel)
+	}
 	if v.cursorTracker == nil {
-		v.Viewport.SetContent(v.content)
+		v.Viewport.SetContent(content)
 		return
 	}
 	cursorChar := ""
 	if v.showCursor {
 		cursorChar = "█"
 	}
-	v.Viewport.SetContent(v.cursorTracker.RenderCursorOverlay(v.content, cursorChar))
+	v.Viewport.SetContent(v.cursorTracker.RenderCursorOverlay(content, cursorChar))
+}
+
+func (v *PTYViewport) selectionContentPoint(screenRow, screenCol int, clamp bool) (int, int, bool) {
+	height := v.Viewport.Height()
+	width := v.Viewport.Width()
+	if !v.ready || height <= 0 || width <= 0 {
+		return 0, 0, false
+	}
+	if clamp {
+		if screenRow < 0 {
+			screenRow = 0
+		}
+		if screenRow >= height {
+			screenRow = height - 1
+		}
+		if screenCol < 0 {
+			screenCol = 0
+		}
+		if screenCol > width {
+			screenCol = width
+		}
+	} else if screenRow < 0 || screenRow >= height || screenCol < 0 || screenCol >= width {
+		return 0, 0, false
+	}
+
+	return v.Viewport.YOffset() + screenRow, v.Viewport.XOffset() + screenCol, true
 }

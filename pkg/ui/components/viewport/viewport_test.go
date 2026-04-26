@@ -282,3 +282,44 @@ func TestPTYViewport_SetAutoScroll_ReenableSnapsToBottom(t *testing.T) {
 		t.Error("SetAutoScroll(true) should snap viewport to bottom")
 	}
 }
+
+func TestPTYViewport_SelectionExtractsText(t *testing.T) {
+	vp := NewPTYViewport()
+	vp.SetSize(20, 5)
+	vp.SetCursorVisible(false)
+	vp.AppendOutput([]byte("alpha\nbravo\ncharlie"))
+
+	vp.StartSelection(0, 1)
+	vp.UpdateSelection(1, 3)
+
+	if !vp.HasActiveSelection() {
+		t.Fatal("expected active selection")
+	}
+
+	got := vp.FinishSelection()
+	want := "lpha\nbra"
+	if got != want {
+		t.Fatalf("expected selected text %q, got %q", want, got)
+	}
+	if vp.HasActiveSelection() || vp.HasSelection() {
+		t.Fatal("expected selection to be cleared after finish")
+	}
+}
+
+func TestPTYViewport_AppendOutputClearsSelection(t *testing.T) {
+	vp := NewPTYViewport()
+	vp.SetSize(20, 5)
+	vp.SetCursorVisible(false)
+	vp.AppendOutput([]byte("alpha\nbravo"))
+
+	vp.StartSelection(0, 0)
+	vp.UpdateSelection(0, 2)
+	if !vp.HasActiveSelection() {
+		t.Fatal("expected active selection")
+	}
+
+	vp.AppendOutput([]byte("\ncharlie"))
+	if vp.HasActiveSelection() || vp.HasSelection() {
+		t.Fatal("expected AppendOutput to clear selection")
+	}
+}

@@ -86,6 +86,92 @@ func TestModel_Update_WindowSize(t *testing.T) {
 	}
 }
 
+func TestModel_MouseDragCopiesViewportSelection(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 5})
+	m = newModel.(Model)
+	m.viewport.Clear()
+	m.viewport.SetCursorVisible(false)
+	m.viewport.AppendOutput([]byte("alpha\nbravo\ncharlie"))
+
+	newModel, cmd := m.Update(tea.MouseClickMsg(tea.Mouse{X: 1, Y: 0, Button: tea.MouseLeft}))
+	if cmd != nil {
+		t.Fatal("expected no command on mouse click")
+	}
+	m = newModel.(Model)
+	if !m.viewport.HasActiveSelection() {
+		t.Fatal("expected click to start viewport selection")
+	}
+
+	newModel, _ = m.Update(tea.MouseMotionMsg(tea.Mouse{X: 3, Y: 1, Button: tea.MouseLeft}))
+	m = newModel.(Model)
+
+	newModel, cmd = m.Update(tea.MouseReleaseMsg(tea.Mouse{X: 3, Y: 1, Button: tea.MouseLeft}))
+	m = newModel.(Model)
+
+	if cmd == nil {
+		t.Fatal("expected copy command on mouse release")
+	}
+	if got := m.statusBar.GetMessage(); got != selectedTextCopiedMessage {
+		t.Fatalf("expected status message %q, got %q", selectedTextCopiedMessage, got)
+	}
+	if m.viewport.HasActiveSelection() || m.viewport.HasSelection() {
+		t.Fatal("expected release to clear viewport selection")
+	}
+}
+
+func TestModel_RightClickDoesNotStartSelection(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 5})
+	m = newModel.(Model)
+	m.viewport.Clear()
+	m.viewport.AppendOutput([]byte("alpha"))
+
+	newModel, _ = m.Update(tea.MouseClickMsg(tea.Mouse{X: 1, Y: 0, Button: tea.MouseRight}))
+	m = newModel.(Model)
+
+	if m.viewport.HasActiveSelection() {
+		t.Fatal("expected right click to be ignored")
+	}
+}
+
+func TestModel_ClearSelectionStatusOnlyClearsOwnedMessage(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	m.statusBar.SetMessage(selectedTextCopiedMessage)
+
+	newModel, _ := m.Update(clearStatusMsgMsg{})
+	m = newModel.(Model)
+	if got := m.statusBar.GetMessage(); got != "" {
+		t.Fatalf("expected selection status to clear, got %q", got)
+	}
+
+	m.statusBar.SetMessage("Other message")
+	newModel, _ = m.Update(clearStatusMsgMsg{})
+	m = newModel.(Model)
+	if got := m.statusBar.GetMessage(); got != "Other message" {
+		t.Fatalf("expected unrelated status to remain, got %q", got)
+	}
+}
+
+func TestMouseEventFilterThrottlesMotionButNotRelease(t *testing.T) {
+	lastMouseEvent = time.Now()
+	defer func() {
+		lastMouseEvent = time.Time{}
+	}()
+
+	if got := MouseEventFilter(nil, tea.MouseMotionMsg(tea.Mouse{X: 1, Y: 1, Button: tea.MouseLeft})); got != nil {
+		t.Fatalf("expected rapid motion event to be filtered, got %T", got)
+	}
+	if got := MouseEventFilter(nil, tea.MouseReleaseMsg(tea.Mouse{X: 1, Y: 1, Button: tea.MouseLeft})); got == nil {
+		t.Fatal("expected release event to pass through filter")
+	}
+
+	lastMouseEvent = time.Now().Add(-mouseEventMinInterval)
+	if got := MouseEventFilter(nil, tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelDown})); got == nil {
+		t.Fatal("expected delayed wheel event to pass through filter")
+	}
+}
+
 func TestModel_Update_PTYOutput(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	m.ready = true

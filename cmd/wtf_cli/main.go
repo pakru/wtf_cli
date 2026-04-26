@@ -59,8 +59,8 @@ func main() {
 
 	// Create Bubble Tea program
 	// Note: In v2, AltScreen is set via View.AltScreen in the Model's View() method
-	// Note: Not using mouse motion to allow normal text selection
-	p := tea.NewProgram(model)
+	// Mouse events are handled in-app for scrollback/sidebar scrolling and text selection.
+	p := tea.NewProgram(model, tea.WithFilter(ui.MouseEventFilter))
 
 	// Run the program
 	if _, err := p.Run(); err != nil {
