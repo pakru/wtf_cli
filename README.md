@@ -2,13 +2,20 @@
 
 A transparent PTY-based terminal wrapper with AI-powered assistance. Get instant explanations for errors, suggestions for fixes, and interactive chat with an AI that sees your terminal context.
 
+[![Build Status](https://github.com/pakru/wtf_cli/actions/workflows/go.yml/badge.svg)](https://github.com/pakru/wtf_cli/actions/workflows/go.yml)
+[![Go Version](https://img.shields.io/badge/go-1.25%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/dl/)
+[![Latest Release](https://img.shields.io/github/v/release/pakru/wtf_cli?include_prereleases&label=release)](https://github.com/pakru/wtf_cli/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/pakru/wtf_cli)](https://goreportcard.com/report/github.com/pakru/wtf_cli)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey?logo=linux&logoColor=white)](https://github.com/pakru/wtf_cli/releases)
+
 ![WTF CLI Interface](docs/images/wtf_cli_interface.png)
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.25+
 - Linux or macOS
 - OpenRouter API key (for AI features)
 
@@ -95,6 +102,7 @@ cd ~/projects
 | `Ctrl+Z` | Suspend process |
 | `Ctrl+R` | Search command history |
 | `Ctrl+T` | Toggle AI chat sidebar |
+| `Shift+Tab` | Switch focus between terminal and chat sidebar |
 | `/` | Open command palette (at empty prompt) |
 | `Esc` | Close palette/panel/sidebar |
 | `←`/`→` | Move cursor in command line |
@@ -104,9 +112,11 @@ cd ~/projects
 
 - **Go** - Core language
 - **[creack/pty](https://github.com/creack/pty)** - Pseudo-terminal management
-- **[Bubble Tea](https://github.com/charmbracelet/bubbletea)** - TUI framework
-- **[Lipgloss](https://github.com/charmbracelet/lipgloss)** - Styling
-- **OpenRouter API** - LLM integration (supports 400+ models)
+- **[Bubble Tea v2](https://github.com/charmbracelet/bubbletea)** - TUI framework
+- **[Lipgloss v2](https://github.com/charmbracelet/lipgloss)** - Styling
+- **[vito/midterm](https://github.com/vito/midterm)** - Full-screen app terminal emulation (vim, htop, etc.)
+- **[go-git](https://github.com/go-git/go-git)** - Git integration (branch display in status bar)
+- **AI Providers** - OpenRouter, OpenAI, Anthropic, Google Gemini, GitHub Copilot
 
 
 ## 🧪 Development
@@ -194,7 +204,7 @@ git add .
 git commit -m "Your changes"
 
 # Create and push tag (version comes from the tag)
-git tag v0.4.0
+git tag vX.Y.Z
 git push origin main --tags
 
 # GitHub Actions will automatically build and create the release
@@ -204,23 +214,63 @@ git push origin main --tags
 
 Configuration file: `~/.wtf_cli/config.json`
 
+Supported providers: `openrouter`, `openai`, `copilot`, `anthropic`, `google`
+
 ```json
 {
   "llm_provider": "openrouter",
   "openrouter": {
-    "api_key": "<your_api_key>",
-    "model": "google/gemini-2.0-flash-exp:free",
+    "api_key": "<your_openrouter_api_key>",
+    "model": "google/gemini-3.0-flash",
     "temperature": 0.7,
     "max_tokens": 2000,
     "api_timeout_seconds": 30
+  },
+  "providers": {
+    "openai": {
+      "api_key": "<your_openai_api_key>",
+      "model": "gpt-4o",
+      "temperature": 0.7,
+      "max_tokens": 2000,
+      "api_timeout_seconds": 30
+    },
+    "anthropic": {
+      "api_key": "<your_anthropic_api_key>",
+      "model": "claude-3-5-sonnet-20241022",
+      "temperature": 0.7,
+      "max_tokens": 2000,
+      "api_timeout_seconds": 30
+    },
+    "google": {
+      "api_key": "<your_google_api_key>",
+      "model": "gemini-3-flash-preview",
+      "temperature": 0.7,
+      "max_tokens": 8192,
+      "api_timeout_seconds": 60
+    },
+    "copilot": {
+      "model": "gpt-4o",
+      "temperature": 0.7,
+      "max_tokens": 2000,
+      "api_timeout_seconds": 30
+    }
   },
   "buffer_size": 2000,
   "context_window": 1000,
   "status_bar": {
     "position": "bottom"
-  }
+  },
+  "update_check": {
+    "enabled": true,
+    "interval_hours": 1
+  },
+  "log_file": "~/.wtf_cli/logs/wtf_cli.log",
+  "log_format": "json",
+  "log_level": "info"
 }
 ```
+
+> **Note:** Only the fields for your active `llm_provider` need to be set. `copilot` uses GitHub Copilot CLI authentication — no API key required.
 
 ## 🤝 Contributing
 
