@@ -27,7 +27,7 @@ A transparent PTY-based terminal wrapper with AI-powered assistance. Get instant
 curl -fsSL https://raw.githubusercontent.com/pakru/wtf_cli/main/install.sh | bash
 ```
 
-This will automatically detect your platform, download the latest release, verify checksums, and install to the appropriate location.
+This will automatically detect your platform, download the latest release, verify checksums, and install to `~/.local/bin`.
 
 #### Option 1: Download Pre-built Binary
 
@@ -41,7 +41,8 @@ chmod +x wtf_cli
 ./wtf_cli --version
 
 # Optionally install to PATH
-sudo mv wtf_cli /usr/local/bin/
+mkdir -p ~/.local/bin
+mv wtf_cli ~/.local/bin/
 ```
 
 #### Option 2: Build from Source

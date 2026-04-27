@@ -4,7 +4,7 @@
 # Usage: curl -fsSL https://raw.githubusercontent.com/pakru/wtf_cli/main/install.sh | bash
 #
 # Environment variables:
-#   WTF_INSTALL_DIR - Custom installation directory (default: ~/.local/bin on Linux, /usr/local/bin on macOS)
+#   WTF_INSTALL_DIR - Custom installation directory (default: ~/.local/bin)
 #
 
 set -e
@@ -34,7 +34,7 @@ Usage: install.sh [OPTIONS]
 
 Options:
     -h, --help      Show this help message
-    -d, --dir DIR   Install to custom directory (default: ~/.local/bin on Linux, /usr/local/bin on macOS)
+    -d, --dir DIR   Install to custom directory (default: ~/.local/bin)
 
 Environment Variables:
     WTF_INSTALL_DIR     Custom installation directory
@@ -74,13 +74,28 @@ detect_arch() {
     esac
 }
 
-# Get default install directory based on OS
+# Get default install directory
 get_default_install_dir() {
-    local os="$1"
-    if [ "$os" = "darwin" ]; then
-        echo "/usr/local/bin"
-    else
-        echo "$HOME/.local/bin"
+    echo "$HOME/.local/bin"
+}
+
+# Check if install directory is in PATH
+check_install_dir_in_path() {
+    local install_dir="$1"
+
+    if ! echo "$PATH" | tr ':' '\n' | grep -qx "$install_dir"; then
+        echo
+        warn "NOTE: ${install_dir} is not in your PATH"
+        echo
+        echo "Add it to your shell profile:"
+        echo
+        echo "  # For bash (~/.bashrc or ~/.bash_profile)"
+        echo "  export PATH=\"\$PATH:${install_dir}\""
+        echo
+        echo "  # For zsh (~/.zshrc)"
+        echo "  export PATH=\"\$PATH:${install_dir}\""
+        echo
+        echo "Then restart your terminal or run: source ~/.bashrc (or ~/.zshrc)"
     fi
 }
 
@@ -213,7 +228,7 @@ main() {
 
     # Determine install directory
     local install_dir
-    install_dir="${custom_dir:-${WTF_INSTALL_DIR:-$(get_default_install_dir "$os")}}"
+    install_dir="${custom_dir:-${WTF_INSTALL_DIR:-$(get_default_install_dir)}}"
     local install_path="${install_dir}/${BINARY_NAME}"
     info "Install location: ${install_path}"
 
@@ -233,6 +248,7 @@ main() {
     # Check if already up to date
     if [ -n "$installed_version" ] && [ "$installed_version" = "$latest_version" ]; then
         success "Already up to date (${latest_version})"
+        check_install_dir_in_path "$install_dir"
         exit 0
     fi
 
@@ -287,21 +303,7 @@ main() {
         success "WTF CLI ${latest_version} installed successfully!"
     fi
 
-    # Check if install directory is in PATH
-    if ! echo "$PATH" | tr ':' '\n' | grep -qx "$install_dir"; then
-        echo
-        warn "NOTE: ${install_dir} is not in your PATH"
-        echo
-        echo "Add it to your shell profile:"
-        echo
-        echo "  # For bash (~/.bashrc or ~/.bash_profile)"
-        echo "  export PATH=\"\$PATH:${install_dir}\""
-        echo
-        echo "  # For zsh (~/.zshrc)"
-        echo "  export PATH=\"\$PATH:${install_dir}\""
-        echo
-        echo "Then restart your terminal or run: source ~/.bashrc (or ~/.zshrc)"
-    fi
+    check_install_dir_in_path "$install_dir"
 
     echo
     info "Run 'wtf_cli --version' to verify the installation"
