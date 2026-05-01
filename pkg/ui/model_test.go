@@ -135,6 +135,149 @@ func TestModel_RightClickDoesNotStartSelection(t *testing.T) {
 	}
 }
 
+func TestModel_MouseClickTerminalPaneFocusesTerminal(t *testing.T) {
+	m := newMouseFocusModel(t)
+	m.setTerminalFocused(false)
+	m.sidebar.StartSelection(0, 0)
+
+	newModel, cmd := m.Update(tea.MouseClickMsg(tea.Mouse{X: 1, Y: 0, Button: tea.MouseLeft}))
+	if cmd != nil {
+		t.Fatal("expected no command on mouse click")
+	}
+	m = newModel.(Model)
+
+	if !m.terminalFocused {
+		t.Fatal("expected terminal pane click to focus terminal")
+	}
+	if m.sidebar.IsFocusedOnInput() {
+		t.Fatal("expected terminal pane click to blur sidebar input")
+	}
+	if !m.viewport.HasActiveSelection() {
+		t.Fatal("expected terminal pane click to preserve viewport selection start")
+	}
+	if m.sidebar.HasActiveSelection() {
+		t.Fatal("expected terminal pane click to clear sidebar selection")
+	}
+}
+
+func TestModel_MouseClickSidebarMessageFocusesInputAndStartsSelection(t *testing.T) {
+	m := newMouseFocusModel(t)
+	m.setTerminalFocused(true)
+	m.viewport.StartSelection(0, 0)
+	left, _ := splitSidebarWidths(m.width)
+
+	newModel, cmd := m.Update(tea.MouseClickMsg(tea.Mouse{X: left + 3, Y: 3, Button: tea.MouseLeft}))
+	if cmd != nil {
+		t.Fatal("expected no command on mouse click")
+	}
+	m = newModel.(Model)
+
+	if m.terminalFocused {
+		t.Fatal("expected sidebar click to focus sidebar")
+	}
+	if !m.sidebar.IsFocusedOnInput() {
+		t.Fatal("expected sidebar click to focus chat input")
+	}
+	if strings.Contains(m.viewport.View(), "█") {
+		t.Fatal("expected terminal cursor block to be hidden when sidebar is focused")
+	}
+	if !m.sidebar.HasActiveSelection() {
+		t.Fatal("expected sidebar message click to preserve sidebar selection start")
+	}
+	if m.viewport.HasActiveSelection() {
+		t.Fatal("expected sidebar message click to clear viewport selection")
+	}
+}
+
+func TestModel_MouseClickSidebarChromeFocusesInputWithoutSelection(t *testing.T) {
+	m := newMouseFocusModel(t)
+	m.setTerminalFocused(true)
+	left, _ := splitSidebarWidths(m.width)
+
+	newModel, cmd := m.Update(tea.MouseClickMsg(tea.Mouse{X: left, Y: 0, Button: tea.MouseLeft}))
+	if cmd != nil {
+		t.Fatal("expected no command on mouse click")
+	}
+	m = newModel.(Model)
+
+	if m.terminalFocused {
+		t.Fatal("expected sidebar chrome click to focus sidebar")
+	}
+	if !m.sidebar.IsFocusedOnInput() {
+		t.Fatal("expected sidebar chrome click to focus chat input")
+	}
+	if m.sidebar.HasActiveSelection() {
+		t.Fatal("expected sidebar chrome click not to start sidebar selection")
+	}
+	if m.viewport.HasActiveSelection() {
+		t.Fatal("expected sidebar chrome click not to start viewport selection")
+	}
+}
+
+func TestModel_MouseClickStatusBarDoesNotChangeFocus(t *testing.T) {
+	m := newMouseFocusModel(t)
+	m.setTerminalFocused(false)
+
+	newModel, _ := m.Update(tea.MouseClickMsg(tea.Mouse{X: 1, Y: m.height - 1, Button: tea.MouseLeft}))
+	m = newModel.(Model)
+
+	if m.terminalFocused {
+		t.Fatal("expected status bar click not to focus terminal")
+	}
+	if !m.sidebar.IsFocusedOnInput() {
+		t.Fatal("expected status bar click to leave sidebar input focused")
+	}
+	if m.viewport.HasActiveSelection() {
+		t.Fatal("expected status bar click not to start viewport selection")
+	}
+}
+
+func TestModel_MouseClickBlockingOverlayDoesNotChangeFocus(t *testing.T) {
+	m := newMouseFocusModel(t)
+	m.setTerminalFocused(false)
+	m.resultPanel.Show("Result", "Content")
+
+	newModel, _ := m.Update(tea.MouseClickMsg(tea.Mouse{X: 1, Y: 0, Button: tea.MouseLeft}))
+	m = newModel.(Model)
+
+	if m.terminalFocused {
+		t.Fatal("expected overlay-blocked click not to focus terminal")
+	}
+	if m.viewport.HasActiveSelection() {
+		t.Fatal("expected overlay-blocked click not to start viewport selection")
+	}
+}
+
+func TestModel_RightClickDoesNotChangeFocus(t *testing.T) {
+	m := newMouseFocusModel(t)
+	m.setTerminalFocused(false)
+
+	newModel, _ := m.Update(tea.MouseClickMsg(tea.Mouse{X: 1, Y: 0, Button: tea.MouseRight}))
+	m = newModel.(Model)
+
+	if m.terminalFocused {
+		t.Fatal("expected right click not to change focus")
+	}
+	if m.viewport.HasActiveSelection() {
+		t.Fatal("expected right click not to start viewport selection")
+	}
+}
+
+func newMouseFocusModel(t *testing.T) Model {
+	t.Helper()
+
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	m = newModel.(Model)
+	m.sidebar.Show("WTF Analysis", "alpha\nbravo\ncharlie")
+	m.applyLayout()
+	m.viewport.Clear()
+	m.viewport.SetCursorVisible(true)
+	m.viewport.AppendOutput([]byte("hi\x1b[3C"))
+
+	return m
+}
+
 func TestModel_ClearSelectionStatusOnlyClearsOwnedMessage(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	m.statusBar.SetMessage(selectedTextCopiedMessage)

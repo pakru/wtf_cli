@@ -308,8 +308,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if mouse.Button != tea.MouseLeft {
 			return m, nil
 		}
-		viewportHeight := m.height - 1
-		if viewportHeight <= 0 || mouse.Y < 0 || mouse.Y >= viewportHeight {
+		viewportHeight := render.ViewportHeight(m.height)
+		if viewportHeight <= 0 || mouse.Y < 0 || mouse.Y >= viewportHeight || mouse.X < 0 || mouse.X >= m.width {
 			return m, nil
 		}
 		viewportWidth := m.width
@@ -317,12 +317,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			left, _ := splitSidebarWidths(m.width)
 			viewportWidth = left
 			if mouse.X >= viewportWidth {
+				m.focusSidebarInputFromMouse()
 				if row, col, ok := m.sidebar.SelectionPoint(mouse.X, mouse.Y, viewportWidth); ok {
 					m.viewport.ClearSelection()
 					m.sidebar.StartSelection(row, col)
 				}
 				return m, nil
 			}
+			m.focusTerminalFromMouse()
 		}
 		if mouse.X >= 0 && mouse.X < viewportWidth {
 			if m.sidebar != nil {
@@ -1394,6 +1396,23 @@ func (m *Model) setTerminalFocused(focused bool) {
 		return
 	}
 	m.sidebar.FocusInput()
+}
+
+func (m *Model) focusSidebarInputFromMouse() {
+	if m.sidebar == nil || !m.sidebar.IsVisible() {
+		return
+	}
+	m.setTerminalFocused(false)
+	// A sidebar click always returns keyboard input to chat, even if the
+	// sidebar was already focused on its message viewport.
+	m.sidebar.FocusInput()
+}
+
+func (m *Model) focusTerminalFromMouse() {
+	m.setTerminalFocused(true)
+	if m.sidebar != nil && m.sidebar.IsVisible() {
+		m.sidebar.BlurInput()
+	}
 }
 
 // setScrollMode activates or deactivates scroll mode, keeping viewport auto-scroll
