@@ -216,5 +216,16 @@ func (s *openAIStream) Close() error {
 	return s.stream.Close()
 }
 
+func (s *openAIStream) ToolCalls() []ai.ToolCall { return nil }
+
+func (s *openAIStream) StopReason() string { return "" }
+
+// Capabilities reports what the OpenAI provider supports. Tool-calling is not
+// wired through this provider yet; flip Tools to true once the request/response
+// mapping in this file handles req.Tools and tool_calls deltas.
+func (p *OpenAIProvider) Capabilities() ai.ProviderCapabilities {
+	return ai.ProviderCapabilities{Streaming: true}
+}
+
 // Ensure interface compliance
 var _ ai.Provider = (*OpenAIProvider)(nil)

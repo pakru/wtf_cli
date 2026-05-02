@@ -228,6 +228,16 @@ func (s *openRouterStream) Close() error {
 	return s.stream.Close()
 }
 
+func (s *openRouterStream) ToolCalls() []ai.ToolCall { return nil }
+
+func (s *openRouterStream) StopReason() string { return "" }
+
+// Capabilities reports what the OpenRouter provider supports. Tool-calling is
+// not wired through this provider yet.
+func (p *OpenRouterProvider) Capabilities() ai.ProviderCapabilities {
+	return ai.ProviderCapabilities{Streaming: true}
+}
+
 // Ensure interface compliance
 var _ ai.Provider = (*OpenRouterProvider)(nil)
 

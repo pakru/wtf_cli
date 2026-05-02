@@ -385,6 +385,16 @@ func (s *anthropicStream) Close() error {
 	return s.body.Close()
 }
 
+func (s *anthropicStream) ToolCalls() []ai.ToolCall { return nil }
+
+func (s *anthropicStream) StopReason() string { return "" }
+
+// Capabilities reports what the Anthropic provider supports. Tool-calling is
+// not wired through this provider yet.
+func (p *AnthropicProvider) Capabilities() ai.ProviderCapabilities {
+	return ai.ProviderCapabilities{Streaming: true}
+}
+
 // Ensure interface compliance
 var _ ai.Provider = (*AnthropicProvider)(nil)
 

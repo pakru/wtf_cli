@@ -322,6 +322,16 @@ func (s *googleStream) Close() error {
 	return nil
 }
 
+func (s *googleStream) ToolCalls() []ai.ToolCall { return nil }
+
+func (s *googleStream) StopReason() string { return "" }
+
+// Capabilities reports what the Google provider supports. Tool-calling is not
+// wired through this provider yet.
+func (p *GoogleProvider) Capabilities() ai.ProviderCapabilities {
+	return ai.ProviderCapabilities{Streaming: true}
+}
+
 // Ensure interface compliance
 var _ ai.Provider = (*GoogleProvider)(nil)
 
