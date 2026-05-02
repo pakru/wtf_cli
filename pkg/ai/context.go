@@ -149,6 +149,23 @@ func buildUserPrompt(meta TerminalMetadata, ctx TerminalContext) string {
 	return sb.String()
 }
 
+// AppendToolInstructions augments a system prompt with guidance for using the
+// provided tools. Returns prompt unchanged when tools is empty.
+//
+// The model already receives the tool definitions structurally via the
+// provider's tool-calling API; this prose instruction biases when to actually
+// call them — particularly nudging it to prefer terminal output already shown.
+func AppendToolInstructions(prompt string, tools []ToolDefinition) string {
+	if len(tools) == 0 {
+		return prompt
+	}
+	const instructions = "You have access to tools that can gather more information than what is shown in the terminal output. " +
+		"Prefer the terminal output already provided; only call tools when you need content not visible above. " +
+		"When a tool is needed, call it directly — do not ask the user for permission, the harness will. " +
+		"Read narrow ranges (a few hundred lines max) per call."
+	return prompt + " " + instructions
+}
+
 func wtfSystemPrompt() string {
 	platform := GetPlatformInfo()
 	return strings.Join([]string{

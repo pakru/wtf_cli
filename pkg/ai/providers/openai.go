@@ -12,7 +12,6 @@ import (
 
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
-	"github.com/openai/openai-go/v3/packages/ssestream"
 )
 
 const (
@@ -144,7 +143,7 @@ func (p *OpenAIProvider) CreateChatCompletionStream(ctx context.Context, req ai.
 		return nil, err
 	}
 
-	return &openAIStream{stream: stream}, nil
+	return newOpenAICompatStream(stream), nil
 }
 
 func (p *OpenAIProvider) buildChatParams(req ai.ChatRequest) (openai.ChatCompletionNewParams, error) {
@@ -189,42 +188,21 @@ func (p *OpenAIProvider) buildChatParams(req ai.ChatRequest) (openai.ChatComplet
 		params.MaxTokens = openai.Int(int64(maxTokens))
 	}
 
+	if len(req.Tools) > 0 {
+		tools, err := toOpenAIToolUnionParams(req.Tools)
+		if err != nil {
+			return openai.ChatCompletionNewParams{}, err
+		}
+		params.Tools = tools
+		params.ToolChoice = toOpenAIToolChoice(req.ToolChoice)
+	}
+
 	return params, nil
 }
 
-type openAIStream struct {
-	stream *ssestream.Stream[openai.ChatCompletionChunk]
-}
-
-func (s *openAIStream) Next() bool {
-	return s.stream.Next()
-}
-
-func (s *openAIStream) Content() string {
-	chunk := s.stream.Current()
-	if len(chunk.Choices) == 0 {
-		return ""
-	}
-	return chunk.Choices[0].Delta.Content
-}
-
-func (s *openAIStream) Err() error {
-	return s.stream.Err()
-}
-
-func (s *openAIStream) Close() error {
-	return s.stream.Close()
-}
-
-func (s *openAIStream) ToolCalls() []ai.ToolCall { return nil }
-
-func (s *openAIStream) StopReason() string { return "" }
-
-// Capabilities reports what the OpenAI provider supports. Tool-calling is not
-// wired through this provider yet; flip Tools to true once the request/response
-// mapping in this file handles req.Tools and tool_calls deltas.
+// Capabilities reports what the OpenAI provider supports.
 func (p *OpenAIProvider) Capabilities() ai.ProviderCapabilities {
-	return ai.ProviderCapabilities{Streaming: true}
+	return ai.ProviderCapabilities{Streaming: true, Tools: true}
 }
 
 // Ensure interface compliance

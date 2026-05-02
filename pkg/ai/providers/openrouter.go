@@ -14,7 +14,6 @@ import (
 
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
-	"github.com/openai/openai-go/v3/packages/ssestream"
 )
 
 func init() {
@@ -142,7 +141,7 @@ func (p *OpenRouterProvider) CreateChatCompletionStream(ctx context.Context, req
 		return nil, err
 	}
 
-	return &openRouterStream{stream: stream}, nil
+	return newOpenAICompatStream(stream), nil
 }
 
 func (p *OpenRouterProvider) buildChatParams(req ai.ChatRequest) (openai.ChatCompletionNewParams, error) {
@@ -185,57 +184,21 @@ func (p *OpenRouterProvider) buildChatParams(req ai.ChatRequest) (openai.ChatCom
 		params.MaxTokens = openai.Int(int64(maxTokens))
 	}
 
+	if len(req.Tools) > 0 {
+		tools, err := toOpenAIToolUnionParams(req.Tools)
+		if err != nil {
+			return openai.ChatCompletionNewParams{}, err
+		}
+		params.Tools = tools
+		params.ToolChoice = toOpenAIToolChoice(req.ToolChoice)
+	}
+
 	return params, nil
 }
 
-func toChatMessageParam(msg ai.Message) (openai.ChatCompletionMessageParamUnion, error) {
-	role := strings.ToLower(strings.TrimSpace(msg.Role))
-	switch role {
-	case "system":
-		return openai.SystemMessage(msg.Content), nil
-	case "user":
-		return openai.UserMessage(msg.Content), nil
-	case "assistant":
-		return openai.AssistantMessage(msg.Content), nil
-	case "developer":
-		return openai.DeveloperMessage(msg.Content), nil
-	default:
-		return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("unsupported role: %s", msg.Role)
-	}
-}
-
-type openRouterStream struct {
-	stream *ssestream.Stream[openai.ChatCompletionChunk]
-}
-
-func (s *openRouterStream) Next() bool {
-	return s.stream.Next()
-}
-
-func (s *openRouterStream) Content() string {
-	chunk := s.stream.Current()
-	if len(chunk.Choices) == 0 {
-		return ""
-	}
-	return chunk.Choices[0].Delta.Content
-}
-
-func (s *openRouterStream) Err() error {
-	return s.stream.Err()
-}
-
-func (s *openRouterStream) Close() error {
-	return s.stream.Close()
-}
-
-func (s *openRouterStream) ToolCalls() []ai.ToolCall { return nil }
-
-func (s *openRouterStream) StopReason() string { return "" }
-
-// Capabilities reports what the OpenRouter provider supports. Tool-calling is
-// not wired through this provider yet.
+// Capabilities reports what the OpenRouter provider supports.
 func (p *OpenRouterProvider) Capabilities() ai.ProviderCapabilities {
-	return ai.ProviderCapabilities{Streaming: true}
+	return ai.ProviderCapabilities{Streaming: true, Tools: true}
 }
 
 // Ensure interface compliance
