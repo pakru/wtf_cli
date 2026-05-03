@@ -84,6 +84,31 @@ var (
 				Bold(true)
 )
 
+// Dialog button styles (classic lipgloss layout).
+var (
+	// DialogButtonStyle is the inactive/unfocused button.
+	DialogButtonStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FFF7DB")).
+				Background(lipgloss.Color("#888B7E")).
+				Padding(0, 3).
+				MarginTop(1)
+
+	// DialogActiveButtonStyle is the focused button (pink/magenta).
+	DialogActiveButtonStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FFF7DB")).
+				Background(lipgloss.Color("#F25D94")).
+				Padding(0, 3).
+				MarginTop(1).
+				Underline(true).
+				Bold(true)
+
+	// DialogQuestionStyle is the centered prompt text above buttons.
+	DialogQuestionStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("213")).
+				Bold(true).
+				Align(lipgloss.Center)
+)
+
 // Input and form styles
 var (
 	// LabelStyle for form labels

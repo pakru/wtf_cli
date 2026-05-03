@@ -14,6 +14,7 @@ type Config struct {
 	LLMProvider   string            `json:"llm_provider"`
 	OpenRouter    OpenRouterConfig  `json:"openrouter"`
 	Providers     ProvidersConfig   `json:"providers"`
+	Agent         AgentConfig       `json:"agent"`
 	BufferSize    int               `json:"buffer_size"`
 	ContextWindow int               `json:"context_window"`
 	StatusBar     StatusBarConfig   `json:"status_bar"`
@@ -21,6 +22,26 @@ type Config struct {
 	LogFile       string            `json:"log_file"`
 	LogFormat     string            `json:"log_format"`
 	LogLevel      string            `json:"log_level"`
+}
+
+// AgentConfig controls the agentic tool-execution loop used by /explain and /chat.
+type AgentConfig struct {
+	// MaxIterations bounds the number of provider round-trips per invocation.
+	// Denials count as iterations.
+	MaxIterations int        `json:"max_iterations"`
+	Tools         AgentTools `json:"tools"`
+}
+
+// AgentTools holds per-tool configuration for the agent loop.
+type AgentTools struct {
+	ReadFile ReadFileToolConfig `json:"read_file"`
+}
+
+// ReadFileToolConfig configures the read_file tool.
+type ReadFileToolConfig struct {
+	Enabled  bool `json:"enabled"`
+	MaxLines int  `json:"max_lines"`
+	MaxBytes int  `json:"max_bytes"`
 }
 
 // ProvidersConfig holds configuration for all LLM providers.
@@ -94,6 +115,9 @@ type UpdateCheckConfig struct {
 
 const (
 	defaultUpdateCheckIntervalHours = 1
+	defaultAgentMaxIterations       = 5
+	defaultReadFileMaxLines         = 500
+	defaultReadFileMaxBytes         = 65536
 )
 
 // Default returns a configuration with default values
@@ -117,6 +141,16 @@ func Default() Config {
 				Temperature:       0.7,
 				MaxTokens:         8192,
 				APITimeoutSeconds: 60,
+			},
+		},
+		Agent: AgentConfig{
+			MaxIterations: defaultAgentMaxIterations,
+			Tools: AgentTools{
+				ReadFile: ReadFileToolConfig{
+					Enabled:  true,
+					MaxLines: defaultReadFileMaxLines,
+					MaxBytes: defaultReadFileMaxBytes,
+				},
 			},
 		},
 		BufferSize:    2000,
@@ -335,6 +369,16 @@ type configPresence struct {
 			APITimeoutSeconds *int     `json:"api_timeout_seconds"`
 		} `json:"google"`
 	} `json:"providers"`
+	Agent *struct {
+		MaxIterations *int `json:"max_iterations"`
+		Tools         *struct {
+			ReadFile *struct {
+				Enabled  *bool `json:"enabled"`
+				MaxLines *int  `json:"max_lines"`
+				MaxBytes *int  `json:"max_bytes"`
+			} `json:"read_file"`
+		} `json:"tools"`
+	} `json:"agent"`
 	BufferSize    *int `json:"buffer_size"`
 	ContextWindow *int `json:"context_window"`
 	StatusBar     *struct {
@@ -410,6 +454,8 @@ func applyDefaults(cfg Config, data []byte) Config {
 		}
 	}
 
+	cfg.Agent = applyAgentDefaults(cfg.Agent, presence.Agent, defaults.Agent)
+
 	if presence.BufferSize == nil || cfg.BufferSize <= 0 {
 		cfg.BufferSize = defaults.BufferSize
 	}
@@ -452,6 +498,39 @@ func applyDefaults(cfg Config, data []byte) Config {
 		cfg.LogLevel = defaults.LogLevel
 	}
 
+	return cfg
+}
+
+func applyAgentDefaults(cfg AgentConfig, presence *struct {
+	MaxIterations *int `json:"max_iterations"`
+	Tools         *struct {
+		ReadFile *struct {
+			Enabled  *bool `json:"enabled"`
+			MaxLines *int  `json:"max_lines"`
+			MaxBytes *int  `json:"max_bytes"`
+		} `json:"read_file"`
+	} `json:"tools"`
+}, defaults AgentConfig) AgentConfig {
+	if presence == nil {
+		return defaults
+	}
+	if presence.MaxIterations == nil || cfg.MaxIterations <= 0 {
+		cfg.MaxIterations = defaults.MaxIterations
+	}
+	if presence.Tools == nil || presence.Tools.ReadFile == nil {
+		cfg.Tools.ReadFile = defaults.Tools.ReadFile
+		return cfg
+	}
+	rf := presence.Tools.ReadFile
+	if rf.Enabled == nil {
+		cfg.Tools.ReadFile.Enabled = defaults.Tools.ReadFile.Enabled
+	}
+	if rf.MaxLines == nil || cfg.Tools.ReadFile.MaxLines <= 0 {
+		cfg.Tools.ReadFile.MaxLines = defaults.Tools.ReadFile.MaxLines
+	}
+	if rf.MaxBytes == nil || cfg.Tools.ReadFile.MaxBytes <= 0 {
+		cfg.Tools.ReadFile.MaxBytes = defaults.Tools.ReadFile.MaxBytes
+	}
 	return cfg
 }
 

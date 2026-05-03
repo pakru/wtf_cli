@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"iter"
 	"log/slog"
@@ -102,9 +103,16 @@ func (p *GoogleProvider) CreateChatCompletion(ctx context.Context, req ai.ChatRe
 		return ai.ChatResponse{}, err
 	}
 
+	toolCalls, err := extractFunctionCalls(resp)
+	if err != nil {
+		return ai.ChatResponse{}, fmt.Errorf("extract function calls: %w", err)
+	}
+
 	return ai.ChatResponse{
-		Content: extractVisibleText(resp),
-		Model:   model,
+		Content:    extractVisibleText(resp),
+		Model:      model,
+		ToolCalls:  toolCalls,
+		StopReason: extractFinishReason(resp),
 	}, nil
 }
 
@@ -148,25 +156,24 @@ func (p *GoogleProvider) buildRequest(req ai.ChatRequest) (string, []*genai.Cont
 				developerParts = append(developerParts, content)
 			}
 		case "assistant":
+			parts := assistantParts(msg)
+			contents = append(contents, &genai.Content{Role: genai.RoleModel, Parts: parts})
+		case "tool":
+			// Gemini surfaces tool results as user-role messages with a
+			// FunctionResponse part (mirroring how function calls come back as
+			// FunctionCall parts on model-role messages).
+			part, err := toolResponsePart(msg)
+			if err != nil {
+				return "", nil, nil, fmt.Errorf("tool message: %w", err)
+			}
 			contents = append(contents, &genai.Content{
-				Role: genai.RoleModel,
-				Parts: []*genai.Part{
-					{Text: msg.Content},
-				},
+				Role:  genai.RoleUser,
+				Parts: []*genai.Part{part},
 			})
-		case "user":
+		default: // "user" and unrecognized roles
 			contents = append(contents, &genai.Content{
-				Role: genai.RoleUser,
-				Parts: []*genai.Part{
-					{Text: msg.Content},
-				},
-			})
-		default:
-			contents = append(contents, &genai.Content{
-				Role: genai.RoleUser,
-				Parts: []*genai.Part{
-					{Text: msg.Content},
-				},
+				Role:  genai.RoleUser,
+				Parts: []*genai.Part{{Text: msg.Content}},
 			})
 		}
 	}
@@ -210,7 +217,156 @@ func (p *GoogleProvider) buildRequest(req ai.ChatRequest) (string, []*genai.Cont
 		config.MaxOutputTokens = int32(maxTokens)
 	}
 
+	if len(req.Tools) > 0 {
+		tools, err := toGoogleTools(req.Tools)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		config.Tools = tools
+		if tc := toGoogleToolConfig(req.ToolChoice); tc != nil {
+			config.ToolConfig = tc
+		}
+	}
+
 	return model, contents, config, nil
+}
+
+// assistantParts converts an assistant ai.Message to genai parts. When ToolCalls
+// are present they map to FunctionCall parts (one per call), with optional
+// leading text part.
+func assistantParts(msg ai.Message) []*genai.Part {
+	if len(msg.ToolCalls) == 0 {
+		return []*genai.Part{{Text: msg.Content}}
+	}
+	parts := make([]*genai.Part, 0, 1+len(msg.ToolCalls))
+	if msg.Content != "" {
+		parts = append(parts, &genai.Part{Text: msg.Content})
+	}
+	for _, tc := range msg.ToolCalls {
+		args := map[string]any{}
+		if len(tc.Arguments) > 0 {
+			if err := json.Unmarshal(tc.Arguments, &args); err != nil {
+				// Fall back to wrapping the raw arguments so the model can still
+				// match its prior call by name+id.
+				args = map[string]any{"_raw": string(tc.Arguments)}
+			}
+		}
+		parts = append(parts, &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				ID:   tc.ID,
+				Name: tc.Name,
+				Args: args,
+			},
+			ThoughtSignature: tc.ThoughtSignature,
+		})
+	}
+	return parts
+}
+
+// toolResponsePart wraps an ai.Message{Role:"tool"} as a FunctionResponse part.
+// The Response map uses an "output" key (or "error" when the tool reported a
+// soft failure) per Gemini's tool-result convention.
+func toolResponsePart(msg ai.Message) (*genai.Part, error) {
+	if strings.TrimSpace(msg.Name) == "" {
+		return nil, fmt.Errorf("tool message requires Name")
+	}
+	responseKey := "output"
+	if msg.IsError {
+		responseKey = "error"
+	}
+	return &genai.Part{
+		FunctionResponse: &genai.FunctionResponse{
+			ID:       msg.ToolCallID,
+			Name:     msg.Name,
+			Response: map[string]any{responseKey: msg.Content},
+		},
+	}, nil
+}
+
+// toGoogleTools maps our tool definitions to a single Tool with all
+// FunctionDeclarations attached, which is the standard Gemini shape.
+func toGoogleTools(defs []ai.ToolDefinition) ([]*genai.Tool, error) {
+	if len(defs) == 0 {
+		return nil, nil
+	}
+	decls := make([]*genai.FunctionDeclaration, 0, len(defs))
+	for _, d := range defs {
+		var schema any
+		if len(d.JSONSchema) > 0 {
+			if err := json.Unmarshal(d.JSONSchema, &schema); err != nil {
+				return nil, fmt.Errorf("tool %q: invalid JSON schema: %w", d.Name, err)
+			}
+		}
+		decls = append(decls, &genai.FunctionDeclaration{
+			Name:                 d.Name,
+			Description:          d.Description,
+			ParametersJsonSchema: schema,
+		})
+	}
+	return []*genai.Tool{{FunctionDeclarations: decls}}, nil
+}
+
+func toGoogleToolConfig(choice string) *genai.ToolConfig {
+	mode := strings.ToLower(strings.TrimSpace(choice))
+	switch mode {
+	case "", "auto":
+		return &genai.ToolConfig{
+			FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: genai.FunctionCallingConfigModeAuto},
+		}
+	case "none":
+		return &genai.ToolConfig{
+			FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: genai.FunctionCallingConfigModeNone},
+		}
+	case "required", "any":
+		return &genai.ToolConfig{
+			FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: genai.FunctionCallingConfigModeAny},
+		}
+	default:
+		return &genai.ToolConfig{
+			FunctionCallingConfig: &genai.FunctionCallingConfig{
+				Mode:                 genai.FunctionCallingConfigModeAny,
+				AllowedFunctionNames: []string{choice},
+			},
+		}
+	}
+}
+
+// extractFunctionCalls walks the candidate parts and returns assembled tool
+// calls. Args are JSON-marshaled back to a RawMessage to fit our generic
+// ToolCall shape.
+func extractFunctionCalls(resp *genai.GenerateContentResponse) ([]ai.ToolCall, error) {
+	if resp == nil || len(resp.Candidates) == 0 || resp.Candidates[0] == nil || resp.Candidates[0].Content == nil {
+		return nil, nil
+	}
+	var out []ai.ToolCall
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if part == nil || part.FunctionCall == nil {
+			continue
+		}
+		fc := part.FunctionCall
+		args := json.RawMessage("{}")
+		if len(fc.Args) > 0 {
+			b, err := json.Marshal(fc.Args)
+			if err != nil {
+				return nil, err
+			}
+			args = b
+		}
+		out = append(out, ai.ToolCall{
+			ID:               fc.ID,
+			Name:             fc.Name,
+			Arguments:        args,
+			ThoughtSignature: part.ThoughtSignature,
+		})
+	}
+	return out, nil
+}
+
+func extractFinishReason(resp *genai.GenerateContentResponse) string {
+	if resp == nil || len(resp.Candidates) == 0 || resp.Candidates[0] == nil {
+		return ""
+	}
+	return string(resp.Candidates[0].FinishReason)
 }
 
 func (p *GoogleProvider) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -231,26 +387,41 @@ type googleStreamEvent struct {
 }
 
 type googleStream struct {
-	events  chan googleStreamEvent
-	current string
-	output  string
-	err     error
-	done    bool
-	cancel  context.CancelFunc
+	events     chan googleStreamEvent
+	current    string
+	output     string
+	err        error
+	done       bool
+	cancel     context.CancelFunc
+	toolCallMu chan struct{} // 1-buffered "mutex" set by producer goroutine
+	toolCalls  []ai.ToolCall
+	stopReason string
 }
 
 func newGoogleStream(stream iter.Seq2[*genai.GenerateContentResponse, error], cancel context.CancelFunc) *googleStream {
 	s := &googleStream{
-		events: make(chan googleStreamEvent, 32),
-		cancel: cancel,
+		events:     make(chan googleStreamEvent, 32),
+		cancel:     cancel,
+		toolCallMu: make(chan struct{}, 1),
 	}
 	go func() {
 		defer close(s.events)
+		var collected []ai.ToolCall
+		var lastStop string
 		for resp, err := range stream {
 			if err != nil {
 				s.events <- googleStreamEvent{err: err}
+				s.publishFinalState(collected, lastStop)
 				return
 			}
+
+			if calls, cerr := extractFunctionCalls(resp); cerr == nil && len(calls) > 0 {
+				collected = append(collected, calls...)
+			}
+			if reason := extractFinishReason(resp); reason != "" {
+				lastStop = reason
+			}
+
 			fullText := extractVisibleText(resp)
 			if fullText == "" {
 				continue
@@ -268,9 +439,20 @@ func newGoogleStream(stream iter.Seq2[*genai.GenerateContentResponse, error], ca
 				s.events <- googleStreamEvent{delta: delta}
 			}
 		}
+		s.publishFinalState(collected, lastStop)
 		s.events <- googleStreamEvent{done: true}
 	}()
 	return s
+}
+
+// publishFinalState records tool calls and stop reason so they're visible to
+// the consumer once Next() returns false. The toolCallMu channel acts as a
+// 1-slot lock to synchronize the writes with the consumer's read.
+func (s *googleStream) publishFinalState(calls []ai.ToolCall, stopReason string) {
+	s.toolCallMu <- struct{}{}
+	s.toolCalls = calls
+	s.stopReason = stopReason
+	<-s.toolCallMu
 }
 
 func (s *googleStream) Next() bool {
@@ -320,6 +502,25 @@ func (s *googleStream) Close() error {
 	}
 	s.done = true
 	return nil
+}
+
+func (s *googleStream) ToolCalls() []ai.ToolCall {
+	s.toolCallMu <- struct{}{}
+	calls := s.toolCalls
+	<-s.toolCallMu
+	return calls
+}
+
+func (s *googleStream) StopReason() string {
+	s.toolCallMu <- struct{}{}
+	reason := s.stopReason
+	<-s.toolCallMu
+	return reason
+}
+
+// Capabilities reports what the Google provider supports.
+func (p *GoogleProvider) Capabilities() ai.ProviderCapabilities {
+	return ai.ProviderCapabilities{Streaming: true, Tools: true}
 }
 
 // Ensure interface compliance

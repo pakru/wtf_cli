@@ -18,7 +18,7 @@ import (
 
 const (
 	anthropicDefaultAPIURL  = "https://api.anthropic.com/v1"
-	anthropicDefaultModel   = "claude-3-5-sonnet-20241022"
+	anthropicDefaultModel   = "claude-4-6-sonnet"
 	anthropicDefaultTimeout = 60
 	anthropicAPIVersion     = "2023-06-01"
 )
@@ -97,49 +97,125 @@ func NewAnthropicProvider(cfg ai.ProviderConfig) (ai.Provider, error) {
 
 // anthropicRequest is the request body for Anthropic's messages API.
 type anthropicRequest struct {
-	Model       string             `json:"model"`
-	Messages    []anthropicMessage `json:"messages"`
-	MaxTokens   int                `json:"max_tokens"`
-	Temperature float64            `json:"temperature,omitempty"`
-	System      string             `json:"system,omitempty"`
-	Stream      bool               `json:"stream,omitempty"`
+	Model       string               `json:"model"`
+	Messages    []anthropicMessage   `json:"messages"`
+	MaxTokens   int                  `json:"max_tokens"`
+	Temperature float64              `json:"temperature,omitempty"`
+	System      string               `json:"system,omitempty"`
+	Stream      bool                 `json:"stream,omitempty"`
+	Tools       []anthropicTool      `json:"tools,omitempty"`
+	ToolChoice  *anthropicToolChoice `json:"tool_choice,omitempty"`
 }
 
+// anthropicMessage carries either a plain text body (Content.text) or a
+// polymorphic block list (Content.blocks). Anthropic's messages API accepts
+// "content" as either a string or an array of content blocks; we need both
+// shapes to express tool_use (assistant) and tool_result (user) turns.
 type anthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string           `json:"role"`
+	Content anthropicContent `json:"content"`
+}
+
+// anthropicContent is the polymorphic message body. When blocks is non-nil it
+// marshals as a JSON array; otherwise it marshals as a JSON string.
+type anthropicContent struct {
+	text   string
+	blocks []anthropicContentBlock
+}
+
+func (c anthropicContent) MarshalJSON() ([]byte, error) {
+	if c.blocks != nil {
+		return json.Marshal(c.blocks)
+	}
+	return json.Marshal(c.text)
+}
+
+func (c *anthropicContent) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '"' {
+		return json.Unmarshal(data, &c.text)
+	}
+	return json.Unmarshal(data, &c.blocks)
+}
+
+// anthropicContentBlock is a discriminated union over the block types we
+// emit. Only fields relevant to the block's Type are populated.
+type anthropicContentBlock struct {
+	Type string `json:"type"`
+
+	// type=text
+	Text string `json:"text,omitempty"`
+
+	// type=tool_use
+	ID    string          `json:"id,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
+
+	// type=tool_result
+	ToolUseID string `json:"tool_use_id,omitempty"`
+	Content   string `json:"content,omitempty"`
+	IsError   bool   `json:"is_error,omitempty"`
+}
+
+// anthropicTool is a tool definition advertised to the model.
+type anthropicTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+// anthropicToolChoice constrains model tool selection. Type is "auto", "any",
+// "tool", or "none". Name is required only for "tool".
+type anthropicToolChoice struct {
+	Type string `json:"type"`
+	Name string `json:"name,omitempty"`
 }
 
 // anthropicResponse is the response from Anthropic's messages API.
 type anthropicResponse struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Role    string `json:"role"`
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-	Model        string `json:"model"`
-	StopReason   string `json:"stop_reason"`
-	StopSequence string `json:"stop_sequence"`
+	ID           string                   `json:"id"`
+	Type         string                   `json:"type"`
+	Role         string                   `json:"role"`
+	Content      []anthropicResponseBlock `json:"content"`
+	Model        string                   `json:"model"`
+	StopReason   string                   `json:"stop_reason"`
+	StopSequence string                   `json:"stop_sequence"`
 	Usage        struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
 }
 
-// anthropicStreamEvent represents a streaming event from Anthropic.
+type anthropicResponseBlock struct {
+	Type  string          `json:"type"`
+	Text  string          `json:"text,omitempty"`
+	ID    string          `json:"id,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
+}
+
+// anthropicStreamEvent represents a streaming event from Anthropic. The
+// content_block_start event carries a fully-typed block (text or tool_use);
+// content_block_delta events carry text_delta or input_json_delta increments.
 type anthropicStreamEvent struct {
-	Type  string `json:"type"`
-	Index int    `json:"index,omitempty"`
-	Delta struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"delta,omitempty"`
-	ContentBlock struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content_block,omitempty"`
+	Type         string                      `json:"type"`
+	Index        int                         `json:"index,omitempty"`
+	Delta        anthropicStreamEventDelta   `json:"delta,omitempty"`
+	ContentBlock anthropicStreamContentBlock `json:"content_block,omitempty"`
+}
+
+type anthropicStreamEventDelta struct {
+	Type        string `json:"type,omitempty"`
+	Text        string `json:"text,omitempty"`
+	PartialJSON string `json:"partial_json,omitempty"`
+	StopReason  string `json:"stop_reason,omitempty"`
+}
+
+type anthropicStreamContentBlock struct {
+	Type  string          `json:"type,omitempty"`
+	Text  string          `json:"text,omitempty"`
+	ID    string          `json:"id,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
 }
 
 // CreateChatCompletion sends a non-streaming chat completion request.
@@ -189,15 +265,29 @@ func (p *AnthropicProvider) CreateChatCompletion(ctx context.Context, req ai.Cha
 	}
 
 	content := ""
+	var toolCalls []ai.ToolCall
 	for _, block := range anthropicResp.Content {
-		if block.Type == "text" {
+		switch block.Type {
+		case "text":
 			content += block.Text
+		case "tool_use":
+			args := block.Input
+			if len(args) == 0 {
+				args = json.RawMessage("{}")
+			}
+			toolCalls = append(toolCalls, ai.ToolCall{
+				ID:        block.ID,
+				Name:      block.Name,
+				Arguments: args,
+			})
 		}
 	}
 
 	return ai.ChatResponse{
-		Content: content,
-		Model:   anthropicResp.Model,
+		Content:    content,
+		Model:      anthropicResp.Model,
+		ToolCalls:  toolCalls,
+		StopReason: anthropicResp.StopReason,
 	}, nil
 }
 
@@ -261,23 +351,42 @@ func (p *AnthropicProvider) buildRequest(req ai.ChatRequest, stream bool) (*anth
 
 	for _, msg := range req.Messages {
 		role := strings.ToLower(strings.TrimSpace(msg.Role))
-		if role == "system" || role == "developer" {
-			// Concatenate multiple system/developer messages
+		switch role {
+		case "system", "developer":
 			if content := strings.TrimSpace(msg.Content); content != "" {
 				systemPrompts = append(systemPrompts, content)
 			}
 			continue
-		}
 
-		anthropicRole := role
-		if anthropicRole != "user" && anthropicRole != "assistant" {
-			anthropicRole = "user"
-		}
+		case "tool":
+			block := anthropicContentBlock{
+				Type:      "tool_result",
+				ToolUseID: msg.ToolCallID,
+				Content:   msg.Content,
+				IsError:   msg.IsError,
+			}
+			// Anthropic groups tool_result blocks under one user message per
+			// turn. Append to the previous message if it is already a user
+			// message carrying tool_result blocks; otherwise start a new one.
+			if n := len(messages); n > 0 && messages[n-1].Role == "user" && isToolResultMessage(messages[n-1]) {
+				messages[n-1].Content.blocks = append(messages[n-1].Content.blocks, block)
+			} else {
+				messages = append(messages, anthropicMessage{
+					Role:    "user",
+					Content: anthropicContent{blocks: []anthropicContentBlock{block}},
+				})
+			}
 
-		messages = append(messages, anthropicMessage{
-			Role:    anthropicRole,
-			Content: msg.Content,
-		})
+		case "assistant":
+			content := assistantContent(msg)
+			messages = append(messages, anthropicMessage{Role: "assistant", Content: content})
+
+		default: // "user" and any unrecognized role mapped to user
+			messages = append(messages, anthropicMessage{
+				Role:    "user",
+				Content: anthropicContent{text: msg.Content},
+			})
+		}
 	}
 
 	if len(messages) == 0 {
@@ -297,17 +406,81 @@ func (p *AnthropicProvider) buildRequest(req ai.ChatRequest, stream bool) (*anth
 		maxTokens = 4096
 	}
 
-	// Join all system prompts with newlines
 	systemPrompt := strings.Join(systemPrompts, "\n\n")
 
-	return &anthropicRequest{
+	out := &anthropicRequest{
 		Model:       model,
 		Messages:    messages,
 		MaxTokens:   maxTokens,
 		Temperature: temperature,
 		System:      systemPrompt,
 		Stream:      stream,
-	}, nil
+	}
+
+	if len(req.Tools) > 0 {
+		tools := make([]anthropicTool, 0, len(req.Tools))
+		for _, t := range req.Tools {
+			tools = append(tools, anthropicTool{
+				Name:        t.Name,
+				Description: t.Description,
+				InputSchema: t.JSONSchema,
+			})
+		}
+		out.Tools = tools
+		if choice := toAnthropicToolChoice(req.ToolChoice); choice != nil {
+			out.ToolChoice = choice
+		}
+	}
+
+	return out, nil
+}
+
+// assistantContent converts an assistant ai.Message to Anthropic content. When
+// ToolCalls are present, content is a block list (text + tool_use blocks);
+// otherwise the simpler string form is used.
+func assistantContent(msg ai.Message) anthropicContent {
+	if len(msg.ToolCalls) == 0 {
+		return anthropicContent{text: msg.Content}
+	}
+	blocks := make([]anthropicContentBlock, 0, 1+len(msg.ToolCalls))
+	if msg.Content != "" {
+		blocks = append(blocks, anthropicContentBlock{Type: "text", Text: msg.Content})
+	}
+	for _, tc := range msg.ToolCalls {
+		input := tc.Arguments
+		if len(input) == 0 {
+			input = json.RawMessage("{}")
+		}
+		blocks = append(blocks, anthropicContentBlock{
+			Type:  "tool_use",
+			ID:    tc.ID,
+			Name:  tc.Name,
+			Input: input,
+		})
+	}
+	return anthropicContent{blocks: blocks}
+}
+
+func isToolResultMessage(m anthropicMessage) bool {
+	for _, b := range m.Content.blocks {
+		if b.Type == "tool_result" {
+			return true
+		}
+	}
+	return false
+}
+
+func toAnthropicToolChoice(choice string) *anthropicToolChoice {
+	switch strings.ToLower(strings.TrimSpace(choice)) {
+	case "", "auto":
+		return &anthropicToolChoice{Type: "auto"}
+	case "none":
+		return &anthropicToolChoice{Type: "none"}
+	case "required", "any":
+		return &anthropicToolChoice{Type: "any"}
+	default:
+		return &anthropicToolChoice{Type: "tool", Name: choice}
+	}
 }
 
 func (p *AnthropicProvider) setHeaders(req *http.Request) {
@@ -322,6 +495,23 @@ type anthropicStream struct {
 	current string
 	err     error
 	done    bool
+
+	// Tool-call accumulation. Anthropic emits tool_use as a content_block_start
+	// (with id+name) followed by input_json_delta events carrying partial JSON
+	// fragments, and finalized at content_block_stop. We accumulate by block
+	// index and expose the assembled list via ToolCalls() at end-of-stream.
+	pendingByIdx map[int]*pendingAnthropicToolCall
+	blockOrder   []int
+	stopReason   string
+	finalized    bool
+	toolCalls    []ai.ToolCall
+}
+
+type pendingAnthropicToolCall struct {
+	ID        string
+	Name      string
+	Arguments strings.Builder
+	isToolUse bool
 }
 
 func (s *anthropicStream) Next() bool {
@@ -361,10 +551,33 @@ func (s *anthropicStream) Next() bool {
 		}
 
 		switch event.Type {
+		case "content_block_start":
+			if event.ContentBlock.Type == "tool_use" {
+				if s.pendingByIdx == nil {
+					s.pendingByIdx = make(map[int]*pendingAnthropicToolCall)
+				}
+				s.pendingByIdx[event.Index] = &pendingAnthropicToolCall{
+					ID:        event.ContentBlock.ID,
+					Name:      event.ContentBlock.Name,
+					isToolUse: true,
+				}
+				s.blockOrder = append(s.blockOrder, event.Index)
+			}
 		case "content_block_delta":
-			if event.Delta.Type == "text_delta" {
-				s.current = event.Delta.Text
-				return true
+			switch event.Delta.Type {
+			case "text_delta":
+				if event.Delta.Text != "" {
+					s.current = event.Delta.Text
+					return true
+				}
+			case "input_json_delta":
+				if pc, ok := s.pendingByIdx[event.Index]; ok {
+					pc.Arguments.WriteString(event.Delta.PartialJSON)
+				}
+			}
+		case "message_delta":
+			if event.Delta.StopReason != "" {
+				s.stopReason = event.Delta.StopReason
 			}
 		case "message_stop":
 			s.done = true
@@ -383,6 +596,44 @@ func (s *anthropicStream) Err() error {
 
 func (s *anthropicStream) Close() error {
 	return s.body.Close()
+}
+
+func (s *anthropicStream) ToolCalls() []ai.ToolCall {
+	if !s.finalized {
+		s.finalize()
+	}
+	return s.toolCalls
+}
+
+func (s *anthropicStream) StopReason() string { return s.stopReason }
+
+func (s *anthropicStream) finalize() {
+	s.finalized = true
+	if len(s.blockOrder) == 0 {
+		return
+	}
+	out := make([]ai.ToolCall, 0, len(s.blockOrder))
+	for _, idx := range s.blockOrder {
+		pc := s.pendingByIdx[idx]
+		if pc == nil || !pc.isToolUse {
+			continue
+		}
+		args := strings.TrimSpace(pc.Arguments.String())
+		if args == "" {
+			args = "{}"
+		}
+		out = append(out, ai.ToolCall{
+			ID:        pc.ID,
+			Name:      pc.Name,
+			Arguments: json.RawMessage(args),
+		})
+	}
+	s.toolCalls = out
+}
+
+// Capabilities reports what the Anthropic provider supports.
+func (p *AnthropicProvider) Capabilities() ai.ProviderCapabilities {
+	return ai.ProviderCapabilities{Streaming: true, Tools: true}
 }
 
 // Ensure interface compliance

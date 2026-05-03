@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"wtf_cli/pkg/ai"
-	"wtf_cli/pkg/config"
 	"wtf_cli/pkg/logging"
 )
 
@@ -15,7 +14,11 @@ const MaxChatHistoryMessages = 10
 const chatThinkingPlaceholder = "Thinking..."
 
 // ChatHandler handles the /chat command and interactive chat conversations.
-type ChatHandler struct{}
+type ChatHandler struct {
+	// ApproverFactory builds the approver for each /chat invocation. Wired up
+	// by the UI layer to surface a popup. Nil ⇒ AutoAllowApprover.
+	ApproverFactory ApproverFactory
+}
 
 // Name returns the command name
 func (h *ChatHandler) Name() string { return "/chat" }
@@ -31,7 +34,8 @@ func (h *ChatHandler) Execute(ctx *Context) *Result {
 	}
 }
 
-// StartChatStream builds context from messages + buffer and streams response.
+// StartChatStream builds context from messages + buffer and runs the agent
+// loop. Tool-call lifecycle events are emitted on the returned channel.
 func (h *ChatHandler) StartChatStream(
 	ctx *Context,
 	messages []ai.ChatMessage,
@@ -42,92 +46,69 @@ func (h *ChatHandler) StartChatStream(
 		capped = messages[len(messages)-MaxChatHistoryMessages:]
 	}
 
-	// Build AI messages from history + fresh TTY context
+	prep, err := prepareAgentRun(ctx, "chat")
+	if err != nil {
+		return nil, err
+	}
+
 	aiMessages := buildChatMessages(capped, ctx)
-
-	// Load config
-	cfg, err := config.Load(config.GetConfigPath())
-	if err != nil {
-		slog.Error("chat_stream_config_error", "error", err)
-		return nil, err
-	}
-	if err := cfg.Validate(); err != nil {
-		slog.Error("chat_stream_config_invalid", "error", err)
-		return nil, err
+	toolDefs := prep.registry.Definitions()
+	if len(toolDefs) > 0 && len(aiMessages) > 0 && aiMessages[0].Role == "system" {
+		aiMessages[0].Content = ai.AppendToolInstructions(aiMessages[0].Content, toolDefs)
 	}
 
-	slog.Debug("chat_stream_provider_config", "llm_provider", cfg.LLMProvider)
-	// Create provider
-	provider, err := ai.GetProviderFromConfig(cfg)
-	if err != nil {
-		slog.Error("chat_stream_provider_error", "error", err)
-		return nil, err
-	}
-
-	model, temperature, maxTokens, timeout := getProviderSettings(cfg)
-
-	// Log request (trace level)
 	logger := slog.Default()
 	if logger.Enabled(context.Background(), logging.LevelTrace) {
 		logger.Log(
 			context.Background(),
 			logging.LevelTrace,
 			"chat_stream_prompt",
-			"model", model,
+			"model", prep.model,
 			"message_count", len(aiMessages),
 			"messages_full", buildMessageDump(aiMessages),
 		)
 	}
 
-	// Build request (same as ExplainHandler pattern)
 	req := ai.ChatRequest{
-		Model:       model,
+		Model:       prep.model,
 		Messages:    aiMessages,
-		Temperature: &temperature,
-		MaxTokens:   &maxTokens,
+		Temperature: &prep.temperature,
+		MaxTokens:   &prep.maxTokens,
+		Tools:       toolDefs,
 	}
 
 	slog.Info("chat_stream_start",
-		"model", model,
+		"model", prep.model,
 		"message_count", len(aiMessages),
 		"history_messages", len(messages),
 		"capped_history", len(capped),
+		"tools", len(toolDefs),
 	)
 
-	// Start streaming with timeout to prevent hanging
-	streamCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
-	stream, err := provider.CreateChatCompletionStream(streamCtx, req)
-	if err != nil {
-		cancel()
-		slog.Error("chat_stream_create_error", "error", err)
-		return nil, err
-	}
-
-	ch := make(chan WtfStreamEvent, 8)
-
+	ch := make(chan WtfStreamEvent, 16)
+	approver := h.resolveApprover(ch)
+	loopCtx, cancel := context.WithCancel(context.Background())
 	go func() {
-		defer close(ch)
-		defer stream.Close()
-		defer cancel() // Ensure the context is cancelled when the goroutine exits
-
-		for stream.Next() {
-			delta := stream.Content()
-			if delta != "" {
-				ch <- WtfStreamEvent{Delta: delta}
-			}
-		}
-
-		if err := stream.Err(); err != nil {
-			slog.Error("chat_stream_error", "error", err)
-			ch <- WtfStreamEvent{Err: err, Done: true}
-			return
-		}
-
-		slog.Info("chat_stream_done")
-		ch <- WtfStreamEvent{Done: true}
+		defer cancel()
+		RunAgentLoop(loopCtx, prep.provider, req, AgentLoopConfig{
+			Registry:       prep.registry,
+			Approver:       approver,
+			MaxIterations:  prep.maxIterations,
+			PerCallTimeout: time.Duration(prep.timeout) * time.Second,
+			Tag:            "chat",
+		}, ch)
 	}()
 
 	return ch, nil
+}
+
+func (h *ChatHandler) resolveApprover(ch chan<- WtfStreamEvent) Approver {
+	if h.ApproverFactory != nil {
+		if a := h.ApproverFactory(ch); a != nil {
+			return a
+		}
+	}
+	return AutoAllowApprover{}
 }
 
 // buildChatMessages constructs AI messages from chat history + terminal context.

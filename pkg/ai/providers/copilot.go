@@ -532,6 +532,19 @@ func (s *copilotStream) Close() error {
 	return nil
 }
 
+func (s *copilotStream) ToolCalls() []ai.ToolCall { return nil }
+
+func (s *copilotStream) StopReason() string { return "" }
+
+// Capabilities reports what the Copilot provider supports. Tool-calling is
+// intentionally disabled: the Copilot SDK owns its own tool-execution loop
+// (Tool.Handler runs inside the SDK during Send/SendAndWait), which is
+// incompatible with our harness-owned agent loop. The agent loop falls back to
+// single-turn behavior for this provider.
+func (p *CopilotProvider) Capabilities() ai.ProviderCapabilities {
+	return ai.ProviderCapabilities{Streaming: true}
+}
+
 func watchCopilotContext(ctx context.Context, session copilotSession) chan struct{} {
 	done := make(chan struct{})
 	if ctx == nil || session == nil {
