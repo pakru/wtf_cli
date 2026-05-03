@@ -85,6 +85,7 @@ type Model struct {
 	wtfStream               <-chan commands.WtfStreamEvent
 	streamPlaceholderActive bool
 	streamStartPending      bool
+	toolCallNewTurnNeeded   bool // true after a tool call finishes; next delta starts a new assistant message
 
 	// UI state
 	width           int
@@ -1229,11 +1230,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if msg.ToolCallStart != nil {
+			if m.sidebar != nil {
+				line := formatToolCallStart(msg.ToolCallStart)
+				if m.streamPlaceholderActive {
+					m.sidebar.SetLastMessageContent(line)
+					m.streamPlaceholderActive = false
+				} else {
+					m.sidebar.UpdateLastMessage(line)
+				}
+				m.sidebar.RefreshView()
+			}
+			if m.wtfStream != nil {
+				return m, listenToWtfStream(m.wtfStream)
+			}
+			return m, nil
+		}
+
+		if msg.ToolCallFinished != nil {
+			if m.sidebar != nil {
+				m.sidebar.UpdateLastMessage(formatToolCallSuffix(msg.ToolCallFinished))
+				m.sidebar.RefreshView()
+			}
+			m.toolCallNewTurnNeeded = true
+			if m.wtfStream != nil {
+				return m, listenToWtfStream(m.wtfStream)
+			}
+			return m, nil
+		}
+
 		if m.sidebar != nil {
 			if msg.Delta != "" {
 				// Ensure streaming state is active
 				if !m.sidebar.IsStreaming() {
 					m.sidebar.SetStreaming(true)
+				}
+
+				// After a tool call, start a fresh assistant message so the
+				// tool call line and the continuation text are visually separate.
+				if m.toolCallNewTurnNeeded {
+					m.toolCallNewTurnNeeded = false
+					m.sidebar.StartAssistantMessageWithContent(msg.Delta)
+					m.sidebar.RefreshView()
+					return m, listenToWtfStream(m.wtfStream)
 				}
 
 				// Replace placeholder on first real delta
@@ -2017,6 +2056,32 @@ func (m *Model) clearStreamPlaceholder() {
 		m.sidebar.RemoveLastMessage()
 		m.streamPlaceholderActive = false
 	}
+}
+
+func formatToolCallStart(info *commands.ToolCallInfo) string {
+	args := info.ArgsJSON
+	if len(args) > 120 {
+		args = args[:120] + "…"
+	}
+	return fmt.Sprintf("\n\n🔧 %s(%s)", info.Name, args)
+}
+
+func formatToolCallSuffix(info *commands.ToolCallInfo) string {
+	if info.Denied {
+		return " — denied"
+	}
+	if info.ErrorMessage != "" {
+		msg := info.ErrorMessage
+		if len(msg) > 80 {
+			msg = msg[:80] + "…"
+		}
+		return fmt.Sprintf(" — error: %s", msg)
+	}
+	if info.Result == "" {
+		return " — no output"
+	}
+	lineCount := strings.Count(info.Result, "\n") + 1
+	return fmt.Sprintf(" — %d lines", lineCount)
 }
 
 func (m *Model) appendNormalizedLines(data []byte) {
