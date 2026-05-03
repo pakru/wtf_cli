@@ -14,8 +14,21 @@ import (
 	"wtf_cli/pkg/version"
 )
 
+// ApproverFactory builds an Approver bound to the per-invocation event
+// channel. Used by handlers so the UI can inject a popup-driven approver
+// (which needs to send ToolApproval events on the same channel the loop reads
+// from) without changing the StartStream signature.
+//
+// When nil, handlers fall back to AutoAllowApprover (suitable for tests and
+// headless flows).
+type ApproverFactory func(out chan<- WtfStreamEvent) Approver
+
 // ExplainHandler handles the /explain command.
-type ExplainHandler struct{}
+type ExplainHandler struct {
+	// ApproverFactory builds the approver for each /explain invocation. Wired
+	// up by the UI layer to surface a popup. Nil ⇒ AutoAllowApprover.
+	ApproverFactory ApproverFactory
+}
 
 func (h *ExplainHandler) Name() string        { return "/explain" }
 func (h *ExplainHandler) Description() string { return "Analyze last output and suggest fixes" }
@@ -140,12 +153,13 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 	)
 
 	ch := make(chan WtfStreamEvent, 16)
+	approver := h.resolveApprover(ch)
 	loopCtx, cancel := context.WithCancel(context.Background())
 	go func() {
 		defer cancel()
 		RunAgentLoop(loopCtx, prep.provider, req, AgentLoopConfig{
 			Registry:       prep.registry,
-			Approver:       AutoAllowApprover{},
+			Approver:       approver,
 			MaxIterations:  prep.maxIterations,
 			PerCallTimeout: time.Duration(prep.timeout) * time.Second,
 			Tag:            "explain",
@@ -153,6 +167,15 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 	}()
 
 	return ch, nil
+}
+
+func (h *ExplainHandler) resolveApprover(ch chan<- WtfStreamEvent) Approver {
+	if h.ApproverFactory != nil {
+		if a := h.ApproverFactory(ch); a != nil {
+			return a
+		}
+	}
+	return AutoAllowApprover{}
 }
 
 // agentRunPrep bundles the provider, settings, and tool registry needed to

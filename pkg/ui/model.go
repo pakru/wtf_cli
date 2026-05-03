@@ -23,6 +23,7 @@ import (
 	"wtf_cli/pkg/ui/components/settings"
 	"wtf_cli/pkg/ui/components/sidebar"
 	"wtf_cli/pkg/ui/components/statusbar"
+	"wtf_cli/pkg/ui/components/toolapproval"
 	"wtf_cli/pkg/ui/components/viewport"
 	"wtf_cli/pkg/ui/components/welcome"
 	"wtf_cli/pkg/ui/input"
@@ -60,9 +61,15 @@ type Model struct {
 	modelPicker   *picker.ModelPickerPanel
 	optionPicker  *picker.OptionPickerPanel
 	sidebar       *sidebar.Sidebar // Sidebar for AI suggestions
+	toolApproval  *toolapproval.Panel
 
 	// Command system
 	dispatcher *commands.Dispatcher
+
+	// sessionApprovals holds per-tool "allow always this session" decisions.
+	// Lives for the wtf_cli process lifetime so that approving a tool once
+	// "always" persists across multiple /explain or /chat invocations.
+	sessionApprovals *commands.SessionApprovals
 
 	// Data
 	buffer     *buffer.CircularBuffer
@@ -132,23 +139,25 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 	provider, model := loadProviderAndModelFromConfig()
 
 	m := Model{
-		ptyFile:        ptyFile,
-		cwdFunc:        cwdFunc,
-		secretDetector: pty.IsSecretInputMode,
-		viewport:       viewport,
-		statusBar:      statusBar,
-		inputHandler:   input.NewInputHandler(ptyFile),
-		palette:        palette.NewCommandPalette(),
-		historyPicker:  historypicker.NewHistoryPickerPanel(),
-		resultPanel:    result.NewResultPanel(),
-		settingsPanel:  settings.NewSettingsPanel(),
-		modelPicker:    picker.NewModelPickerPanel(),
-		optionPicker:   picker.NewOptionPickerPanel(),
-		sidebar:        sidebar.NewSidebar(),
-		dispatcher:     commands.NewDispatcher(),
-		buffer:         buf,
-		session:        sess,
-		currentDir:     initialDir,
+		ptyFile:          ptyFile,
+		cwdFunc:          cwdFunc,
+		secretDetector:   pty.IsSecretInputMode,
+		viewport:         viewport,
+		statusBar:        statusBar,
+		inputHandler:     input.NewInputHandler(ptyFile),
+		palette:          palette.NewCommandPalette(),
+		historyPicker:    historypicker.NewHistoryPickerPanel(),
+		resultPanel:      result.NewResultPanel(),
+		settingsPanel:    settings.NewSettingsPanel(),
+		modelPicker:      picker.NewModelPickerPanel(),
+		optionPicker:     picker.NewOptionPickerPanel(),
+		sidebar:          sidebar.NewSidebar(),
+		toolApproval:     toolapproval.NewPanel(),
+		dispatcher:       commands.NewDispatcher(),
+		sessionApprovals: commands.NewSessionApprovals(),
+		buffer:           buf,
+		session:          sess,
+		currentDir:       initialDir,
 
 		gitBranchResolver:   statusbar.ResolveGitBranch,
 		fullScreenPanel:     fullscreen.NewFullScreenPanel(80, 24),
@@ -160,7 +169,43 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		terminalFocused:     true,
 	}
 	m.sidebar.SetActiveLLM(provider, model)
+	m.installApproverFactories()
 	return m
+}
+
+// chatHandler returns the dispatcher's /chat handler so the call inherits the
+// installed ApproverFactory. Falls back to a fresh handler (auto-allow
+// approver) if the dispatcher disagrees about the type.
+func (m *Model) chatHandler() *commands.ChatHandler {
+	if h, ok := m.dispatcher.GetHandler("/chat"); ok {
+		if ch, ok := h.(*commands.ChatHandler); ok {
+			return ch
+		}
+	}
+	return &commands.ChatHandler{}
+}
+
+// installApproverFactories wires the dispatcher's /explain and /chat handlers
+// so each invocation produces a UIApprover bound to that call's event channel
+// and the shared session-approvals store.
+//
+// Handlers fall back to AutoAllowApprover when no factory is set, which is
+// what tests and headless runs rely on. Doing this once at construction time
+// (rather than at each call) avoids reaching into the dispatcher mid-flight.
+func (m *Model) installApproverFactories() {
+	factory := func(out chan<- commands.WtfStreamEvent) commands.Approver {
+		return commands.NewUIApprover(out, m.sessionApprovals)
+	}
+	if h, ok := m.dispatcher.GetHandler("/explain"); ok {
+		if eh, ok := h.(*commands.ExplainHandler); ok {
+			eh.ApproverFactory = factory
+		}
+	}
+	if h, ok := m.dispatcher.GetHandler("/chat"); ok {
+		if ch, ok := h.(*commands.ChatHandler); ok {
+			ch.ApproverFactory = factory
+		}
+	}
 }
 
 // Init initializes the model (Bubble Tea lifecycle method)
@@ -225,6 +270,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.resultPanel.SetSize(m.width, resultHeight)
 		m.settingsPanel.SetSize(m.width, m.height)
+		if m.toolApproval != nil {
+			m.toolApproval.SetSize(m.width, m.height)
+		}
 		if m.modelPicker != nil {
 			m.modelPicker.SetSize(m.width, m.height)
 		}
@@ -439,6 +487,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, applyPasteToOverlay(msg.Content, m.settingsPanel.Update)
 		}
 
+		if m.toolApproval != nil && m.toolApproval.IsVisible() {
+			// Approval popup is modal; ignore pastes until the user picks.
+			return m, nil
+		}
+
 		if m.resultPanel.IsVisible() {
 			logger := slog.Default()
 			if logger.Enabled(context.Background(), logging.LevelTrace) {
@@ -511,6 +564,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.exitPending && msg.String() != "ctrl+d" {
 			m.exitPending = false
 			m.statusBar.SetMessage("")
+		}
+
+		// Priority 0: Tool-approval popup. It's a blocking modal — the agent
+		// loop is paused waiting for the user's reply, so it must absorb all
+		// keys before any other overlay or PTY routing.
+		if m.toolApproval != nil && m.toolApproval.IsVisible() {
+			cmd := m.toolApproval.Update(msg)
+			return m, cmd
 		}
 
 		if m.optionPicker != nil && m.optionPicker.IsVisible() {
@@ -1075,6 +1136,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Result panel closed
 		return m, nil
 
+	case toolapproval.DecisionMsg:
+		// User picked an option in the approval popup. Map to ApprovalDecision
+		// and dispatch on the agent loop's Reply channel (capacity 1, so the
+		// send never blocks). Hiding the panel before sending keeps the View
+		// consistent if subsequent events arrive immediately.
+		if msg.Request == nil || msg.Request.Reply == nil {
+			if m.toolApproval != nil {
+				m.toolApproval.Hide()
+			}
+			return m, nil
+		}
+		decision := commands.ApprovalDecision{}
+		switch msg.Kind {
+		case toolapproval.DecisionAllowOnce:
+			decision = commands.ApprovalDecision{Allow: true}
+		case toolapproval.DecisionAllowSession:
+			decision = commands.ApprovalDecision{Allow: true, Persistent: true}
+		case toolapproval.DecisionDeny:
+			decision = commands.ApprovalDecision{Allow: false}
+		}
+		slog.Info("tool_approval_user_decision",
+			"tool", msg.Request.Name,
+			"allow", decision.Allow,
+			"persistent", decision.Persistent,
+		)
+		if m.toolApproval != nil {
+			m.toolApproval.Hide()
+		}
+		// Non-blocking send: Reply is buffered with capacity 1 by UIApprover.
+		select {
+		case msg.Request.Reply <- decision:
+		default:
+			slog.Warn("tool_approval_reply_dropped", "tool", msg.Request.Name)
+		}
+		return m, nil
+
 	case sidebar.ChatSubmitMsg:
 		if m.sidebar == nil || msg.Content == "" {
 			return m, nil
@@ -1095,7 +1192,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streamStartPending = true
 		m.streamPlaceholderActive = false
 		m.startStreamPlaceholder()
-		return m, startChatStreamCmd(ctx, history)
+		return m, startChatStreamCmd(ctx, m.chatHandler(), history)
 
 	case commands.WtfStreamEvent:
 		if msg.Err != nil {
@@ -1107,9 +1204,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sidebar.AppendErrorMessage(msg.Err.Error())
 				m.sidebar.RefreshView() // Ensure error is visible immediately
 			}
+			if m.toolApproval != nil {
+				m.toolApproval.Hide()
+			}
 			m.wtfStream = nil
 			m.streamThrottlePending = false
 			m.streamPlaceholderActive = false
+			return m, nil
+		}
+
+		// Tool approval popup: show modal, keep listening so subsequent events
+		// (deltas, finished events) continue to flow through. The agent
+		// goroutine is blocked on the request's Reply channel; the user's
+		// answer is dispatched via toolapproval.DecisionMsg below.
+		if msg.ToolApproval != nil {
+			if m.toolApproval != nil {
+				m.toolApproval.SetSize(m.width, m.height)
+				m.toolApproval.Show(msg.ToolApproval)
+			}
+			slog.Info("tool_approval_show", "tool", msg.ToolApproval.Name)
+			if m.wtfStream != nil {
+				return m, listenToWtfStream(m.wtfStream)
+			}
 			return m, nil
 		}
 
@@ -1669,9 +1785,10 @@ func fetchCopilotModelsCmd() tea.Cmd {
 
 func (m Model) renderCanvas() *lipgloss.Canvas {
 	const (
-		baseLayerZ     = 0
-		settingsLayerZ = 1
-		overlayLayerZ  = 2
+		baseLayerZ        = 0
+		settingsLayerZ    = 1
+		overlayLayerZ     = 2
+		toolApprovalLayer = 3 // popup is the topmost overlay (modal)
 	)
 
 	width := m.width
@@ -1735,6 +1852,10 @@ func (m Model) renderCanvas() *lipgloss.Canvas {
 		layers = addOverlayLayer(layers, m.palette.View(), width, height, overlayLayerZ)
 	} else if m.historyPicker != nil && m.historyPicker.IsVisible() {
 		layers = addOverlayLayer(layers, m.historyPicker.View(), width, height, overlayLayerZ)
+	}
+
+	if m.toolApproval != nil && m.toolApproval.IsVisible() {
+		layers = addOverlayLayer(layers, m.toolApproval.View(), width, height, toolApprovalLayer)
 	}
 
 	return lipgloss.NewCanvas(width, height).Compose(lipgloss.NewCompositor(layers...))
@@ -1852,10 +1973,9 @@ func startExplainStreamCmd(ctx *commands.Context, handler commands.StreamingHand
 	}
 }
 
-func startChatStreamCmd(ctx *commands.Context, messages []ai.ChatMessage) tea.Cmd {
+func startChatStreamCmd(ctx *commands.Context, handler *commands.ChatHandler, messages []ai.ChatMessage) tea.Cmd {
 	return func() tea.Msg {
-		chatHandler := &commands.ChatHandler{}
-		stream, err := chatHandler.StartChatStream(ctx, messages)
+		stream, err := handler.StartChatStream(ctx, messages)
 		return streamStartResultMsg{
 			origin: streamOriginChat,
 			stream: stream,

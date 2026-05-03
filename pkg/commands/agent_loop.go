@@ -251,8 +251,10 @@ func executeOneTool(
 		Args: tc.Arguments,
 	}
 	slog.Debug("tool_approval_request", "tag", tag, "tool", tc.Name, "id", tc.ID)
-	out <- WtfStreamEvent{ToolApproval: approval}
 
+	// The loop does NOT emit a WtfStreamEvent{ToolApproval:...} itself — that
+	// would fire even when the approver auto-allows (no popup needed). Each
+	// approver decides whether to surface a UI event before answering.
 	decision, err := cfg.Approver.Approve(ctx, approval)
 	if err != nil {
 		// Treat approver error as a denial so the model sees a tool message

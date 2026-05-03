@@ -14,7 +14,11 @@ const MaxChatHistoryMessages = 10
 const chatThinkingPlaceholder = "Thinking..."
 
 // ChatHandler handles the /chat command and interactive chat conversations.
-type ChatHandler struct{}
+type ChatHandler struct {
+	// ApproverFactory builds the approver for each /chat invocation. Wired up
+	// by the UI layer to surface a popup. Nil ⇒ AutoAllowApprover.
+	ApproverFactory ApproverFactory
+}
 
 // Name returns the command name
 func (h *ChatHandler) Name() string { return "/chat" }
@@ -82,12 +86,13 @@ func (h *ChatHandler) StartChatStream(
 	)
 
 	ch := make(chan WtfStreamEvent, 16)
+	approver := h.resolveApprover(ch)
 	loopCtx, cancel := context.WithCancel(context.Background())
 	go func() {
 		defer cancel()
 		RunAgentLoop(loopCtx, prep.provider, req, AgentLoopConfig{
 			Registry:       prep.registry,
-			Approver:       AutoAllowApprover{},
+			Approver:       approver,
 			MaxIterations:  prep.maxIterations,
 			PerCallTimeout: time.Duration(prep.timeout) * time.Second,
 			Tag:            "chat",
@@ -95,6 +100,15 @@ func (h *ChatHandler) StartChatStream(
 	}()
 
 	return ch, nil
+}
+
+func (h *ChatHandler) resolveApprover(ch chan<- WtfStreamEvent) Approver {
+	if h.ApproverFactory != nil {
+		if a := h.ApproverFactory(ch); a != nil {
+			return a
+		}
+	}
+	return AutoAllowApprover{}
 }
 
 // buildChatMessages constructs AI messages from chat history + terminal context.

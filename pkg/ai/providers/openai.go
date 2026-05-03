@@ -16,7 +16,7 @@ import (
 
 const (
 	openAIDefaultAPIURL  = "https://api.openai.com/v1"
-	openAIDefaultModel   = "gpt-4o"
+	openAIDefaultModel   = "gpt-5.5"
 	openAIDefaultTimeout = 30
 )
 
