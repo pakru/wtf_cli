@@ -363,6 +363,7 @@ func (p *AnthropicProvider) buildRequest(req ai.ChatRequest, stream bool) (*anth
 				Type:      "tool_result",
 				ToolUseID: msg.ToolCallID,
 				Content:   msg.Content,
+				IsError:   msg.IsError,
 			}
 			// Anthropic groups tool_result blocks under one user message per
 			// turn. Append to the previous message if it is already a user

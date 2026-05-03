@@ -269,11 +269,15 @@ func toolResponsePart(msg ai.Message) (*genai.Part, error) {
 	if strings.TrimSpace(msg.Name) == "" {
 		return nil, fmt.Errorf("tool message requires Name")
 	}
+	responseKey := "output"
+	if msg.IsError {
+		responseKey = "error"
+	}
 	return &genai.Part{
 		FunctionResponse: &genai.FunctionResponse{
 			ID:       msg.ToolCallID,
 			Name:     msg.Name,
-			Response: map[string]any{"output": msg.Content},
+			Response: map[string]any{responseKey: msg.Content},
 		},
 	}, nil
 }

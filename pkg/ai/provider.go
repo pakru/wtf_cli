@@ -15,6 +15,12 @@ type Message struct {
 
 	// Name is the tool name on role="tool" messages (required by some providers, e.g. OpenAI).
 	Name string
+
+	// IsError, when true on a role="tool" message, signals that the tool
+	// reported a soft failure. Providers map this to their native is_error /
+	// error-keyed response format so the model can distinguish failure output
+	// from normal output.
+	IsError bool
 }
 
 // ChatRequest defines the input to an LLM chat completion.

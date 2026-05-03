@@ -201,9 +201,13 @@ func RunAgentLoop(
 			}
 			out <- WtfStreamEvent{ToolCallStart: info}
 
-			toolMsg, finished := executeOneTool(ctx, cfg, tc, info, tag, out)
-			req.Messages = append(req.Messages, toolMsg)
+			toolMsg, finished, execErr := executeOneTool(ctx, cfg, tc, info, tag)
 			out <- WtfStreamEvent{ToolCallFinished: finished}
+			if execErr != nil {
+				out <- WtfStreamEvent{Err: execErr, Done: true}
+				return
+			}
+			req.Messages = append(req.Messages, toolMsg)
 
 			if err := ctx.Err(); err != nil {
 				out <- WtfStreamEvent{Err: err, Done: true}
@@ -232,17 +236,18 @@ func drainStreamText(stream ai.ChatStream, out chan<- WtfStreamEvent) (string, e
 	return sb.String(), stream.Err()
 }
 
-// executeOneTool runs the approve+invoke cycle for a single tool call and
-// returns the tool message to append plus the populated ToolCallInfo for the
-// finished event.
+// executeOneTool runs the approve+invoke cycle for a single tool call.
+// Returns the tool message to append, the populated ToolCallInfo for the
+// finished event, and a non-nil error only when the loop must abort (hard tool
+// error or context cancellation). Soft failures (denial, unknown tool,
+// Result.IsError) return a nil error — the model message carries the failure.
 func executeOneTool(
 	ctx context.Context,
 	cfg AgentLoopConfig,
 	tc ai.ToolCall,
 	info *ToolCallInfo,
 	tag string,
-	out chan<- WtfStreamEvent,
-) (ai.Message, *ToolCallInfo) {
+) (ai.Message, *ToolCallInfo, error) {
 	finished := *info // copy header fields
 
 	approval := &ApprovalRequest{
@@ -268,7 +273,8 @@ func executeOneTool(
 			ToolCallID: tc.ID,
 			Name:       tc.Name,
 			Content:    fmt.Sprintf("Tool call could not be approved: %s", err.Error()),
-		}, &finished
+			IsError:    true,
+		}, &finished, nil
 	}
 	if !decision.Allow {
 		slog.Info("tool_approval_decision", "tag", tag, "tool", tc.Name, "allow", false)
@@ -278,7 +284,8 @@ func executeOneTool(
 			ToolCallID: tc.ID,
 			Name:       tc.Name,
 			Content:    "User denied this tool call.",
-		}, &finished
+			IsError:    true,
+		}, &finished, nil
 	}
 	slog.Info("tool_approval_decision", "tag", tag, "tool", tc.Name, "allow", true, "persistent", decision.Persistent)
 
@@ -292,24 +299,21 @@ func executeOneTool(
 			ToolCallID: tc.ID,
 			Name:       tc.Name,
 			Content:    fmt.Sprintf("Unknown tool: %q. Available tools: %s", tc.Name, strings.Join(toolNames(cfg.Registry), ", ")),
-		}, &finished
+			IsError:    true,
+		}, &finished, nil
 	}
 
 	start := time.Now()
 	result, err := tool.Execute(ctx, tc.Arguments)
 	finished.Duration = time.Since(start)
 	if err != nil {
-		// Hard error from the tool aborts the loop via the caller's ctx
-		// check, but we still append something so the assistant turn is well
-		// formed.
 		slog.Error("tool_call_executed", "tag", tag, "tool", tc.Name, "duration_ms", finished.Duration.Milliseconds(), "error", err)
 		finished.ErrorMessage = err.Error()
-		return ai.Message{
-			Role:       "tool",
-			ToolCallID: tc.ID,
-			Name:       tc.Name,
-			Content:    fmt.Sprintf("Tool error: %s", err.Error()),
-		}, &finished
+		// Context cancellation and all other hard errors abort the loop. The
+		// caller surfaces the error on out and returns; no tool message is
+		// appended because Tool.Execute guarantees non-nil error only for
+		// loop-aborting conditions (see tools.Tool contract).
+		return ai.Message{}, &finished, err
 	}
 
 	finished.Result = result.Content
@@ -330,7 +334,8 @@ func executeOneTool(
 		ToolCallID: tc.ID,
 		Name:       tc.Name,
 		Content:    result.Content,
-	}, &finished
+		IsError:    result.IsError,
+	}, &finished, nil
 }
 
 func toolNames(r *tools.Registry) []string {
