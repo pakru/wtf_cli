@@ -125,19 +125,21 @@ func (t *ReadFile) Execute(ctx context.Context, raw json.RawMessage) (Result, er
 		return errResult("invalid line range: %v", err), nil
 	}
 
-	content, totalLines, lastReturned, truncated, err := readLineRange(resolvedPath, start, end, t.MaxLines, t.MaxBytes)
+	content, lastReturned, hasMore, truncated, err := readLineRange(resolvedPath, start, end, t.MaxLines, t.MaxBytes)
 	if err != nil {
 		return errResult("%v", err), nil
 	}
 
-	if start > totalLines && totalLines > 0 {
-		return errResult("start_line %d is past end of file (file has %d lines)", start, totalLines), nil
+	if lastReturned < start {
+		return errResult("start_line %d is past end of file", start), nil
 	}
 
-	header := fmt.Sprintf("%s (lines %d-%d of %d)\n", args.Path, start, lastReturned, totalLines)
+	header := fmt.Sprintf("%s (lines %d-%d)\n", args.Path, start, lastReturned)
 	body := content
 	if truncated {
-		body += fmt.Sprintf("\n[truncated: returned lines %d-%d of %d; request a narrower range to see more]", start, lastReturned, totalLines)
+		body += fmt.Sprintf("\n[truncated at line %d; use start_line=%d to read more]", lastReturned, lastReturned+1)
+	} else if hasMore {
+		body += fmt.Sprintf("\n[file continues beyond line %d; use start_line=%d to read more]", lastReturned, lastReturned+1)
 	}
 	return Result{Content: header + body}, nil
 }
@@ -226,71 +228,107 @@ func normalizeRange(start, end int) (int, int, error) {
 }
 
 // readLineRange reads lines [start, end] (1-indexed, inclusive) from path,
-// clipped at maxLines / maxBytes. It also reports the file's total line count.
+// clipped at maxLines / maxBytes. It stops scanning as soon as the slice is
+// complete — it never reads past the last returned line to count total lines.
 //
 // Returned values:
 //
-//	content       — joined lines, possibly truncated
-//	totalLines    — total lines in the file
-//	lastReturned  — last line index actually included in content
-//	truncated     — true if maxLines or maxBytes clipped the result
-func readLineRange(path string, start, end, maxLines, maxBytes int) (string, int, int, bool, error) {
+//	content      — joined lines, possibly byte-truncated on the first line
+//	lastReturned — last line index actually included in content
+//	hasMore      — true if the file has content after lastReturned
+//	truncated    — true if maxLines or maxBytes clipped the result short of end
+func readLineRange(path string, start, end, maxLines, maxBytes int) (string, int, bool, bool, error) {
+	// Stat before Open to reject non-regular files (named pipes, devices, etc.)
+	// without blocking on a read. IsRegular() is false for directories too, so
+	// the directory check is subsumed here.
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", 0, false, false, fmt.Errorf("file not found: %s", path)
+		}
+		if errors.Is(err, os.ErrPermission) {
+			return "", 0, false, false, fmt.Errorf("permission denied: %s", path)
+		}
+		return "", 0, false, false, fmt.Errorf("stat: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		if info.IsDir() {
+			return "", 0, false, false, fmt.Errorf("path is a directory, not a file: %s", path)
+		}
+		return "", 0, false, false, fmt.Errorf("not a regular file: %s", path)
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return "", 0, 0, false, fmt.Errorf("file not found: %s", path)
+			return "", 0, false, false, fmt.Errorf("file not found: %s", path)
 		}
 		if errors.Is(err, os.ErrPermission) {
-			return "", 0, 0, false, fmt.Errorf("permission denied: %s", path)
+			return "", 0, false, false, fmt.Errorf("permission denied: %s", path)
 		}
-		return "", 0, 0, false, fmt.Errorf("open: %w", err)
+		return "", 0, false, false, fmt.Errorf("open: %w", err)
 	}
 	defer f.Close()
-
-	info, err := f.Stat()
-	if err == nil && info.IsDir() {
-		return "", 0, 0, false, fmt.Errorf("path is a directory, not a file: %s", path)
-	}
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var sb strings.Builder
-	totalLines := 0
+	lineNum := 0
 	included := 0
 	lastReturned := 0
 	bytesUsed := 0
 	truncated := false
+	hasMore := false
 
 	for scanner.Scan() {
-		totalLines++
-		if totalLines < start {
+		lineNum++
+
+		if lineNum < start {
 			continue
 		}
-		if totalLines > end {
-			// Keep counting to report totalLines, but stop appending.
-			continue
+
+		// Past the requested range — file has content beyond what was asked for.
+		if lineNum > end {
+			hasMore = true
+			break
+		}
+
+		// Line cap reached — truncated within the requested range.
+		if included >= maxLines {
+			truncated = true
+			hasMore = true
+			break
 		}
 
 		line := scanner.Text()
-		// If line is not valid UTF-8, replace invalid bytes so the model
-		// always sees readable text.
 		if !utf8.ValidString(line) {
 			line = strings.ToValidUTF8(line, "�")
 		}
 
-		// Each line in output is followed by '\n' except possibly the last.
-		needed := len(line) + 1
-		if included > 0 && bytesUsed+needed > maxBytes {
-			truncated = true
-			// Keep counting totalLines below.
-			end = totalLines - 1
-			continue
+		// Byte cap. Compute bytes needed: the line itself plus the newline
+		// separator that precedes it (except for the very first included line).
+		needed := len(line)
+		if included > 0 {
+			needed++ // newline separator
 		}
-		if included >= maxLines {
+
+		if bytesUsed+needed > maxBytes {
 			truncated = true
-			end = totalLines - 1
-			continue
+			if included == 0 {
+				// First line exceeds the byte cap. Include a truncated version
+				// rather than returning nothing; trim to a valid UTF-8 boundary.
+				avail := maxBytes
+				for avail > 0 && !utf8.Valid([]byte(line[:avail])) {
+					avail--
+				}
+				sb.WriteString(line[:avail])
+				sb.WriteString("…[line truncated at byte cap]")
+				included++
+				lastReturned = lineNum
+			}
+			hasMore = true
+			break
 		}
 
 		if included > 0 {
@@ -300,24 +338,19 @@ func readLineRange(path string, start, end, maxLines, maxBytes int) (string, int
 		sb.WriteString(line)
 		bytesUsed += len(line)
 		included++
-		lastReturned = totalLines
+		lastReturned = lineNum
 	}
 
 	if err := scanner.Err(); err != nil {
 		if errors.Is(err, bufio.ErrTooLong) {
-			return "", 0, 0, false, fmt.Errorf("file has lines longer than 1MB; cannot be read")
+			return "", 0, false, false, fmt.Errorf("file has lines longer than 1MB; cannot be read")
 		}
-		return "", 0, 0, false, fmt.Errorf("read: %w", err)
+		return "", 0, false, false, fmt.Errorf("read: %w", err)
 	}
 
 	if lastReturned == 0 {
-		// We returned nothing. Could be: empty file, start past EOF, or all
-		// lines clipped. Caller decides how to phrase it.
-		lastReturned = start - 1
-		if lastReturned < 0 {
-			lastReturned = 0
-		}
+		lastReturned = max(start-1, 0)
 	}
 
-	return sb.String(), totalLines, lastReturned, truncated, nil
+	return sb.String(), lastReturned, hasMore, truncated, nil
 }

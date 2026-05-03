@@ -47,7 +47,7 @@ func TestReadFile_HappyPath(t *testing.T) {
 	if !strings.Contains(res.Content, "line1") || !strings.Contains(res.Content, "line3") {
 		t.Fatalf("content missing lines:\n%s", res.Content)
 	}
-	if !strings.Contains(res.Content, "hello.txt (lines 1-3 of 3)") {
+	if !strings.Contains(res.Content, "hello.txt (lines 1-3)") {
 		t.Fatalf("missing header in content:\n%s", res.Content)
 	}
 }
@@ -293,7 +293,7 @@ func TestReadFile_EndBeyondEOFIsClamped(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
 	}
-	if !strings.Contains(res.Content, "lines 1-3 of 3") {
+	if !strings.Contains(res.Content, "lines 1-3") {
 		t.Fatalf("expected clamped header, got:\n%s", res.Content)
 	}
 }

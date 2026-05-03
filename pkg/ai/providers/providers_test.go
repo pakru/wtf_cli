@@ -351,10 +351,7 @@ func TestAnthropicProvider_CreateChatCompletion(t *testing.T) {
 			Type:  "message",
 			Role:  "assistant",
 			Model: "claude-3-5-sonnet-20241022",
-			Content: []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			}{
+			Content: []anthropicResponseBlock{
 				{Type: "text", Text: "Hello from Claude"},
 			},
 			StopReason: "end_turn",

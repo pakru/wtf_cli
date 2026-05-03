@@ -145,7 +145,7 @@ func TestGoogleProvider_CreateChatCompletion_MapsMessages(t *testing.T) {
 			{Role: "developer", Content: "developer prompt"},
 			{Role: "user", Content: "user prompt"},
 			{Role: "assistant", Content: "assistant prompt"},
-			{Role: "tool", Content: "unknown role maps to user"},
+			{Role: "weird", Content: "unknown role maps to user"},
 		},
 		Temperature: &temp,
 		MaxTokens:   &maxTokens,
