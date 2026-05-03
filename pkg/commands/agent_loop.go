@@ -139,7 +139,7 @@ func RunAgentLoop(
 			"tag", tag,
 			"iter", iter,
 			"message_count", len(req.Messages),
-			"has_tools", len(req.Tools) > 0,
+			"tool_count", len(req.Tools),
 		)
 
 		callCtx, cancel := context.WithTimeout(ctx, cfg.PerCallTimeout)

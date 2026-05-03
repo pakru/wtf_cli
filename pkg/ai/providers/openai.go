@@ -135,6 +135,7 @@ func (p *OpenAIProvider) CreateChatCompletionStream(ctx context.Context, req ai.
 	slog.Debug("openai_chat_stream_request",
 		"model", string(params.Model),
 		"message_count", len(req.Messages),
+		"tool_count", len(req.Tools),
 		"has_temperature", req.Temperature != nil,
 		"has_max_tokens", req.MaxTokens != nil,
 	)

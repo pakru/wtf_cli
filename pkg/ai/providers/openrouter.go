@@ -133,6 +133,7 @@ func (p *OpenRouterProvider) CreateChatCompletionStream(ctx context.Context, req
 	slog.Debug("openrouter_chat_stream_request",
 		"model", string(params.Model),
 		"message_count", len(req.Messages),
+		"tool_count", len(req.Tools),
 		"has_temperature", req.Temperature != nil,
 		"has_max_tokens", req.MaxTokens != nil,
 	)
