@@ -17,6 +17,7 @@ import (
 	"wtf_cli/pkg/ui/styles"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // DecisionKind is the user's choice on a Panel popup.
@@ -96,15 +97,21 @@ func (p *Panel) Update(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	switch msg.String() {
-	case "up", "k":
+	case "up", "k", "left", "h":
 		if p.cursor > 0 {
 			p.cursor--
 		}
 		return nil
-	case "down", "j":
+	case "down", "j", "right", "l":
 		if p.cursor < 2 {
 			p.cursor++
 		}
+		return nil
+	case "tab":
+		p.cursor = (p.cursor + 1) % 3
+		return nil
+	case "shift+tab":
+		p.cursor = (p.cursor + 2) % 3
 		return nil
 	case "1", "y":
 		return p.decide(DecisionAllowOnce)
@@ -142,8 +149,8 @@ func (p *Panel) View() string {
 	if panelWidth > 70 {
 		panelWidth = 70
 	}
-	if panelWidth < 30 {
-		panelWidth = 30
+	if panelWidth < 40 {
+		panelWidth = 40
 	}
 
 	contentWidth := panelWidth - 6
@@ -151,44 +158,43 @@ func (p *Panel) View() string {
 		contentWidth = 10
 	}
 
-	box := styles.BoxStyle.Width(panelWidth)
-	title := styles.TitleStyle
-	text := styles.TextStyle
-	footer := styles.FooterStyle
+	question := "Allow tool call: " + p.request.Name + "?"
+	questionLine := styles.DialogQuestionStyle.Width(contentWidth).Render(
+		utils.TruncateToWidth(question, contentWidth),
+	)
 
-	var sb strings.Builder
-	sb.WriteString(title.Render(utils.TruncateToWidth("Tool call requires approval", contentWidth)))
-	sb.WriteString("\n\n")
-	sb.WriteString(text.Render(utils.TruncateToWidth("Tool: "+p.request.Name, contentWidth)))
-	sb.WriteString("\n")
-
+	var argsBlock string
 	if p.prettyArgs != "" {
-		sb.WriteString(text.Render("Arguments:"))
-		sb.WriteString("\n")
+		var argLines []string
 		for _, line := range strings.Split(p.prettyArgs, "\n") {
-			sb.WriteString(text.Render(utils.TruncateToWidth("  "+line, contentWidth)))
-			sb.WriteString("\n")
+			argLines = append(argLines, utils.TruncateToWidth(line, contentWidth))
 		}
+		argsBlock = styles.TextMutedStyle.Width(contentWidth).Render(strings.Join(argLines, "\n"))
 	}
-	sb.WriteString("\n")
 
-	options := []string{
-		"Allow once",
-		"Allow always this session",
-		"Deny",
-	}
-	for i, opt := range options {
-		marker := "  "
+	labels := []string{"Allow once", "Allow always", "Deny"}
+	buttons := make([]string, len(labels))
+	for i, label := range labels {
+		style := styles.DialogButtonStyle
 		if i == p.cursor {
-			marker = "> "
+			style = styles.DialogActiveButtonStyle
 		}
-		sb.WriteString(text.Render(utils.TruncateToWidth(marker+opt, contentWidth)))
-		sb.WriteString("\n")
+		if i < len(labels)-1 {
+			style = style.MarginRight(2)
+		}
+		buttons[i] = style.Render(label)
 	}
-	sb.WriteString("\n")
-	sb.WriteString(footer.Render("1/y: once  •  2/a: always  •  3/n/Esc: deny  •  ↑↓ + Enter"))
+	buttonRow := lipgloss.JoinHorizontal(lipgloss.Top, buttons...)
+	buttonBlock := lipgloss.PlaceHorizontal(contentWidth, lipgloss.Center, buttonRow)
 
-	return box.Render(sb.String())
+	parts := []string{questionLine}
+	if argsBlock != "" {
+		parts = append(parts, argsBlock)
+	}
+	parts = append(parts, buttonBlock)
+	body := lipgloss.JoinVertical(lipgloss.Center, parts...)
+
+	return styles.BoxStyle.Width(panelWidth).Render(body)
 }
 
 // formatArgs renders raw JSON arguments as pretty multi-line JSON, falling

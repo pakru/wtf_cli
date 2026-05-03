@@ -8,6 +8,7 @@ import (
 	"wtf_cli/pkg/commands"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func mkRequest(name, args string) *commands.ApprovalRequest {
@@ -63,7 +64,7 @@ func TestPanel_View_RendersToolNameAndArgs(t *testing.T) {
 	p := NewPanel()
 	p.SetSize(80, 24)
 	p.Show(mkRequest("read_file", `{"path":"foo.go","start_line":1,"end_line":10}`))
-	v := p.View()
+	v := ansi.Strip(p.View())
 	if !strings.Contains(v, "read_file") {
 		t.Errorf("view missing tool name:\n%s", v)
 	}
