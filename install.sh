@@ -104,6 +104,34 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Check whether wtf_cli is currently running
+is_wtf_cli_running() {
+    if command_exists pgrep; then
+        pgrep -x "$BINARY_NAME" >/dev/null 2>&1
+    else
+        return 1
+    fi
+}
+
+# Install binary using an atomic rename so upgrades work while wtf_cli is running.
+install_binary() {
+    local source_path="$1"
+    local install_dir="$2"
+    local install_path="$3"
+    local tmp_install_path="${install_dir}/.${BINARY_NAME}.tmp.$$"
+
+    if [ -w "$install_dir" ]; then
+        cp "$source_path" "$tmp_install_path"
+        chmod +x "$tmp_install_path"
+        mv -f "$tmp_install_path" "$install_path"
+    else
+        info "Elevated permissions required for ${install_dir}"
+        sudo cp "$source_path" "$tmp_install_path"
+        sudo chmod +x "$tmp_install_path"
+        sudo mv -f "$tmp_install_path" "$install_path"
+    fi
+}
+
 # Download file using curl or wget
 download() {
     local url="$1"
@@ -287,20 +315,21 @@ main() {
 
     # Install binary
     info "Installing binary..."
-    if [ -w "$install_dir" ]; then
-        cp "${tmp_dir}/${BINARY_NAME}" "$install_path"
-        chmod +x "$install_path"
-    else
-        info "Elevated permissions required for ${install_dir}"
-        sudo cp "${tmp_dir}/${BINARY_NAME}" "$install_path"
-        sudo chmod +x "$install_path"
+    local was_running="false"
+    if is_wtf_cli_running; then
+        was_running="true"
     fi
+    install_binary "${tmp_dir}/${BINARY_NAME}" "$install_dir" "$install_path"
 
     echo
     if [ -n "$installed_version" ]; then
         success "Upgraded ${installed_version} → ${latest_version}"
     else
         success "WTF CLI ${latest_version} installed successfully!"
+    fi
+
+    if [ "$was_running" = "true" ]; then
+        warn "A wtf_cli session is currently running. Exit it and start wtf_cli again to use ${latest_version}."
     fi
 
     check_install_dir_in_path "$install_dir"
