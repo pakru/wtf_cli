@@ -14,6 +14,11 @@ type ToolCall struct {
 	ID        string
 	Name      string
 	Arguments json.RawMessage
+
+	// ThoughtSignature is an opaque blob returned by Google's thinking models
+	// alongside function-call parts. It must be echoed back verbatim in the
+	// conversation history on the next API call; other providers leave it nil.
+	ThoughtSignature []byte
 }
 
 // ProviderCapabilities advertises what optional features a provider supports.

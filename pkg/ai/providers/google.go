@@ -257,6 +257,7 @@ func assistantParts(msg ai.Message) []*genai.Part {
 				Name: tc.Name,
 				Args: args,
 			},
+			ThoughtSignature: tc.ThoughtSignature,
 		})
 	}
 	return parts
@@ -352,9 +353,10 @@ func extractFunctionCalls(resp *genai.GenerateContentResponse) ([]ai.ToolCall, e
 			args = b
 		}
 		out = append(out, ai.ToolCall{
-			ID:        fc.ID,
-			Name:      fc.Name,
-			Arguments: args,
+			ID:               fc.ID,
+			Name:             fc.Name,
+			Arguments:        args,
+			ThoughtSignature: part.ThoughtSignature,
 		})
 	}
 	return out, nil

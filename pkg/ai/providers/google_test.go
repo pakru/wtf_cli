@@ -335,6 +335,55 @@ func TestGoogleProvider_CreateChatCompletionStream_CumulativeChunks(t *testing.T
 	}
 }
 
+// TestGoogleProvider_ThoughtSignature_RoundTrip verifies that the opaque
+// ThoughtSignature bytes returned by thinking models are preserved through
+// extraction and echoed back when rebuilding conversation history. This is
+// required by the Gemini API; omitting the signature causes a 400 error on
+// the second iteration of the agent loop.
+func TestGoogleProvider_ThoughtSignature_RoundTrip(t *testing.T) {
+	sig := []byte("opaque-sig-bytes")
+	resp := &genai.GenerateContentResponse{
+		Candidates: []*genai.Candidate{
+			{
+				Content: &genai.Content{
+					Role: genai.RoleModel,
+					Parts: []*genai.Part{
+						{
+							FunctionCall:     &genai.FunctionCall{ID: "call-1", Name: "read_file", Args: map[string]any{"path": "main.go"}},
+							ThoughtSignature: sig,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	calls, err := extractFunctionCalls(resp)
+	if err != nil {
+		t.Fatalf("extractFunctionCalls() error: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(calls))
+	}
+	if string(calls[0].ThoughtSignature) != string(sig) {
+		t.Fatalf("ThoughtSignature not preserved during extraction: got %v, want %v", calls[0].ThoughtSignature, sig)
+	}
+
+	// Now reconstruct the assistant message parts (as the agent loop does
+	// before the next API call) and verify the signature is echoed back.
+	msg := ai.Message{
+		Role:      "assistant",
+		ToolCalls: calls,
+	}
+	parts := assistantParts(msg)
+	if len(parts) != 1 {
+		t.Fatalf("expected 1 part, got %d", len(parts))
+	}
+	if string(parts[0].ThoughtSignature) != string(sig) {
+		t.Fatalf("ThoughtSignature not echoed in reconstructed part: got %v, want %v", parts[0].ThoughtSignature, sig)
+	}
+}
+
 func TestGoogleProvider_CreateChatCompletionStream_Error(t *testing.T) {
 	streamErr := errors.New("stream failed")
 	stub := &stubGoogleModelsClient{
