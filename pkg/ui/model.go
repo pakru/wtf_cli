@@ -711,15 +711,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setTerminalFocused(true)
 				m.applyLayout()
 			} else {
-				// Show sidebar, preserve existing title.
-				title := m.sidebar.GetTitle()
-				if title == "" {
-					title = "WTF Analysis"
-				}
-				m.sidebar.Show(title, "")
+				m.sidebar.Show()
 				m.sidebar.FocusInput()
 				m.setTerminalFocused(false)
-				slog.Info("sidebar_open", "reason", "ctrl_t", "title", title)
+				slog.Info("sidebar_open", "reason", "ctrl_t")
 				m.applyLayout()
 			}
 		}
@@ -737,14 +732,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if !m.sidebar.IsVisible() {
-			title := m.sidebar.GetTitle()
-			if title == "" {
-				title = "WTF Analysis"
-			}
-			m.sidebar.Show(title, "")
+			m.sidebar.Show()
 			m.sidebar.FocusInput()
 			m.setTerminalFocused(false)
-			slog.Info("sidebar_open", "reason", "shift_tab", "title", title)
+			slog.Info("sidebar_open", "reason", "shift_tab")
 			m.applyLayout()
 		}
 		return m, nil
@@ -787,15 +778,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					slog.Info("sidebar_close", "reason", "chat_command")
 					m.setTerminalFocused(true)
 				} else {
-					// Preserve existing title
-					title := m.sidebar.GetTitle()
-					if title == "" {
-						title = "WTF Analysis"
-					}
-					m.sidebar.Show(title, "")
+					m.sidebar.Show()
 					m.sidebar.FocusInput()
 					m.setTerminalFocused(false)
-					slog.Info("sidebar_open", "reason", "chat_command", "title", title)
+					slog.Info("sidebar_open", "reason", "chat_command")
 				}
 				m.applyLayout()
 			}
@@ -805,11 +791,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if streamHandler, ok := handler.(commands.StreamingHandler); ok {
 			isExplain := handler.Name() == "/explain"
 			if m.sidebar != nil {
-				m.sidebar.Show(result.Title, "")
+				m.sidebar.Show()
 				// Focus input so user can start typing immediately
 				m.sidebar.FocusInput()
 				m.setTerminalFocused(false)
-				slog.Info("sidebar_open", "title", result.Title, "streaming", true)
+				slog.Info("sidebar_open", "streaming", true)
 				m.applyLayout()
 			}
 			m.streamPlaceholderActive = false
@@ -2063,7 +2049,7 @@ func formatToolCallStart(info *commands.ToolCallInfo) string {
 	if len(args) > 120 {
 		args = args[:120] + "…"
 	}
-	return fmt.Sprintf("\n\n🔧 %s(%s)", info.Name, args)
+	return fmt.Sprintf("\n\n%s%s(%s)", sidebar.MessagePrefix("tool"), info.Name, args)
 }
 
 func formatToolCallSuffix(info *commands.ToolCallInfo) string {

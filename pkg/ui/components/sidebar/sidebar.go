@@ -3,7 +3,6 @@ package sidebar
 import (
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 
 	"wtf_cli/pkg/ai"
@@ -20,7 +19,7 @@ import (
 const (
 	sidebarBorderSize = 1
 	sidebarPaddingH   = 1
-	sidebarPaddingV   = 1
+	sidebarPaddingV   = 0
 	sidebarTextareaH  = 2
 )
 
@@ -34,8 +33,6 @@ const (
 
 // Sidebar displays AI responses alongside the terminal output.
 type Sidebar struct {
-	// Existing fields
-	title   string
 	content string
 	visible bool
 	width   int
@@ -77,18 +74,16 @@ func NewSidebar() *Sidebar {
 	}
 }
 
-// Show displays the sidebar with a title and content.
-func (s *Sidebar) Show(title, content string) {
-	s.title = title
+const defaultTitle = "WTF Analysis"
+
+// Show makes the sidebar visible, re-rendering from message history if present.
+func (s *Sidebar) Show() {
 	s.visible = true
 	s.scrollY = 0
 	s.follow = true
 
-	// Preserve message history when reopening.
 	if len(s.messages) > 0 {
-		s.RefreshView() // Re-render from existing messages
-	} else {
-		s.SetContent(content)
+		s.RefreshView()
 	}
 }
 
@@ -101,11 +96,6 @@ func (s *Sidebar) Hide() {
 // IsVisible returns whether the sidebar is visible.
 func (s *Sidebar) IsVisible() bool {
 	return s.visible
-}
-
-// GetTitle returns the current sidebar title.
-func (s *Sidebar) GetTitle() string {
-	return s.title
 }
 
 // SetSize sets the sidebar dimensions.
@@ -304,79 +294,15 @@ func (s *Sidebar) View() string {
 }
 
 func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
-	titleLine := truncateToWidth(s.title, contentWidth)
 	viewportHeight := s.viewportHeight()
 
 	lines := make([]string, 0, contentHeight)
-	commandLineSet := make(map[int]struct{}, len(s.cmdRenderedLines))
-	for _, idx := range s.cmdRenderedLines {
-		if idx >= 0 {
-			commandLineSet[idx] = struct{}{}
-		}
-	}
-
-	activeCommandLine := -1
-	if s.commandSelectionEnabled() && s.cmdSelectedIdx >= 0 && s.cmdSelectedIdx < len(s.cmdRenderedLines) {
-		activeCommandLine = s.cmdRenderedLines[s.cmdSelectedIdx]
-	}
-
-	// Title
-	if contentHeight >= 1 {
-		lines = append(lines, padStyled(sidebarTitleStyle.Render(titleLine), contentWidth))
-	}
-
-	// Viewport (messages)
-	if viewportHeight > 0 {
-		start := s.scrollY
-		end := start + viewportHeight
-		if end > len(s.lines) {
-			end = len(s.lines)
-		}
-		for i := start; i < end; i++ {
-			line := s.lines[i]
-			if _, ok := commandLineSet[i]; ok {
-				plain := stripANSICodes(line)
-				if activeCommandLine == i {
-					line = sidebarCommandActiveStyle.Render(plain)
-				} else {
-					line = sidebarCommandStyle.Render(plain)
-				}
-			}
-			if left, right, ok := selection.LineBounds(s.sel, i, lipgloss.Width(line)); ok {
-				line = selection.ApplyLineHighlight(line, left, right)
-			}
-			lines = append(lines, padStyled(line, contentWidth))
-		}
-		// Pad remaining viewport space
-		for len(lines) < 1+viewportHeight {
-			lines = append(lines, strings.Repeat(" ", contentWidth))
-		}
-	}
-
-	// Separator
+	lines = append(lines, s.renderTitle(contentWidth))
+	lines = append(lines, "")
+	lines = append(lines, s.renderViewport(contentWidth, viewportHeight)...)
 	lines = append(lines, strings.Repeat("─", contentWidth))
-
-	// Textarea
-	s.textarea.SetWidth(contentWidth)
-	textareaView := s.textarea.View()
-	textareaLines := strings.Split(textareaView, "\n")
-	for i, line := range textareaLines {
-		if i >= sidebarTextareaH {
-			break
-		}
-		lines = append(lines, padStyled(line, contentWidth))
-	}
-	for i := len(textareaLines); i < sidebarTextareaH; i++ {
-		lines = append(lines, strings.Repeat(" ", contentWidth))
-	}
-
-	// Shortcut hint goes at the very bottom, under the input.
-	footerText := truncateToWidth(s.commandFooterText(contentWidth), contentWidth)
-	footer := sidebarFooterStyle.
-		Width(contentWidth).
-		Align(lipgloss.Left).
-		Render(footerText)
-	lines = append(lines, footer)
+	lines = append(lines, s.renderTextarea(contentWidth)...)
+	lines = append(lines, s.renderFooter(contentWidth))
 
 	if len(lines) > contentHeight {
 		lines = lines[:contentHeight]
@@ -385,19 +311,81 @@ func (s *Sidebar) renderChatView(contentWidth, contentHeight int) string {
 		lines = append(lines, strings.Repeat(" ", contentWidth))
 	}
 
-	content := strings.Join(lines, "\n")
+	return sidebarBoxStyle.
+		Width(max(s.width, 1)).
+		Padding(sidebarPaddingV, sidebarPaddingH, 0).
+		Render(strings.Join(lines, "\n"))
+}
 
-	boxWidth := s.width
-	if boxWidth < 1 {
-		boxWidth = 1
+func (s *Sidebar) renderTitle(contentWidth int) string {
+	title := truncateToWidth(defaultTitle, contentWidth)
+	titleRendered := styles.DialogTitleStyle.Render(title)
+	fillWidth := contentWidth - lipgloss.Width(title) - 1
+	if fillWidth <= 0 {
+		return titleRendered
+	}
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		titleRendered,
+		" ",
+		styles.DialogTitleFillStyle.Render(strings.Repeat("=", fillWidth)),
+	)
+}
+
+func (s *Sidebar) renderViewport(contentWidth, viewportHeight int) []string {
+	commandLines := make(map[int]struct{}, len(s.cmdRenderedLines))
+	for _, idx := range s.cmdRenderedLines {
+		if idx >= 0 {
+			commandLines[idx] = struct{}{}
+		}
 	}
 
-	box := sidebarBoxStyle.
-		Width(boxWidth).
-		Padding(sidebarPaddingV, sidebarPaddingH, 0).
-		Render(content)
+	activeCommandLine := -1
+	if s.commandSelectionEnabled() && s.cmdSelectedIdx >= 0 && s.cmdSelectedIdx < len(s.cmdRenderedLines) {
+		activeCommandLine = s.cmdRenderedLines[s.cmdSelectedIdx]
+	}
 
-	return box
+	lines := make([]string, 0, viewportHeight)
+	for i := s.scrollY; i < min(s.scrollY+viewportHeight, len(s.lines)); i++ {
+		line := s.lines[i]
+		if _, ok := commandLines[i]; ok {
+			plain := stripANSICodes(line)
+			if activeCommandLine == i {
+				line = styles.CommandActiveStyle.Render(plain)
+			} else {
+				line = styles.CommandStyle.Render(plain)
+			}
+		}
+		if left, right, ok := selection.LineBounds(s.sel, i, lipgloss.Width(line)); ok {
+			line = selection.ApplyLineHighlight(line, left, right)
+		}
+		lines = append(lines, padStyled(line, contentWidth))
+	}
+	for len(lines) < viewportHeight {
+		lines = append(lines, strings.Repeat(" ", contentWidth))
+	}
+	return lines
+}
+
+func (s *Sidebar) renderTextarea(contentWidth int) []string {
+	s.textarea.SetWidth(contentWidth)
+	textareaLines := strings.Split(s.textarea.View(), "\n")
+	lines := make([]string, sidebarTextareaH)
+	for i := range sidebarTextareaH {
+		if i < len(textareaLines) {
+			lines[i] = padStyled(textareaLines[i], contentWidth)
+		} else {
+			lines[i] = strings.Repeat(" ", contentWidth)
+		}
+	}
+	return lines
+}
+
+func (s *Sidebar) renderFooter(contentWidth int) string {
+	return styles.FooterStyle.
+		Width(contentWidth).
+		Align(lipgloss.Left).
+		Render(truncateToWidth(s.commandFooterText(contentWidth), contentWidth))
 }
 
 func (s *Sidebar) copyToClipboard() tea.Cmd {
@@ -475,15 +463,7 @@ func (s *Sidebar) SetActiveLLM(provider, model string) {
 
 // ActiveLLMLabel returns the formatted footer label for the active provider/model.
 func (s *Sidebar) ActiveLLMLabel() string {
-	provider := strings.TrimSpace(s.activeProvider)
-	if provider == "" {
-		provider = "unknown"
-	}
-	model := strings.TrimSpace(s.activeModel)
-	if model == "" {
-		model = "unknown"
-	}
-	return "LLM: " + provider + "-" + model
+	return "LLM: " + s.activeProvider + "-" + s.activeModel
 }
 
 // AppendUserMessage adds a user message to the chat history.
@@ -517,7 +497,7 @@ func (s *Sidebar) StartAssistantMessageWithContent(content string) {
 func (s *Sidebar) AppendErrorMessage(errMsg string) {
 	s.messages = append(s.messages, ai.ChatMessage{
 		Role:    "assistant",
-		Content: errorPrefix() + errMsg,
+		Content: MessagePrefix("error") + errMsg,
 	})
 	s.cmdDirty = true
 }
@@ -586,9 +566,9 @@ func (s *Sidebar) RenderMessages() string {
 			if i > 0 {
 				sb.WriteString("───────────────────────\n\n")
 			}
-			sb.WriteString(messagePrefix("user"))
+			sb.WriteString(MessagePrefix("user"))
 		} else {
-			sb.WriteString(messagePrefix("assistant"))
+			sb.WriteString(MessagePrefix("assistant"))
 		}
 		sb.WriteString(msg.Content)
 	}
@@ -627,7 +607,7 @@ func (s *Sidebar) SelectionPoint(screenX, screenY, originX int) (row, col int, o
 		return 0, 0, false
 	}
 
-	viewportRow := contentRow - 1 // row 0 is the title
+	viewportRow := contentRow - 2 // row 0 is the title, row 1 is the empty separator line
 	if viewportRow < 0 || viewportRow >= s.viewportHeight() {
 		return 0, 0, false
 	}
@@ -766,7 +746,7 @@ func (s *Sidebar) maxScroll() int {
 }
 
 func (s *Sidebar) chromeLines() int {
-	return 1 + 1 + sidebarTextareaH + 1 // title + separator + textarea + footer
+	return 1 + 1 + 1 + sidebarTextareaH + 1 // title + empty line + separator + textarea + footer
 }
 
 func (s *Sidebar) viewportHeight() int {
@@ -912,10 +892,7 @@ func (s *Sidebar) revealSelectedCommand() {
 		return
 	}
 
-	target := lineIdx - s.viewportHeight()/2
-	if target < 0 {
-		target = 0
-	}
+	target := max(lineIdx-s.viewportHeight()/2, 0)
 	maxScroll := s.maxScroll()
 	if target > maxScroll {
 		target = maxScroll
@@ -925,624 +902,6 @@ func (s *Sidebar) revealSelectedCommand() {
 	s.follow = s.scrollY >= maxScroll
 }
 
-type markdownToken struct {
-	text string
-	bold bool
-}
-
-func renderMarkdown(content string, width int) []string {
-	lines, _ := renderMarkdownWithCommandLines(content, width, nil)
-	return lines
-}
-
-func renderMarkdownWithCommandLines(content string, width int, commandRawLines []int) ([]string, []int) {
-	normalized := strings.ReplaceAll(content, "\r\n", "\n")
-	normalized = strings.ReplaceAll(normalized, "\r", "\n")
-	normalized = sanitizeContent(normalized)
-	normalized = strings.ReplaceAll(normalized, "<br>", "\n")
-	normalized = strings.ReplaceAll(normalized, "<br/>", "\n")
-	normalized = strings.ReplaceAll(normalized, "<br />", "\n")
-	rawLines := strings.Split(normalized, "\n")
-
-	commandRawLineSet := make(map[int]struct{}, len(commandRawLines))
-	for _, rawLine := range commandRawLines {
-		if rawLine >= 0 {
-			commandRawLineSet[rawLine] = struct{}{}
-		}
-	}
-	rawLineToRendered := make(map[int]int, len(commandRawLines))
-	markCommandLine := func(rawLine, start, count int) {
-		if _, ok := commandRawLineSet[rawLine]; !ok {
-			return
-		}
-		if _, exists := rawLineToRendered[rawLine]; exists {
-			return
-		}
-		if count <= 0 {
-			rawLineToRendered[rawLine] = -1
-			return
-		}
-		rawLineToRendered[rawLine] = start
-	}
-
-	var rendered []string
-	inCode := false
-
-	for i := 0; i < len(rawLines); i++ {
-		line := rawLines[i]
-		line = strings.ReplaceAll(line, "\t", "    ")
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") {
-			inCode = !inCode
-			continue
-		}
-
-		if inCode {
-			start := len(rendered)
-			chunk := renderCodeLine(line, width)
-			rendered = append(rendered, chunk...)
-			markCommandLine(i, start, len(chunk))
-			continue
-		}
-
-		if isTableRow(line) {
-			blockStart := i
-			block := []string{}
-			for i < len(rawLines) && isTableRow(rawLines[i]) {
-				block = append(block, rawLines[i])
-				i++
-			}
-			i--
-
-			rows := make([][]string, 0, len(block))
-			for _, rowLine := range block {
-				cells := splitTableRow(rowLine)
-				if len(cells) == 0 {
-					continue
-				}
-				rows = append(rows, cells)
-			}
-			if len(rows) > 0 {
-				header := false
-				if len(rows) > 1 && isSeparatorRow(rows[1]) {
-					header = true
-					rows = append(rows[:1], rows[2:]...)
-				}
-				start := len(rendered)
-				chunk := renderTable(rows, header, width)
-				rendered = append(rendered, chunk...)
-				for rawLine := blockStart; rawLine <= i; rawLine++ {
-					markCommandLine(rawLine, start, len(chunk))
-				}
-				continue
-			}
-		}
-
-		start := len(rendered)
-		chunk := renderMarkdownLine(line, width)
-		rendered = append(rendered, chunk...)
-		markCommandLine(i, start, len(chunk))
-	}
-
-	if len(rendered) == 0 {
-		rendered = []string{""}
-	}
-
-	cmdRenderedLines := make([]int, 0, len(commandRawLines))
-	for _, rawLine := range commandRawLines {
-		if idx, ok := rawLineToRendered[rawLine]; ok {
-			cmdRenderedLines = append(cmdRenderedLines, idx)
-			continue
-		}
-		cmdRenderedLines = append(cmdRenderedLines, -1)
-	}
-	return rendered, cmdRenderedLines
-}
-
-func renderMarkdownLine(line string, width int) []string {
-	if strings.TrimSpace(line) == "" {
-		return []string{""}
-	}
-
-	tokens := tokenizeBoldWords(line)
-	if len(tokens) == 0 {
-		return []string{""}
-	}
-
-	return wrapTokens(tokens, width)
-}
-
-func renderTable(rows [][]string, header bool, width int) []string {
-	if width <= 0 || len(rows) == 0 {
-		return []string{""}
-	}
-
-	cols := 0
-	for _, row := range rows {
-		if len(row) > cols {
-			cols = len(row)
-		}
-	}
-	if cols == 0 {
-		return []string{""}
-	}
-
-	for i := range rows {
-		if len(rows[i]) < cols {
-			padded := make([]string, cols)
-			copy(padded, rows[i])
-			rows[i] = padded
-		}
-	}
-
-	colWidths := make([]int, cols)
-	for _, row := range rows {
-		for i, cell := range row {
-			if w := runewidth.StringWidth(cell); w > colWidths[i] {
-				colWidths[i] = w
-			}
-		}
-	}
-
-	fixedWidth := 3*cols + 1
-	maxContent := width - fixedWidth
-	if maxContent < cols {
-		return renderTableFallback(rows, width)
-	}
-
-	colWidths = fitColumnWidths(colWidths, maxContent)
-
-	var rendered []string
-	for rowIndex, row := range rows {
-		line := buildTableLine(row, colWidths)
-		if runewidth.StringWidth(line) > width {
-			line = trimToWidth(line, width)
-		}
-		if header && rowIndex == 0 {
-			rendered = append(rendered, sidebarBoldStyle.Render(line))
-			separator := buildTableSeparator(colWidths)
-			rendered = append(rendered, sidebarTextStyle.Render(separator))
-			continue
-		}
-		rendered = append(rendered, sidebarTextStyle.Render(line))
-	}
-
-	return rendered
-}
-
-func renderTableFallback(rows [][]string, width int) []string {
-	var rendered []string
-	for _, row := range rows {
-		line := strings.Join(row, " | ")
-		if width > 0 {
-			line = trimToWidth(line, width)
-		}
-		rendered = append(rendered, sidebarTextStyle.Render(line))
-	}
-	return rendered
-}
-
-func buildTableLine(row []string, widths []int) string {
-	var sb strings.Builder
-	sb.WriteString("|")
-	for i, cell := range row {
-		if i >= len(widths) {
-			break
-		}
-		text := trimToWidth(cell, widths[i])
-		text = padPlain(text, widths[i])
-		sb.WriteString(" ")
-		sb.WriteString(text)
-		sb.WriteString(" |")
-	}
-	return sb.String()
-}
-
-func buildTableSeparator(widths []int) string {
-	var sb strings.Builder
-	sb.WriteString("|")
-	for _, w := range widths {
-		if w < 1 {
-			w = 1
-		}
-		sb.WriteString(" ")
-		sb.WriteString(strings.Repeat("-", w))
-		sb.WriteString(" |")
-	}
-	return sb.String()
-}
-
-func fitColumnWidths(widths []int, maxContent int) []int {
-	if maxContent <= 0 {
-		out := make([]int, len(widths))
-		for i := range out {
-			out[i] = 1
-		}
-		return out
-	}
-
-	out := make([]int, len(widths))
-	copy(out, widths)
-
-	total := 0
-	for _, w := range out {
-		if w < 1 {
-			w = 1
-		}
-		total += w
-	}
-	if total <= maxContent {
-		return out
-	}
-
-	for total > maxContent {
-		maxIdx := -1
-		maxVal := 0
-		for i, w := range out {
-			if w > maxVal {
-				maxVal = w
-				maxIdx = i
-			}
-		}
-		if maxIdx == -1 || maxVal <= 1 {
-			break
-		}
-		out[maxIdx]--
-		total--
-	}
-
-	for i, w := range out {
-		if w < 1 {
-			out[i] = 1
-		}
-	}
-	return out
-}
-
-func renderCodeLine(line string, width int) []string {
-	if width <= 0 {
-		return []string{line}
-	}
-
-	if line == "" {
-		return []string{sidebarCodeStyle.Render(padPlain("", width))}
-	}
-
-	parts := splitByWidth(line, width)
-	lines := make([]string, 0, len(parts))
-	for _, part := range parts {
-		padded := padPlain(part, width)
-		lines = append(lines, sidebarCodeStyle.Render(padded))
-	}
-	return lines
-}
-
-func isTableRow(line string) bool {
-	if strings.Count(line, "|") < 2 {
-		return false
-	}
-	cells := splitTableRow(line)
-	if len(cells) < 2 {
-		return false
-	}
-	for _, cell := range cells {
-		if strings.TrimSpace(cell) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func splitTableRow(line string) []string {
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" {
-		return nil
-	}
-	trimmed = strings.TrimPrefix(trimmed, "|")
-	trimmed = strings.TrimSuffix(trimmed, "|")
-	parts := strings.Split(trimmed, "|")
-	for i := range parts {
-		parts[i] = strings.TrimSpace(parts[i])
-	}
-	return parts
-}
-
-func isSeparatorRow(cells []string) bool {
-	if len(cells) == 0 {
-		return false
-	}
-	for _, cell := range cells {
-		clean := strings.TrimSpace(cell)
-		if clean == "" {
-			return false
-		}
-		clean = strings.Trim(clean, ":")
-		if len(clean) < 3 {
-			return false
-		}
-		for _, r := range clean {
-			if r != '-' {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func tokenizeBoldWords(line string) []markdownToken {
-	var tokens []markdownToken
-	bold := false
-
-	for len(line) > 0 {
-		idx := strings.Index(line, "**")
-		segment := line
-		if idx >= 0 {
-			segment = line[:idx]
-		}
-		if segment != "" {
-			words := strings.Fields(segment)
-			for _, word := range words {
-				tokens = append(tokens, markdownToken{text: word, bold: bold})
-			}
-		}
-		if idx < 0 {
-			break
-		}
-		bold = !bold
-		line = line[idx+2:]
-	}
-
-	return tokens
-}
-
-func wrapTokens(tokens []markdownToken, width int) []string {
-	if width <= 0 {
-		return []string{""}
-	}
-
-	var lines []string
-	var lineTokens []markdownToken
-	lineWidth := 0
-
-	flush := func() {
-		if len(lineTokens) == 0 {
-			lines = append(lines, "")
-			return
-		}
-		lines = append(lines, renderTokenLine(lineTokens))
-		lineTokens = nil
-		lineWidth = 0
-	}
-
-	for _, token := range tokens {
-		if token.text == "" {
-			continue
-		}
-
-		parts := splitByWidth(token.text, width)
-		for _, part := range parts {
-			partWidth := runewidth.StringWidth(part)
-			if lineWidth > 0 && lineWidth+1+partWidth > width {
-				flush()
-			}
-
-			if lineWidth > 0 {
-				lineWidth++
-			}
-			lineTokens = append(lineTokens, markdownToken{text: part, bold: token.bold})
-			lineWidth += partWidth
-		}
-	}
-
-	if len(lineTokens) > 0 {
-		flush()
-	}
-
-	return lines
-}
-
-func renderTokenLine(tokens []markdownToken) string {
-	var sb strings.Builder
-	for i, token := range tokens {
-		if i > 0 {
-			sb.WriteString(sidebarTextStyle.Render(" "))
-		}
-		if token.bold {
-			sb.WriteString(sidebarBoldStyle.Render(token.text))
-		} else {
-			sb.WriteString(sidebarTextStyle.Render(token.text))
-		}
-	}
-	return sb.String()
-}
-
-func splitByWidth(text string, width int) []string {
-	if width <= 0 {
-		return []string{text}
-	}
-	if text == "" {
-		return []string{""}
-	}
-
-	var parts []string
-	var sb strings.Builder
-	currentWidth := 0
-
-	for _, r := range text {
-		runeWidth := runewidth.RuneWidth(r)
-		if currentWidth+runeWidth > width && currentWidth > 0 {
-			parts = append(parts, sb.String())
-			sb.Reset()
-			currentWidth = 0
-		}
-		sb.WriteRune(r)
-		currentWidth += runeWidth
-	}
-
-	if sb.Len() > 0 {
-		parts = append(parts, sb.String())
-	}
-
-	if len(parts) == 0 {
-		return []string{""}
-	}
-	return parts
-}
-
-func truncateToWidth(text string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	if runewidth.StringWidth(text) <= width {
-		return text
-	}
-	if width <= 3 {
-		return trimToWidth(text, width)
-	}
-	return trimToWidth(text, width-3) + "..."
-}
-
-func trimToWidth(text string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	var sb strings.Builder
-	currentWidth := 0
-	for _, r := range text {
-		runeWidth := runewidth.RuneWidth(r)
-		if currentWidth+runeWidth > width {
-			break
-		}
-		sb.WriteRune(r)
-		currentWidth += runeWidth
-	}
-	return sb.String()
-}
-
-func padPlain(text string, width int) string {
-	if width <= 0 {
-		return text
-	}
-	textWidth := runewidth.StringWidth(text)
-	if textWidth >= width {
-		return text
-	}
-	return text + strings.Repeat(" ", width-textWidth)
-}
-
-func padStyled(text string, width int) string {
-	if width <= 0 {
-		return text
-	}
-	textWidth := lipgloss.Width(text)
-	if textWidth >= width {
-		return text
-	}
-	return text + strings.Repeat(" ", width-textWidth)
-}
-
-func sanitizeContent(content string) string {
-	if content == "" {
-		return content
-	}
-	var sb strings.Builder
-	sb.Grow(len(content))
-	for _, r := range content {
-		switch r {
-		case '\n', '\t':
-			sb.WriteRune(r)
-			continue
-		}
-		if r < 0x20 || r == 0x7f {
-			continue
-		}
-		sb.WriteRune(r)
-	}
-	return sb.String()
-}
-
-func stripANSICodes(s string) string {
-	if s == "" {
-		return s
-	}
-
-	var sb strings.Builder
-	sb.Grow(len(s))
-
-	for i := 0; i < len(s); i++ {
-		ch := s[i]
-		if ch == 0x1b { // ESC
-			if i+1 >= len(s) {
-				continue
-			}
-			next := s[i+1]
-			switch next {
-			case '[': // CSI
-				i += 2
-				for i < len(s) {
-					ch = s[i]
-					if ch >= 0x40 && ch <= 0x7E {
-						break
-					}
-					i++
-				}
-			case ']': // OSC
-				i += 2
-				for i < len(s) {
-					if s[i] == 0x07 {
-						break
-					}
-					if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
-						i++
-						break
-					}
-					i++
-				}
-			default:
-				i++
-			}
-			continue
-		}
-
-		sb.WriteByte(ch)
-	}
-
-	return sb.String()
-}
-
-func messagePrefix(role string) string {
-	useEmoji := runtime.GOOS != "darwin"
-	switch role {
-	case "user":
-		if useEmoji {
-			return "👤 **You:** "
-		}
-		return "**You:** "
-	default:
-		if useEmoji {
-			return "🖥️ **Assistant:** "
-		}
-		return "**Assistant:** "
-	}
-}
-
-func errorPrefix() string {
-	if runtime.GOOS == "darwin" {
-		return "Error: "
-	}
-	return "❌ Error: "
-}
-
-var (
-	sidebarBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(styles.ColorBorder)
-
-	sidebarTitleStyle         = styles.TitleStyle
-	sidebarTextStyle          = styles.TextStyle
-	sidebarBoldStyle          = styles.TextBoldStyle
-	sidebarCodeStyle          = styles.CodeStyle
-	sidebarFooterStyle        = styles.FooterStyle
-	sidebarCommandStyle       = styles.CommandStyle
-	sidebarCommandActiveStyle = styles.CommandActiveStyle
-)
+var sidebarBoxStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(styles.ColorBorder)
