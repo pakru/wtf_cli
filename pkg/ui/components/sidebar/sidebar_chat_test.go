@@ -266,27 +266,6 @@ func TestSidebar_ConversionToChatMessage(t *testing.T) {
 	var _ []ai.ChatMessage = messages
 }
 
-func TestSidebar_GetTitle(t *testing.T) {
-	s := NewSidebar()
-
-	// Initially empty title
-	if s.GetTitle() != "" {
-		t.Errorf("Expected empty title initially, got %q", s.GetTitle())
-	}
-
-	// After Show, title should be set
-	s.Show("WTF Analysis", "Some content")
-	if s.GetTitle() != "WTF Analysis" {
-		t.Errorf("Expected 'WTF Analysis', got %q", s.GetTitle())
-	}
-
-	// Hide and re-show should preserve title
-	s.Hide()
-	if s.GetTitle() != "WTF Analysis" {
-		t.Errorf("Expected title to persist after Hide(), got %q", s.GetTitle())
-	}
-}
-
 func TestSidebar_ScrollKeysScrollViewport(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(40, 15)
@@ -295,7 +274,8 @@ func TestSidebar_ScrollKeysScrollViewport(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		lines = append(lines, fmt.Sprintf("Line %d", i))
 	}
-	s.Show("WTF Analysis", strings.Join(lines, "\n"))
+	s.SetContent(strings.Join(lines, "\n"))
+	s.Show()
 	s.FocusInput()
 
 	s.scrollY = 5
@@ -332,7 +312,7 @@ func TestSidebar_CommandMarkersAreStrippedAndFooterShown(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(80, 20)
 	s.StartAssistantMessageWithContent("Run <cmd>ls -la</cmd> to inspect files.")
-	s.Show("WTF Analysis", "")
+	s.Show()
 
 	view := stripANSICodes(s.View())
 	if strings.Contains(view, "<cmd>") || strings.Contains(view, "</cmd>") {
@@ -350,7 +330,7 @@ func TestSidebar_CtrlEnterDoesNotExecuteCommand(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(80, 20)
 	s.StartAssistantMessageWithContent("Use <cmd>git status</cmd>.")
-	s.Show("WTF Analysis", "")
+	s.Show()
 	s.FocusInput()
 
 	cmd := s.Update(testutils.TestKeyCtrlEnter)
@@ -363,7 +343,7 @@ func TestSidebar_CtrlJDoesNotExecuteCommand(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(80, 20)
 	s.StartAssistantMessageWithContent("Use <cmd>git status</cmd>.")
-	s.Show("WTF Analysis", "")
+	s.Show()
 	s.FocusInput()
 
 	cmd := s.Update(testutils.NewCtrlKeyPressMsg('j'))
@@ -376,7 +356,7 @@ func TestSidebar_EnterOnEmptyInputEmitsCommandExecuteMsg(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(80, 20)
 	s.StartAssistantMessageWithContent("Use <cmd>git status</cmd>.")
-	s.Show("WTF Analysis", "")
+	s.Show()
 	s.FocusInput()
 
 	cmd := s.Update(testutils.TestKeyEnter)
@@ -398,7 +378,7 @@ func TestSidebar_EnterWithTextSubmitsChatMessage(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(80, 20)
 	s.StartAssistantMessageWithContent("Use <cmd>git status</cmd>.")
-	s.Show("WTF Analysis", "")
+	s.Show()
 	s.FocusInput()
 	s.textarea.SetValue("why this command?")
 
@@ -421,7 +401,7 @@ func TestSidebar_FooterHintChangesWithInputState(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(80, 20)
 	s.StartAssistantMessageWithContent("Use <cmd>git status</cmd>.")
-	s.Show("WTF Analysis", "")
+	s.Show()
 	s.FocusInput()
 
 	view := stripANSICodes(s.View())
@@ -447,7 +427,7 @@ func TestSidebar_FooterHintRendersBelowInput(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(80, 20)
 	s.StartAssistantMessageWithContent("Use <cmd>git status</cmd>.")
-	s.Show("WTF Analysis", "")
+	s.Show()
 	s.FocusInput()
 
 	view := stripANSICodes(s.View())
@@ -486,7 +466,7 @@ func TestSidebar_FooterHintRendersBelowInput(t *testing.T) {
 func TestSidebar_FooterAlwaysShownWithoutCommands(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(80, 12)
-	s.Show("WTF Analysis", "")
+	s.Show()
 
 	view := stripANSICodes(s.View())
 	if !strings.Contains(view, "LLM: unknown-unknown") {
@@ -498,7 +478,7 @@ func TestSidebar_SetActiveLLM_UpdatesFooterLabel(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(90, 14)
 	s.SetActiveLLM("openai", "gpt-4o")
-	s.Show("WTF Analysis", "")
+	s.Show()
 
 	view := stripANSICodes(s.View())
 	if !strings.Contains(view, "LLM: openai-gpt-4o") {
@@ -510,7 +490,7 @@ func TestSidebar_CommandStyleDoesNotCorruptANSI(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(80, 20)
 	s.StartAssistantMessageWithContent("Use <cmd>ls -la</cmd> now")
-	s.Show("WTF Analysis", "")
+	s.Show()
 
 	view := s.View()
 	if strings.Contains(view, "[4;97;4m[") {
@@ -580,7 +560,7 @@ func TestSidebar_ArrowKeysScrollWhenInputHasText(t *testing.T) {
 		"<cmd>docker network prune</cmd>",
 		"<cmd>docker network ls</cmd>",
 	}, "\n"))
-	s.Show("WTF Analysis", "")
+	s.Show()
 	s.FocusInput()
 
 	if s.maxScroll() < 1 {
@@ -611,7 +591,7 @@ func TestSidebar_RefreshView_SelectsLastCommandWhenFollowing(t *testing.T) {
 		"<cmd>ip -brief addr</cmd>",
 		"<cmd>nmcli dev wifi</cmd>",
 	}, "\n"))
-	s.Show("WTF Analysis", "")
+	s.Show()
 	s.FocusInput()
 
 	if len(s.cmdList) != 4 {
@@ -632,7 +612,7 @@ func TestSidebar_NavigatesAcrossAllRenderedCommands(t *testing.T) {
 		"<cmd>ip -brief addr</cmd>",
 		"<cmd>nmcli dev wifi</cmd>",
 	}, "\n"))
-	s.Show("WTF Analysis", "")
+	s.Show()
 	s.FocusInput()
 
 	if len(s.cmdList) != 4 {

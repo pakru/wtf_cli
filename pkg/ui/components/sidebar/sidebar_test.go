@@ -47,10 +47,12 @@ func TestRenderMarkdown_TableFallback(t *testing.T) {
 func TestSidebarSelectionPointMapsMessageViewport(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(40, 12)
-	s.Show("Title", "alpha\nbravo\ncharlie")
+	s.SetContent("alpha\nbravo\ncharlie")
+	s.Show()
 
 	originX := 10
-	row, col, ok := s.SelectionPoint(originX+sidebarBorderSize+sidebarPaddingH+1, sidebarBorderSize+sidebarPaddingV+1, originX)
+	// Viewport starts after border(1) + title(1) + emptyLine(1).
+	row, col, ok := s.SelectionPoint(originX+sidebarBorderSize+sidebarPaddingH+1, sidebarBorderSize+1+1, originX)
 	if !ok {
 		t.Fatal("expected message viewport point to be selectable")
 	}
@@ -66,7 +68,8 @@ func TestSidebarSelectionPointMapsMessageViewport(t *testing.T) {
 func TestSidebarFinishSelectionExtractsText(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(40, 12)
-	s.Show("Title", "alpha\nbravo\ncharlie")
+	s.SetContent("alpha\nbravo\ncharlie")
+	s.Show()
 
 	s.StartSelection(0, 1)
 	s.UpdateSelection(1, 3)

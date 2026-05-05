@@ -24,8 +24,11 @@ func TestFormatToolCallStart_Basic(t *testing.T) {
 	if !strings.Contains(got, "main.go") {
 		t.Errorf("expected args in output, got %q", got)
 	}
-	if !strings.HasPrefix(got, "\n\n🔧") {
-		t.Errorf("expected newline prefix and tool emoji, got %q", got)
+	if !strings.HasPrefix(got, "\n\n") {
+		t.Errorf("expected double-newline prefix, got %q", got)
+	}
+	if !strings.Contains(got, "Tool:") {
+		t.Errorf("expected 'Tool:' label in output, got %q", got)
 	}
 }
 
