@@ -84,29 +84,63 @@ var (
 				Bold(true)
 )
 
-// Dialog button styles (classic lipgloss layout).
+// Dialog styles.
 var (
 	// DialogButtonStyle is the inactive/unfocused button.
 	DialogButtonStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FFF7DB")).
-				Background(lipgloss.Color("#888B7E")).
-				Padding(0, 3).
-				MarginTop(1)
+				Foreground(lipgloss.Color("#E7E3EE")).
+				Background(lipgloss.Color("#3F3D49")).
+				Padding(0, 2)
 
 	// DialogActiveButtonStyle is the focused button (pink/magenta).
 	DialogActiveButtonStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FFF7DB")).
-				Background(lipgloss.Color("#F25D94")).
-				Padding(0, 3).
-				MarginTop(1).
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Background(lipgloss.Color("#F35AED")).
+				Padding(0, 2).
 				Underline(true).
 				Bold(true)
 
-	// DialogQuestionStyle is the centered prompt text above buttons.
-	DialogQuestionStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("213")).
-				Bold(true).
-				Align(lipgloss.Center)
+	// DialogTitleStyle is the leading title text in modal dialogs.
+	DialogTitleStyle = lipgloss.NewStyle().
+				Foreground(ColorAccent)
+
+	// DialogTitleFillStyle is the slash fill after dialog titles.
+	DialogTitleFillStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#D946EF"))
+
+	// DialogMetaKeyStyle renders metadata keys such as Tool, Path, and Desc.
+	DialogMetaKeyStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#928EA0")).
+				Bold(true)
+
+	// DialogMetaValueStyle renders metadata values.
+	DialogMetaValueStyle = lipgloss.NewStyle().
+				Foreground(ColorText)
+
+	// DialogContentPanelStyle frames the command/argument preview.
+	DialogContentPanelStyle = lipgloss.NewStyle().
+				Foreground(ColorText).
+				Background(lipgloss.Color("#3D3B46")).
+				Padding(1, 2)
+
+	// DialogHelpStyle constrains compact key help under dialog buttons.
+	DialogHelpStyle = lipgloss.NewStyle().
+			Width(0)
+
+	// DialogHelpKeyStyle renders the key tokens in compact dialog help.
+	DialogHelpKeyStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#8A8796")).
+				Bold(true)
+
+	// DialogHelpTextStyle renders the action descriptions in compact dialog help.
+	DialogHelpTextStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#676371")).
+				Bold(true)
+
+	// DialogHelpSeparatorStyle renders separators between compact help items.
+	DialogHelpSeparatorStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#5C5866")).
+					Bold(true)
 )
 
 // Input and form styles

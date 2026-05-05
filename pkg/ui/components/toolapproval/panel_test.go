@@ -71,8 +71,34 @@ func TestPanel_View_RendersToolNameAndArgs(t *testing.T) {
 	if !strings.Contains(v, "foo.go") {
 		t.Errorf("view missing pretty-printed arg:\n%s", v)
 	}
-	if !strings.Contains(v, "Allow once") || !strings.Contains(v, "Allow always") || !strings.Contains(v, "Deny") {
+	if !strings.Contains(v, "Permission Required") || !strings.Contains(v, "Tool") || !strings.Contains(v, "Path") {
+		t.Errorf("view missing approval metadata:\n%s", v)
+	}
+	if !strings.Contains(v, "Allow") || !strings.Contains(v, "Allow for Session") || !strings.Contains(v, "Deny") {
 		t.Errorf("view missing one of the three options:\n%s", v)
+	}
+}
+
+func TestPanel_View_HeaderAndButtonsDoNotWrapAtNormalWidth(t *testing.T) {
+	p := NewPanel()
+	p.SetSize(120, 24)
+	p.Show(mkRequest("read_file", `{"path":"README.md"}`))
+
+	lines := strings.Split(ansi.Strip(p.View()), "\n")
+	var headerLine, buttonLine string
+	for _, line := range lines {
+		if strings.Contains(line, "Permission Required") {
+			headerLine = line
+		}
+		if strings.Contains(line, "Allow") && strings.Contains(line, "Deny") {
+			buttonLine = line
+		}
+	}
+	if !strings.Contains(headerLine, "=") {
+		t.Fatalf("header should keep fill on the title line, got:\n%s", strings.Join(lines, "\n"))
+	}
+	if buttonLine == "" {
+		t.Fatalf("buttons should render on one row, got:\n%s", strings.Join(lines, "\n"))
 	}
 }
 
@@ -94,6 +120,8 @@ func TestPanel_DigitKeysMapToDecisions(t *testing.T) {
 		{"3", DecisionDeny},
 		{"y", DecisionAllowOnce},
 		{"a", DecisionAllowSession},
+		{"s", DecisionAllowSession},
+		{"d", DecisionDeny},
 		{"n", DecisionDeny},
 	}
 	for _, c := range cases {
