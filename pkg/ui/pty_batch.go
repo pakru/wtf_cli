@@ -1,5 +1,7 @@
 package ui
 
+type ptyBatchFlushMsg struct{}
+
 func (m *Model) flushPTYBatch() {
 	data := m.ptyBatchBuffer
 	m.ptyBatchBuffer = m.ptyBatchBuffer[:0]
