@@ -602,7 +602,7 @@ func TestCopilotProvider_SessionConfigSetsPermissionHandler(t *testing.T) {
 
 	result, err := cfg.OnPermissionRequest(
 		copilot.PermissionRequest{
-			Kind: copilot.PermissionRequestedDataPermissionRequestKindShell,
+			Kind: copilot.PermissionRequestKindShell,
 		},
 		copilot.PermissionInvocation{SessionID: "test-session"},
 	)
