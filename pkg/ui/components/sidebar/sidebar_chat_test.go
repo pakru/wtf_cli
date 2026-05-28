@@ -8,11 +8,8 @@ import (
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/ui/components/testutils"
-)
 
-const (
-	llmLabelPrefix  = "LLM: unknown-unknown | "
-	applyFooterHint = "Enter Apply | Up/Down Navigate | Shift+Tab TTY | Ctrl+T Hide"
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestSidebar_AppendUserMessage(t *testing.T) {
@@ -498,46 +495,39 @@ func TestSidebar_CommandStyleDoesNotCorruptANSI(t *testing.T) {
 	}
 }
 
-func TestSidebar_ArrowKeysStepCommandsWhenScrollSelectionStaysStable(t *testing.T) {
+func TestSidebar_ArrowKeysScrollWhenCommandSelectable(t *testing.T) {
 	s := NewSidebar()
-	s.visible = true
-	s.width = 80
-	s.height = 20
-	s.focused = FocusInput
-	s.cmdList = []CommandEntry{
-		{Command: "docker network prune"},
-		{Command: "nmcli dev wifi"},
-		{Command: "ip -c a"},
-	}
-	// Simulate a layout where viewport-center tracking keeps command 0 selected.
-	s.cmdRenderedLines = []int{0, 50, 100}
-	s.cmdSelectedIdx = 0
-	s.lines = make([]string, s.viewportHeight()) // maxScroll == 0
-	s.scrollY = s.maxScroll()
-	s.updateActiveCommand()
+	s.SetSize(80, 12)
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"Use <cmd>git status</cmd>",
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+		"line 6",
+		"line 7",
+		"line 8",
+		"line 9",
+		"line 10",
+	}, "\n"))
+	s.Show()
+	s.FocusInput()
 
-	if s.cmdSelectedIdx != 0 {
-		t.Fatalf("Expected initial selected command index 0, got %d", s.cmdSelectedIdx)
+	if !s.commandSelectionEnabled() {
+		t.Fatal("Expected command selection to be enabled")
 	}
 
+	s.scrollY = 0
+	s.follow = false
 	s.Update(testutils.TestKeyDown)
-	if s.cmdSelectedIdx != 1 {
-		t.Fatalf("Expected down key to move selection to index 1, got %d", s.cmdSelectedIdx)
-	}
-
-	s.Update(testutils.TestKeyDown)
-	if s.cmdSelectedIdx != 2 {
-		t.Fatalf("Expected down key to move selection to index 2, got %d", s.cmdSelectedIdx)
+	if s.scrollY != 1 {
+		t.Fatalf("Expected down key to scroll one line, got scrollY=%d", s.scrollY)
 	}
 
 	s.Update(testutils.TestKeyUp)
-	if s.cmdSelectedIdx != 1 {
-		t.Fatalf("Expected up key to move selection back to index 1, got %d", s.cmdSelectedIdx)
-	}
-
-	s.Update(testutils.TestKeyUp)
-	if s.cmdSelectedIdx != 0 {
-		t.Fatalf("Expected up key to move selection back to index 0, got %d", s.cmdSelectedIdx)
+	if s.scrollY != 0 {
+		t.Fatalf("Expected up key to scroll back to top, got scrollY=%d", s.scrollY)
 	}
 }
 
@@ -580,6 +570,235 @@ func TestSidebar_ArrowKeysScrollWhenInputHasText(t *testing.T) {
 	}
 }
 
+func TestSidebar_MouseWheelScrollsWhenCommandSelectableAfterStreaming(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 12)
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"Use <cmd>git status</cmd>",
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+		"line 6",
+		"line 7",
+		"line 8",
+		"line 9",
+		"line 10",
+	}, "\n"))
+	s.Show()
+	s.FocusInput()
+	s.SetStreaming(false)
+
+	if s.maxScroll() < 1 {
+		t.Fatalf("Expected scrollable content, maxScroll=%d", s.maxScroll())
+	}
+	if !s.commandSelectionEnabled() {
+		t.Fatal("Expected command selection to be enabled after streaming")
+	}
+
+	s.scrollY = 0
+	s.follow = false
+	s.updateActiveCommand()
+	if s.cmdSelectedIdx != 0 {
+		t.Fatalf("Expected visible command to be selected, got %d", s.cmdSelectedIdx)
+	}
+
+	s.HandleWheel(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelDown}))
+
+	if s.scrollY != 1 {
+		t.Fatalf("Expected wheel down to scroll exactly one line, got scrollY=%d", s.scrollY)
+	}
+}
+
+func TestSidebar_MouseWheelScrollsWhileStreamingWithCommands(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 12)
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"Use <cmd>git status</cmd>",
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+		"line 6",
+		"line 7",
+		"line 8",
+		"line 9",
+		"line 10",
+	}, "\n"))
+	s.Show()
+	s.FocusInput()
+	s.SetStreaming(true)
+
+	if s.maxScroll() < 1 {
+		t.Fatalf("Expected scrollable content, maxScroll=%d", s.maxScroll())
+	}
+	if s.commandSelectionEnabled() {
+		t.Fatal("Expected command selection to be disabled while streaming")
+	}
+
+	s.scrollY = 0
+	s.follow = false
+	s.HandleWheel(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelDown}))
+
+	if s.scrollY != 1 {
+		t.Fatalf("Expected wheel down to scroll while streaming, got scrollY=%d", s.scrollY)
+	}
+}
+
+func TestSidebar_WheelUpBreaksFollowMode(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 12)
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"Use <cmd>git status</cmd>",
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+		"line 6",
+		"line 7",
+		"line 8",
+		"line 9",
+		"line 10",
+	}, "\n"))
+	s.Show()
+	s.FocusInput()
+
+	if s.maxScroll() < 1 {
+		t.Fatalf("Expected scrollable content, maxScroll=%d", s.maxScroll())
+	}
+	if !s.follow {
+		t.Fatal("Expected sidebar to follow after Show")
+	}
+
+	before := s.scrollY
+	s.HandleWheel(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelUp}))
+
+	if s.scrollY != before-1 {
+		t.Fatalf("Expected wheel up to move from %d to %d, got %d", before, before-1, s.scrollY)
+	}
+	if s.follow {
+		t.Fatal("Expected wheel up to disable follow mode")
+	}
+}
+
+func TestSidebar_PageKeysStillScrollWhenCommandSelectable(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 12)
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"Use <cmd>git status</cmd>",
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+		"line 6",
+		"line 7",
+		"line 8",
+		"line 9",
+		"line 10",
+		"line 11",
+		"line 12",
+	}, "\n"))
+	s.Show()
+	s.FocusInput()
+
+	if !s.commandSelectionEnabled() {
+		t.Fatal("Expected command selection to be enabled")
+	}
+
+	s.scrollY = 0
+	s.follow = false
+	s.updateActiveCommand()
+	s.Update(testutils.TestKeyPgDown)
+
+	if s.scrollY <= 0 {
+		t.Fatalf("Expected PgDown to scroll content, got scrollY=%d", s.scrollY)
+	}
+
+	afterPgDown := s.scrollY
+	s.Update(testutils.TestKeyPgUp)
+
+	if s.scrollY >= afterPgDown {
+		t.Fatalf("Expected PgUp to scroll upward from %d, got %d", afterPgDown, s.scrollY)
+	}
+}
+
+func TestSidebar_RefreshViewFollowStaysAtBottomWithCommandAboveBottom(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 12)
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"intro",
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"Use <cmd>git status</cmd>",
+		"tail 1",
+		"tail 2",
+		"tail 3",
+	}, "\n"))
+	s.Show()
+	s.FocusInput()
+
+	if s.maxScroll() < 1 {
+		t.Fatalf("Expected scrollable content, maxScroll=%d", s.maxScroll())
+	}
+	s.follow = true
+	s.RefreshView()
+
+	if s.scrollY != s.maxScroll() {
+		t.Fatalf("Expected follow refresh to stay at bottom %d, got %d", s.maxScroll(), s.scrollY)
+	}
+	expected := lastVisibleCommandIndex(s)
+	if expected < 0 {
+		t.Fatal("Expected fixture to leave a command visible in the bottom viewport")
+	}
+	if s.cmdSelectedIdx != expected {
+		t.Fatalf("Expected selected command index %d, got %d", expected, s.cmdSelectedIdx)
+	}
+}
+
+func TestSidebar_UpdateActiveCommandSelectsLastVisibleCommand(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 12)
+	s.cmdList = []CommandEntry{
+		{Command: "first"},
+		{Command: "visible first"},
+		{Command: "visible last"},
+		{Command: "offscreen last"},
+	}
+	s.cmdRenderedLines = []int{0, 5, 7, 20}
+	s.lines = make([]string, 30)
+	s.scrollY = 4
+
+	s.updateActiveCommand()
+
+	if s.cmdSelectedIdx != 2 {
+		t.Fatalf("Expected last visible command index 2, got %d", s.cmdSelectedIdx)
+	}
+}
+
+func TestSidebar_UpdateActiveCommandIgnoresOffscreenCommands(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 12)
+	s.cmdList = []CommandEntry{
+		{Command: "above"},
+		{Command: "below"},
+	}
+	s.cmdRenderedLines = []int{0, 20}
+	s.lines = make([]string, 30)
+	s.scrollY = 8
+
+	s.updateActiveCommand()
+
+	if s.cmdSelectedIdx != -1 {
+		t.Fatalf("Expected no selected command when all commands are offscreen, got %d", s.cmdSelectedIdx)
+	}
+}
+
 func TestSidebar_RefreshView_SelectsLastCommandWhenFollowing(t *testing.T) {
 	s := NewSidebar()
 	s.SetSize(80, 20)
@@ -602,41 +821,19 @@ func TestSidebar_RefreshView_SelectsLastCommandWhenFollowing(t *testing.T) {
 	}
 }
 
-func TestSidebar_NavigatesAcrossAllRenderedCommands(t *testing.T) {
-	s := NewSidebar()
-	s.SetSize(80, 20)
-	s.StartAssistantMessageWithContent(strings.Join([]string{
-		"### Suggested Actions:",
-		"<cmd>docker network prune</cmd>",
-		"<cmd>docker network ls</cmd>",
-		"<cmd>ip -brief addr</cmd>",
-		"<cmd>nmcli dev wifi</cmd>",
-	}, "\n"))
-	s.Show()
-	s.FocusInput()
-
-	if len(s.cmdList) != 4 {
-		t.Fatalf("Expected 4 commands, got %d", len(s.cmdList))
+func lastVisibleCommandIndex(s *Sidebar) int {
+	top := s.scrollY
+	bottom := top + s.viewportHeight() - 1
+	bestIdx := -1
+	bestLine := -1
+	for i, lineIdx := range s.cmdRenderedLines {
+		if i >= len(s.cmdList) || lineIdx < top || lineIdx > bottom {
+			continue
+		}
+		if lineIdx >= bestLine {
+			bestLine = lineIdx
+			bestIdx = i
+		}
 	}
-	if s.cmdSelectedIdx != 3 {
-		t.Fatalf("Expected initial selected command to be last index 3, got %d", s.cmdSelectedIdx)
-	}
-
-	s.Update(testutils.TestKeyUp)
-	if s.cmdSelectedIdx != 2 {
-		t.Fatalf("Expected selection index 2 after first up, got %d", s.cmdSelectedIdx)
-	}
-	s.Update(testutils.TestKeyUp)
-	if s.cmdSelectedIdx != 1 {
-		t.Fatalf("Expected selection index 1 after second up, got %d", s.cmdSelectedIdx)
-	}
-	s.Update(testutils.TestKeyUp)
-	if s.cmdSelectedIdx != 0 {
-		t.Fatalf("Expected selection index 0 after third up, got %d", s.cmdSelectedIdx)
-	}
-
-	s.Update(testutils.TestKeyDown)
-	if s.cmdSelectedIdx != 1 {
-		t.Fatalf("Expected selection index 1 after down, got %d", s.cmdSelectedIdx)
-	}
+	return bestIdx
 }
