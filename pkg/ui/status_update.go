@@ -14,6 +14,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+const updateCheckTimeout = 30 * time.Second
+
 // tickDirectory creates a command that periodically updates directory
 func tickDirectory() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
@@ -150,8 +152,12 @@ func fetchUpdateCheckCmd() tea.Cmd {
 			return updateCheckMsg{SkipReason: "dev_build"}
 		}
 
-		slog.Info("update_check_start")
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		slog.Info("update_check_start",
+			"current", current,
+			"interval_hours", cfg.UpdateCheck.IntervalHours,
+			"timeout", updateCheckTimeout.String(),
+		)
+		ctx, cancel := context.WithTimeout(context.Background(), updateCheckTimeout)
 		defer cancel()
 
 		result, err := updatecheck.CheckLatest(ctx, current, updatecheck.CheckOptions{

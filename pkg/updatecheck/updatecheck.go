@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ const (
 	defaultLatestReleaseURL = "https://api.github.com/repos/pakru/wtf_cli/releases/latest"
 	releasePageURL          = "https://github.com/pakru/wtf_cli/releases"
 	upgradeCommand          = "curl -fsSL https://raw.githubusercontent.com/pakru/wtf_cli/main/install.sh | bash"
+	defaultHTTPTimeout      = 10 * time.Second
 )
 
 type Result struct {
@@ -60,6 +62,11 @@ func CheckLatest(ctx context.Context, currentVersion string, opts CheckOptions) 
 	}
 	current, ok := normalizeVersion(result.CurrentVersion)
 	if !ok || current == "dev" {
+		reason := "invalid_current_version"
+		if current == "dev" {
+			reason = "dev_build"
+		}
+		slog.Debug("update_check_skipped", "reason", reason, "current", result.CurrentVersion)
 		return result, nil
 	}
 
@@ -67,6 +74,7 @@ func CheckLatest(ctx context.Context, currentVersion string, opts CheckOptions) 
 	if cachePath == "" {
 		cachePath = DefaultCachePath()
 	}
+	latestReleaseURL := normalizeLatestReleaseURL(opts.LatestReleaseURL)
 	interval := opts.Interval
 	if interval <= 0 {
 		interval = time.Hour
@@ -75,42 +83,84 @@ func CheckLatest(ctx context.Context, currentVersion string, opts CheckOptions) 
 	if nowFn == nil {
 		nowFn = time.Now
 	}
+	now := nowFn()
 
-	if cached, ok := readCache(cachePath); ok && nowFn().Sub(cached.LastChecked) < interval {
-		result.LatestVersion = cached.LatestVersion
-		latest, parsed := normalizeVersion(cached.LatestVersion)
-		if parsed {
-			result.UpdateAvailable = compareVersions(current, latest) < 0
+	cached, hasCache, cacheErr := readCache(cachePath)
+	if cacheErr != nil {
+		if errors.Is(cacheErr, os.ErrNotExist) {
+			slog.Debug("update_check_cache_miss", "cache_path", cachePath)
+		} else {
+			slog.Warn("update_check_cache_read_error", "cache_path", cachePath, "error", cacheErr)
 		}
+	}
+	if hasCache && now.Sub(cached.LastChecked) < interval {
+		applyCachedResult(&result, current, cached)
+		slog.Info("update_check_cache_hit",
+			"current", result.CurrentVersion,
+			"latest", result.LatestVersion,
+			"cache_age", now.Sub(cached.LastChecked).String(),
+			"interval", interval.String(),
+			"update_available", result.UpdateAvailable,
+		)
 		return result, nil
 	}
+	if hasCache {
+		slog.Debug("update_check_cache_stale",
+			"latest", cached.LatestVersion,
+			"cache_age", now.Sub(cached.LastChecked).String(),
+			"interval", interval.String(),
+		)
+	}
 
+	slog.Debug("update_check_fetch_start", "url", latestReleaseURL)
 	latest, err := fetchLatestVersion(ctx, opts)
 	if err != nil {
+		if hasCache {
+			staleResult := result
+			applyCachedResult(&staleResult, current, cached)
+			if staleResult.UpdateAvailable {
+				slog.Warn("update_check_stale_cache_fallback",
+					"current", staleResult.CurrentVersion,
+					"latest", staleResult.LatestVersion,
+					"cache_age", now.Sub(cached.LastChecked).String(),
+					"error", err,
+				)
+				return staleResult, nil
+			}
+		}
+		slog.Warn("update_check_fetch_error", "url", latestReleaseURL, "error", err)
 		return result, err
 	}
 	result.LatestVersion = latest
 
 	normalizedLatest, ok := normalizeVersion(latest)
 	if !ok {
+		slog.Warn("update_check_invalid_latest_version", "latest", latest)
 		return result, fmt.Errorf("invalid latest release version: %q", latest)
 	}
 	result.UpdateAvailable = compareVersions(current, normalizedLatest) < 0
+	slog.Info("update_check_result",
+		"source", "network",
+		"current", result.CurrentVersion,
+		"latest", result.LatestVersion,
+		"update_available", result.UpdateAvailable,
+	)
 
-	_ = writeCache(cachePath, cacheState{LastChecked: nowFn(), LatestVersion: latest})
+	if err := writeCache(cachePath, cacheState{LastChecked: now, LatestVersion: latest}); err != nil {
+		slog.Warn("update_check_cache_write_error", "cache_path", cachePath, "latest", latest, "error", err)
+	} else {
+		slog.Debug("update_check_cache_write", "cache_path", cachePath, "latest", latest)
+	}
 
 	return result, nil
 }
 
 func fetchLatestVersion(ctx context.Context, opts CheckOptions) (string, error) {
-	url := strings.TrimSpace(opts.LatestReleaseURL)
-	if url == "" {
-		url = defaultLatestReleaseURL
-	}
+	url := normalizeLatestReleaseURL(opts.LatestReleaseURL)
 
 	client := opts.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second}
+		client = &http.Client{Timeout: defaultHTTPTimeout}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -138,6 +188,22 @@ func fetchLatestVersion(ctx context.Context, opts CheckOptions) (string, error) 
 	}
 
 	return strings.TrimSpace(payload.TagName), nil
+}
+
+func normalizeLatestReleaseURL(url string) string {
+	trimmed := strings.TrimSpace(url)
+	if trimmed == "" {
+		return defaultLatestReleaseURL
+	}
+	return trimmed
+}
+
+func applyCachedResult(result *Result, current string, cached cacheState) {
+	result.LatestVersion = cached.LatestVersion
+	latest, parsed := normalizeVersion(cached.LatestVersion)
+	if parsed {
+		result.UpdateAvailable = compareVersions(current, latest) < 0
+	}
 }
 
 func normalizeVersion(input string) (string, bool) {
@@ -181,19 +247,19 @@ func compareVersions(current, latest string) int {
 	return 0
 }
 
-func readCache(path string) (cacheState, bool) {
+func readCache(path string) (cacheState, bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return cacheState{}, false
+		return cacheState{}, false, err
 	}
 	var cache cacheState
 	if err := json.Unmarshal(data, &cache); err != nil {
-		return cacheState{}, false
+		return cacheState{}, false, fmt.Errorf("decode cache: %w", err)
 	}
 	if cache.LastChecked.IsZero() || strings.TrimSpace(cache.LatestVersion) == "" {
-		return cacheState{}, false
+		return cacheState{}, false, errors.New("cache missing last_checked or latest_version")
 	}
-	return cache, true
+	return cache, true, nil
 }
 
 func writeCache(path string, cache cacheState) error {

@@ -76,6 +76,75 @@ func TestCheckLatest_FetchesAndCaches(t *testing.T) {
 	}
 }
 
+func TestCheckLatest_UsesStaleCacheWhenFetchFailsAndCachedVersionIsNewer(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	cachePath := filepath.Join(tmpDir, "cache.json")
+	now := time.Now()
+	if err := writeCache(cachePath, cacheState{
+		LastChecked:   now.Add(-2 * time.Hour),
+		LatestVersion: "v1.4.0",
+	}); err != nil {
+		t.Fatalf("writeCache() error = %v", err)
+	}
+
+	result, err := CheckLatest(context.Background(), "v1.3.0", CheckOptions{
+		LatestReleaseURL: srv.URL,
+		CachePath:        cachePath,
+		Interval:         time.Hour,
+		Now: func() time.Time {
+			return now
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected stale cache fallback, got error %v", err)
+	}
+	if hits != 1 {
+		t.Fatalf("expected 1 HTTP call before stale fallback, got %d", hits)
+	}
+	if !result.UpdateAvailable {
+		t.Fatalf("expected update available from stale cache")
+	}
+	if result.LatestVersion != "v1.4.0" {
+		t.Fatalf("expected cached latest version, got %q", result.LatestVersion)
+	}
+}
+
+func TestCheckLatest_ReturnsFetchErrorWhenStaleCacheIsNotNewer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	cachePath := filepath.Join(tmpDir, "cache.json")
+	now := time.Now()
+	if err := writeCache(cachePath, cacheState{
+		LastChecked:   now.Add(-2 * time.Hour),
+		LatestVersion: "v1.3.0",
+	}); err != nil {
+		t.Fatalf("writeCache() error = %v", err)
+	}
+
+	_, err := CheckLatest(context.Background(), "v1.3.0", CheckOptions{
+		LatestReleaseURL: srv.URL,
+		CachePath:        cachePath,
+		Interval:         time.Hour,
+		Now: func() time.Time {
+			return now
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected fetch error when stale cache does not prove an update")
+	}
+}
+
 func TestCheckLatest_DevVersionSkips(t *testing.T) {
 	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
