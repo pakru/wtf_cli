@@ -18,8 +18,17 @@ func (m Model) handleMouseWheel(msg tea.MouseWheelMsg) (Model, tea.Cmd) {
 	m2 := msg.Mouse()
 	if !m.terminalFocused && m.sidebar != nil && m.sidebar.IsVisible() {
 		// Sidebar has focus; let sidebar handle wheel.
-		cmd := m.sidebar.HandleWheel(msg)
-		return m, cmd
+		m.sidebar.HandleWheel(msg)
+		return m, nil
+	}
+	if m.terminalFocused && m.sidebar != nil && m.sidebar.IsVisible() {
+		left, _ := splitSidebarWidths(m.width)
+		if m2.X >= left && m2.X < m.width {
+			m.setTerminalFocused(false)
+			m.sidebar.FocusInput()
+			m.sidebar.HandleWheel(msg)
+			return m, nil
+		}
 	}
 	switch m2.Button {
 	case tea.MouseWheelUp:

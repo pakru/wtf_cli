@@ -228,17 +228,11 @@ func (s *Sidebar) Update(msg tea.KeyPressMsg) tea.Cmd {
 
 // handleScroll processes scroll key events and returns nil command.
 func (s *Sidebar) handleScroll(key string) tea.Cmd {
-	if s.commandSelectionEnabled() {
-		switch key {
-		case "up":
-			s.stepCommandSelection(-1)
-			return nil
-		case "down":
-			s.stepCommandSelection(1)
-			return nil
-		}
-	}
+	s.scrollViewport(key)
+	return nil
+}
 
+func (s *Sidebar) scrollViewport(key string) {
 	maxScroll := s.maxScroll()
 
 	switch key {
@@ -267,8 +261,6 @@ func (s *Sidebar) handleScroll(key string) tea.Cmd {
 	}
 
 	s.updateActiveCommand()
-
-	return nil
 }
 
 // ChatSubmitMsg is returned when the user submits a chat message.
@@ -548,7 +540,7 @@ func (s *Sidebar) RefreshView() {
 	s.reflow()
 	if s.follow {
 		s.scrollY = s.maxScroll()
-		s.selectLastCommand()
+		s.updateActiveCommand()
 		return
 	}
 	s.updateActiveCommand()
@@ -583,14 +575,13 @@ func (s *Sidebar) HandlePaste(content string) {
 }
 
 // HandleWheel handles mouse wheel scrolling.
-func (s *Sidebar) HandleWheel(msg tea.MouseWheelMsg) tea.Cmd {
+func (s *Sidebar) HandleWheel(msg tea.MouseWheelMsg) {
 	switch msg.Mouse().Button {
 	case tea.MouseWheelUp:
-		return s.handleScroll("up")
+		s.scrollViewport("up")
 	case tea.MouseWheelDown:
-		return s.handleScroll("down")
+		s.scrollViewport("down")
 	}
-	return nil
 }
 
 // SelectionPoint translates a screen coordinate into a message line coordinate.
@@ -760,7 +751,7 @@ func (s *Sidebar) viewportHeight() int {
 func (s *Sidebar) commandFooterText(contentWidth int) string {
 	label := s.ActiveLLMLabel()
 	if s.canApplySelectedCommand() {
-		hint := "Enter Apply | Up/Down Navigate | Shift+Tab TTY | Ctrl+T Hide"
+		hint := "Enter Apply | Up/Down Scroll | Shift+Tab TTY | Ctrl+T Hide"
 		full := label + " | " + hint
 		if runewidth.StringWidth(full) <= contentWidth {
 			return full
@@ -793,113 +784,26 @@ func (s *Sidebar) updateActiveCommand() {
 		return
 	}
 
-	center := s.scrollY + s.viewportHeight()/2
+	viewportHeight := s.viewportHeight()
+	top := s.scrollY
+	bottom := top + viewportHeight - 1
 	bestIdx := -1
-	bestDistance := 1 << 30
+	bestLine := -1
 
 	for i, lineIdx := range s.cmdRenderedLines {
 		if i >= len(s.cmdList) || lineIdx < 0 {
 			continue
 		}
-		distance := lineIdx - center
-		if distance < 0 {
-			distance = -distance
+		if lineIdx < top || lineIdx > bottom {
+			continue
 		}
-		if distance < bestDistance {
-			bestDistance = distance
+		if lineIdx >= bestLine {
+			bestLine = lineIdx
 			bestIdx = i
 		}
 	}
 
 	s.cmdSelectedIdx = bestIdx
-}
-
-func (s *Sidebar) stepCommandSelection(delta int) {
-	if delta == 0 || len(s.cmdList) == 0 {
-		return
-	}
-
-	isSelectable := func(i int) bool {
-		return i >= 0 && i < len(s.cmdRenderedLines) && s.cmdRenderedLines[i] >= 0
-	}
-
-	hasSelectable := false
-	for i := range s.cmdList {
-		if isSelectable(i) {
-			hasSelectable = true
-			break
-		}
-	}
-	if !hasSelectable {
-		return
-	}
-
-	idx := s.cmdSelectedIdx
-	if idx < 0 || !isSelectable(idx) {
-		if delta > 0 {
-			for i := 0; i < len(s.cmdList); i++ {
-				if isSelectable(i) {
-					idx = i
-					break
-				}
-			}
-		} else {
-			for i := len(s.cmdList) - 1; i >= 0; i-- {
-				if isSelectable(i) {
-					idx = i
-					break
-				}
-			}
-		}
-	}
-
-	next := idx + delta
-	for next >= 0 && next < len(s.cmdList) {
-		if isSelectable(next) {
-			break
-		}
-		next += delta
-	}
-	if next < 0 || next >= len(s.cmdList) {
-		return
-	}
-	if next == s.cmdSelectedIdx {
-		return
-	}
-
-	s.cmdSelectedIdx = next
-	s.revealSelectedCommand()
-}
-
-func (s *Sidebar) selectLastCommand() {
-	for i := len(s.cmdRenderedLines) - 1; i >= 0; i-- {
-		if s.cmdRenderedLines[i] < 0 {
-			continue
-		}
-		s.cmdSelectedIdx = i
-		s.revealSelectedCommand()
-		return
-	}
-	s.cmdSelectedIdx = -1
-}
-
-func (s *Sidebar) revealSelectedCommand() {
-	if s.cmdSelectedIdx < 0 || s.cmdSelectedIdx >= len(s.cmdRenderedLines) {
-		return
-	}
-	lineIdx := s.cmdRenderedLines[s.cmdSelectedIdx]
-	if lineIdx < 0 {
-		return
-	}
-
-	target := max(lineIdx-s.viewportHeight()/2, 0)
-	maxScroll := s.maxScroll()
-	if target > maxScroll {
-		target = maxScroll
-	}
-
-	s.scrollY = target
-	s.follow = s.scrollY >= maxScroll
 }
 
 var sidebarBoxStyle = lipgloss.NewStyle().

@@ -1711,6 +1711,102 @@ func TestModel_ScrollKeys_NoEffect_WhenSidebarFocused(t *testing.T) {
 	}
 }
 
+func TestModel_SidebarArrowKeysScrollRenderedChat(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 14})
+	m = newModel.(Model)
+	m.showSidebar("test")
+	m.sidebar.StartAssistantMessageWithContent(strings.Join([]string{
+		"Use <cmd>git status</cmd>",
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+		"line 6",
+		"line 7",
+		"line 8",
+		"line 9",
+		"line 10",
+	}, "\n"))
+	m.sidebar.RefreshView()
+
+	if m.terminalFocused {
+		t.Fatal("expected sidebar focus")
+	}
+
+	beforeView := m.sidebar.View()
+	newModel, _ = m.Update(testutils.TestKeyUp)
+	m = newModel.(Model)
+
+	afterUpView := m.sidebar.View()
+	if afterUpView == beforeView {
+		t.Fatal("expected sidebar rendered content to change after Up")
+	}
+
+	newModel, _ = m.Update(testutils.TestKeyDown)
+	m = newModel.(Model)
+
+	if got := m.sidebar.View(); got == afterUpView {
+		t.Fatal("expected sidebar rendered content to change after Down")
+	}
+	if got := m.sidebar.View(); got != beforeView {
+		t.Fatal("expected Down to return sidebar to the original rendered content")
+	}
+}
+
+func TestModel_MouseWheelOverSidebarFocusesAndScrollsSidebar(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 14})
+	m = newModel.(Model)
+	m.showSidebar("test")
+	m.sidebar.StartAssistantMessageWithContent(strings.Join([]string{
+		"Use <cmd>git status</cmd>",
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+		"line 6",
+		"line 7",
+		"line 8",
+		"line 9",
+		"line 10",
+	}, "\n"))
+	m.sidebar.RefreshView()
+	m.setTerminalFocused(true)
+
+	if !m.terminalFocused {
+		t.Fatal("precondition: expected terminal focus")
+	}
+
+	left, _ := splitSidebarWidths(m.width)
+	beforeView := m.sidebar.View()
+	newModel, _ = m.Update(tea.MouseWheelMsg(tea.Mouse{
+		X:      left + 1,
+		Y:      3,
+		Button: tea.MouseWheelUp,
+	}))
+	m = newModel.(Model)
+
+	if m.terminalFocused {
+		t.Fatal("expected wheel over sidebar to focus sidebar")
+	}
+	if !m.sidebar.IsFocusedOnInput() {
+		t.Fatal("expected wheel over sidebar to focus sidebar input")
+	}
+	afterWheelView := m.sidebar.View()
+	if afterWheelView == beforeView {
+		t.Fatal("expected wheel over sidebar to scroll sidebar content")
+	}
+
+	newModel, _ = m.Update(testutils.TestKeyDown)
+	m = newModel.(Model)
+	if got := m.sidebar.View(); got == afterWheelView {
+		t.Fatal("expected Down to scroll sidebar after wheel focused it")
+	}
+}
+
 func TestModel_ScrollKeys_NoEffect_InFullScreenMode(t *testing.T) {
 	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
 	m.ready = true
