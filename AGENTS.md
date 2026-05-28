@@ -9,7 +9,7 @@
 - **Performance:** Minimal latency, high throughput (batching/debounce implemented).
 
 ## Technical Stack
-- **Language:** Go 1.25+
+- **Language:** Go 1.26+
 - **TUI Framework:** Bubble Tea v2 (`charm.land/bubbletea/v2`), Bubbles v2 (`charm.land/bubbles/v2`)
 - **Styling:** Lipgloss v2 (`charm.land/lipgloss/v2`)
 - **PTY Management:** `github.com/creack/pty`
@@ -145,4 +145,73 @@ GitHub Actions in `.github/workflows/`:
 
 ## Configuration
 - Configuration is managed in `pkg/config/`.
+- Config file location: `~/.wtf_cli/config.json`
 - AI providers are configured per-provider; OAuth-based providers store credentials via `pkg/ai/auth/`.
+- Only the fields for the active `llm_provider` need to be set. `copilot` uses GitHub Copilot CLI authentication — no API key required.
+
+```json
+{
+  "llm_provider": "openrouter",
+  "openrouter": {
+    "api_key": "<your_openrouter_api_key>",
+    "model": "google/gemini-3.0-flash",
+    "temperature": 0.7,
+    "max_tokens": 2000,
+    "api_timeout_seconds": 30
+  },
+  "providers": {
+    "openai": {
+      "api_key": "<your_openai_api_key>",
+      "model": "gpt-4o",
+      "temperature": 0.7,
+      "max_tokens": 2000,
+      "api_timeout_seconds": 30
+    },
+    "anthropic": {
+      "api_key": "<your_anthropic_api_key>",
+      "model": "claude-3-5-sonnet-20241022",
+      "temperature": 0.7,
+      "max_tokens": 2000,
+      "api_timeout_seconds": 30
+    },
+    "google": {
+      "api_key": "<your_google_api_key>",
+      "model": "gemini-3-flash-preview",
+      "temperature": 0.7,
+      "max_tokens": 8192,
+      "api_timeout_seconds": 60
+    },
+    "copilot": {
+      "model": "gpt-4o",
+      "temperature": 0.7,
+      "max_tokens": 2000,
+      "api_timeout_seconds": 30
+    }
+  },
+  "buffer_size": 2000,
+  "context_window": 1000,
+  "status_bar": {
+    "position": "bottom"
+  },
+  "update_check": {
+    "enabled": true,
+    "interval_hours": 1
+  },
+  "log_file": "~/.wtf_cli/logs/wtf_cli.log",
+  "log_format": "json",
+  "log_level": "info"
+}
+```
+
+## Troubleshooting
+
+### Go Version Mismatch
+
+If you see `compile: version "go1.x.y" does not match go tool version "go1.x.z"`, clear the build cache:
+
+```bash
+rm -rf ~/.cache/go-build
+go clean -cache -modcache -i -r
+go install std
+make clean && make build
+```
