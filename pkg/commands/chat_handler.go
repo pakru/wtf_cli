@@ -124,10 +124,9 @@ func buildChatMessages(
 	// Use chat-specific context builder (background context framing, not diagnostic)
 	termCtx := ai.BuildChatContext(lines, meta)
 
-	// Build messages: system + TTY context as developer message + history
+	// Build messages: single system message combining prompt + TTY context, then history
 	msgs := []ai.Message{
-		{Role: "system", Content: termCtx.SystemPrompt},
-		{Role: "developer", Content: termCtx.UserPrompt}, // TTY context
+		{Role: "system", Content: termCtx.SystemPrompt + "\n\n" + termCtx.UserPrompt},
 	}
 
 	// Append conversation history
