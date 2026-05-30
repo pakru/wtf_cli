@@ -210,7 +210,7 @@ func (hp *HistoryPickerPanel) View() string {
 	var content strings.Builder
 
 	// Title
-	content.WriteString(titleStyle.Render("🔍 Command History Search"))
+	content.WriteString(titleStyle.Render("Command History Search"))
 	content.WriteString("\n")
 
 	// Filter input

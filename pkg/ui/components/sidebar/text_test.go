@@ -1,8 +1,6 @@
 package sidebar
 
 import (
-	"runtime"
-	"strings"
 	"testing"
 )
 
@@ -153,58 +151,22 @@ func TestStripANSICodes(t *testing.T) {
 }
 
 func TestMessagePrefix(t *testing.T) {
-	userPrefix := MessagePrefix("user")
-	assistantPrefix := MessagePrefix("assistant")
-
-	if !strings.Contains(userPrefix, "You:") {
-		t.Errorf("user prefix should contain 'You:', got %q", userPrefix)
+	if got := MessagePrefix("user"); got != "**You:** " {
+		t.Errorf("user prefix = %q, want %q", got, "**You:** ")
 	}
-	if !strings.Contains(assistantPrefix, "Assistant:") {
-		t.Errorf("assistant prefix should contain 'Assistant:', got %q", assistantPrefix)
-	}
-
-	// Emoji check: darwin skips emoji, others include it.
-	if runtime.GOOS == "darwin" {
-		if strings.ContainsRune(userPrefix, '👤') {
-			t.Error("darwin: user prefix should not include emoji")
-		}
-	} else {
-		if !strings.ContainsRune(userPrefix, '👤') {
-			t.Error("non-darwin: user prefix should include 👤 emoji")
-		}
+	if got := MessagePrefix("assistant"); got != "**Assistant:** " {
+		t.Errorf("assistant prefix = %q, want %q", got, "**Assistant:** ")
 	}
 }
 
 func TestMessagePrefix_Tool(t *testing.T) {
-	prefix := MessagePrefix("tool")
-	if !strings.Contains(prefix, "Tool:") {
-		t.Errorf("tool prefix should contain 'Tool:', got %q", prefix)
-	}
-	if runtime.GOOS == "darwin" {
-		if strings.ContainsRune(prefix, '🔧') {
-			t.Error("darwin: tool prefix should not include emoji")
-		}
-	} else {
-		if !strings.ContainsRune(prefix, '🔧') {
-			t.Error("non-darwin: tool prefix should include 🔧 emoji")
-		}
+	if got := MessagePrefix("tool"); got != "**Tool:** " {
+		t.Errorf("tool prefix = %q, want %q", got, "**Tool:** ")
 	}
 }
 
 func TestMessagePrefix_Error(t *testing.T) {
-	prefix := MessagePrefix("error")
-
-	if !strings.Contains(prefix, "Error:") {
-		t.Errorf("error prefix should contain 'Error:', got %q", prefix)
-	}
-
-	if runtime.GOOS == "darwin" {
-		if strings.ContainsRune(prefix, '❌') {
-			t.Error("darwin: error prefix should not include emoji")
-		}
-	} else {
-		if !strings.ContainsRune(prefix, '❌') {
-			t.Error("non-darwin: error prefix should include ❌ emoji")
-		}
+	if got := MessagePrefix("error"); got != "Error: " {
+		t.Errorf("error prefix = %q, want %q", got, "Error: ")
 	}
 }

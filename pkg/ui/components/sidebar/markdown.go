@@ -5,12 +5,13 @@ import (
 
 	"wtf_cli/pkg/ui/styles"
 
-	"github.com/mattn/go-runewidth"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type markdownToken struct {
 	text string
 	bold bool
+	role string // non-empty marks a chat role label ("user", "assistant", ...)
 }
 
 func renderMarkdown(content string, width int) []string {
@@ -123,16 +124,56 @@ func renderMarkdownWithCommandLines(content string, width int, commandRawLines [
 }
 
 func renderMarkdownLine(line string, width int) []string {
-	if strings.TrimSpace(line) == "" {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
 		return []string{""}
+	}
+	if width > 0 && isHorizontalRule(trimmed) {
+		return []string{styles.ChatSeparatorStyle.Render(strings.Repeat("─", width))}
 	}
 
 	tokens := tokenizeBoldWords(line)
 	if len(tokens) == 0 {
 		return []string{""}
 	}
+	applyRoleLabel(tokens)
 
 	return wrapTokens(tokens, width)
+}
+
+// isHorizontalRule reports whether a line is made entirely of box-drawing
+// horizontal bars, e.g. the chat turn separator emitted by RenderMessages.
+// Such lines are stretched to the full content width and dark-gray styled.
+func isHorizontalRule(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r != '─' {
+			return false
+		}
+	}
+	return true
+}
+
+// applyRoleLabel tags the leading token when it matches a known chat role
+// label so it can be rendered in the speaker's color. The label is always the
+// first token of a message's opening line; the bold/plain check mirrors how
+// MessagePrefix emits each role and keeps false positives in body text rare.
+func applyRoleLabel(tokens []markdownToken) {
+	if len(tokens) == 0 {
+		return
+	}
+	switch {
+	case tokens[0].bold && tokens[0].text == "You:":
+		tokens[0].role = "user"
+	case tokens[0].bold && tokens[0].text == "Assistant:":
+		tokens[0].role = "assistant"
+	case tokens[0].bold && tokens[0].text == "Tool:":
+		tokens[0].role = "tool"
+	case !tokens[0].bold && tokens[0].text == "Error:":
+		tokens[0].role = "error"
+	}
 }
 
 func renderTable(rows [][]string, header bool, width int) []string {
@@ -161,7 +202,7 @@ func renderTable(rows [][]string, header bool, width int) []string {
 	colWidths := make([]int, cols)
 	for _, row := range rows {
 		for i, cell := range row {
-			if w := runewidth.StringWidth(cell); w > colWidths[i] {
+			if w := ansi.StringWidth(cell); w > colWidths[i] {
 				colWidths[i] = w
 			}
 		}
@@ -178,7 +219,7 @@ func renderTable(rows [][]string, header bool, width int) []string {
 	var rendered []string
 	for rowIndex, row := range rows {
 		line := buildTableLine(row, colWidths)
-		if runewidth.StringWidth(line) > width {
+		if ansi.StringWidth(line) > width {
 			line = trimToWidth(line, width)
 		}
 		if header && rowIndex == 0 {
@@ -404,7 +445,10 @@ func wrapTokens(tokens []markdownToken, width int) []string {
 
 		parts := splitByWidth(token.text, width)
 		for _, part := range parts {
-			partWidth := runewidth.StringWidth(part)
+			// Measure with the same width logic the box renderer and terminal use
+			// (ansi.StringWidth is VS16-emoji aware, unlike runewidth.StringWidth),
+			// so emoji-bearing lines wrap before they overflow the sidebar box.
+			partWidth := ansi.StringWidth(part)
 			if lineWidth > 0 && lineWidth+1+partWidth > width {
 				flush()
 			}
@@ -412,7 +456,7 @@ func wrapTokens(tokens []markdownToken, width int) []string {
 			if lineWidth > 0 {
 				lineWidth++
 			}
-			lineTokens = append(lineTokens, markdownToken{text: part, bold: token.bold})
+			lineTokens = append(lineTokens, markdownToken{text: part, bold: token.bold, role: token.role})
 			lineWidth += partWidth
 		}
 	}
@@ -430,9 +474,12 @@ func renderTokenLine(tokens []markdownToken) string {
 		if i > 0 {
 			sb.WriteString(styles.TextStyle.Render(" "))
 		}
-		if token.bold {
+		switch {
+		case token.role != "":
+			sb.WriteString(styles.ChatLabel(token.role, token.text))
+		case token.bold:
 			sb.WriteString(styles.TextBoldStyle.Render(token.text))
-		} else {
+		default:
 			sb.WriteString(styles.TextStyle.Render(token.text))
 		}
 	}

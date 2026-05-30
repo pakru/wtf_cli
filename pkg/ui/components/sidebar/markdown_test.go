@@ -225,3 +225,43 @@ func TestRenderMarkdownWithCommandLines_BRTags(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderMarkdown_RoleLabelColors(t *testing.T) {
+	userOut := strings.Join(renderMarkdown("**You:** why is this happening", 60), "\n")
+	if !strings.Contains(userOut, "38;5;39") {
+		t.Errorf("expected user label to use blue (38;5;39), got %q", userOut)
+	}
+
+	asstOut := strings.Join(renderMarkdown("**Assistant:** here is why", 60), "\n")
+	if !strings.Contains(asstOut, "38;5;141") {
+		t.Errorf("expected assistant label to use accent (38;5;141), got %q", asstOut)
+	}
+
+	// A normal bold word must not be mistaken for a role label.
+	noteOut := strings.Join(renderMarkdown("**Note:** something", 60), "\n")
+	if strings.Contains(noteOut, "38;5;39") || strings.Contains(noteOut, "38;5;141") {
+		t.Errorf("did not expect a role color on a non-label bold word, got %q", noteOut)
+	}
+}
+
+func TestRenderMarkdown_SeparatorFullWidthDarkGray(t *testing.T) {
+	const width = 40
+	lines := renderMarkdown("text\n───────────────────────\nmore", width)
+
+	var sep string
+	for _, ln := range lines {
+		if strings.Contains(stripANSICodes(ln), "─") {
+			sep = ln
+			break
+		}
+	}
+	if sep == "" {
+		t.Fatal("expected a separator line in rendered output")
+	}
+	if got := len([]rune(stripANSICodes(sep))); got != width {
+		t.Errorf("expected separator stretched to width %d, got %d (%q)", width, got, stripANSICodes(sep))
+	}
+	if !strings.Contains(sep, "38;5;240") {
+		t.Errorf("expected dark-gray (38;5;240) separator, got %q", sep)
+	}
+}

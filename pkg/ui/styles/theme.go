@@ -199,7 +199,41 @@ var (
 				Foreground(ColorTextBright).
 				Background(ColorBorderMuted).
 				Underline(true)
+
+	// Chat role-label styles distinguish speakers in the sidebar transcript.
+	ChatUserLabelStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("39")). // blue
+				Bold(true)
+	ChatAssistantLabelStyle = lipgloss.NewStyle().
+				Foreground(ColorAccent). // accent purple
+				Bold(true)
+	ChatToolLabelStyle = lipgloss.NewStyle().
+				Foreground(ColorWarning). // orange
+				Bold(true)
+	ChatErrorLabelStyle = lipgloss.NewStyle().
+				Foreground(ColorError). // red
+				Bold(true)
+
+	// ChatSeparatorStyle renders the rule between chat turns in dark gray.
+	ChatSeparatorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("240")) // dark gray
 )
+
+// ChatLabel renders a chat role label (e.g. "You:", "Assistant:") in the
+// speaker's color. Unknown roles fall back to normal text styling.
+func ChatLabel(role, text string) string {
+	switch role {
+	case "user":
+		return ChatUserLabelStyle.Render(text)
+	case "assistant":
+		return ChatAssistantLabelStyle.Render(text)
+	case "tool":
+		return ChatToolLabelStyle.Render(text)
+	case "error":
+		return ChatErrorLabelStyle.Render(text)
+	}
+	return TextStyle.Render(text)
+}
 
 // Status bar styles
 var (

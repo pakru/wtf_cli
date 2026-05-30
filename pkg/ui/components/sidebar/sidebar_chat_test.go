@@ -2,7 +2,6 @@ package sidebar
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -103,14 +102,11 @@ func TestSidebar_AppendErrorMessage(t *testing.T) {
 	if len(messages) != 1 {
 		t.Fatalf("Expected 1 message, got %d", len(messages))
 	}
-	// Error messages are added as assistant messages with emoji prefix
+	// Error messages are added as assistant messages with an "Error: " prefix.
 	if messages[0].Role != "assistant" {
 		t.Errorf("Expected role 'assistant', got %q", messages[0].Role)
 	}
-	expected := "❌ Error: Connection failed"
-	if runtime.GOOS == "darwin" {
-		expected = "Error: Connection failed"
-	}
+	expected := "Error: Connection failed"
 	if messages[0].Content != expected {
 		t.Errorf("Expected %q, got %q", expected, messages[0].Content)
 	}
@@ -520,6 +516,7 @@ func TestSidebar_ArrowKeysScrollWhenCommandSelectable(t *testing.T) {
 
 	s.scrollY = 0
 	s.follow = false
+	s.updateActiveCommand() // sync selection to the visible top command, as a real scroll would
 	s.Update(testutils.TestKeyDown)
 	if s.scrollY != 1 {
 		t.Fatalf("Expected down key to scroll one line, got scrollY=%d", s.scrollY)
@@ -818,6 +815,180 @@ func TestSidebar_RefreshView_SelectsLastCommandWhenFollowing(t *testing.T) {
 	}
 	if s.cmdSelectedIdx != 3 {
 		t.Fatalf("Expected last command to be selected initially, got %d", s.cmdSelectedIdx)
+	}
+}
+
+func TestSidebar_ArrowUpSelectsUpperCommandWhenNoScroll(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 30)
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"Try one of these:",
+		"<cmd>docker network prune</cmd>",
+		"<cmd>docker network ls</cmd>",
+		"<cmd>ip -brief addr</cmd>",
+	}, "\n"))
+	s.Show()
+	s.FocusInput()
+
+	if len(s.cmdList) != 3 {
+		t.Fatalf("expected 3 commands, got %d", len(s.cmdList))
+	}
+	if s.maxScroll() != 0 {
+		t.Fatalf("expected content to fit without scrolling, maxScroll=%d", s.maxScroll())
+	}
+	if !s.commandSelectionEnabled() {
+		t.Fatal("expected command selection to be enabled")
+	}
+	if s.cmdSelectedIdx != 2 {
+		t.Fatalf("expected last command selected initially, got %d", s.cmdSelectedIdx)
+	}
+
+	s.Update(testutils.TestKeyUp)
+	if s.cmdSelectedIdx != 1 {
+		t.Fatalf("expected up to select middle command (1), got %d", s.cmdSelectedIdx)
+	}
+	if s.scrollY != 0 {
+		t.Fatalf("expected no scroll while stepping commands, scrollY=%d", s.scrollY)
+	}
+
+	s.Update(testutils.TestKeyUp)
+	if s.cmdSelectedIdx != 0 {
+		t.Fatalf("expected up to select first command (0), got %d", s.cmdSelectedIdx)
+	}
+
+	// Regression guard: Up at the top command must not jump back to the last.
+	s.Update(testutils.TestKeyUp)
+	if s.cmdSelectedIdx != 0 {
+		t.Fatalf("expected selection to stay on first command, got %d", s.cmdSelectedIdx)
+	}
+	if s.scrollY != 0 {
+		t.Fatalf("expected scrollY to stay 0, got %d", s.scrollY)
+	}
+}
+
+func TestSidebar_ArrowDownStopsAtLastCommandWhenNoScroll(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 30)
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"Try one of these:",
+		"<cmd>docker network prune</cmd>",
+		"<cmd>docker network ls</cmd>",
+		"<cmd>ip -brief addr</cmd>",
+	}, "\n"))
+	s.Show()
+	s.FocusInput()
+
+	if s.maxScroll() != 0 {
+		t.Fatalf("expected content to fit without scrolling, maxScroll=%d", s.maxScroll())
+	}
+
+	// Move selection to the first command.
+	s.Update(testutils.TestKeyUp)
+	s.Update(testutils.TestKeyUp)
+	if s.cmdSelectedIdx != 0 {
+		t.Fatalf("expected first command selected, got %d", s.cmdSelectedIdx)
+	}
+
+	s.Update(testutils.TestKeyDown)
+	if s.cmdSelectedIdx != 1 {
+		t.Fatalf("expected down to select command 1, got %d", s.cmdSelectedIdx)
+	}
+	s.Update(testutils.TestKeyDown)
+	if s.cmdSelectedIdx != 2 {
+		t.Fatalf("expected down to select last command 2, got %d", s.cmdSelectedIdx)
+	}
+
+	// Extra down at the last command stays put, no scroll.
+	s.Update(testutils.TestKeyDown)
+	if s.cmdSelectedIdx != 2 {
+		t.Fatalf("expected selection to stay on last command, got %d", s.cmdSelectedIdx)
+	}
+	if s.scrollY != 0 {
+		t.Fatalf("expected scrollY to stay 0, got %d", s.scrollY)
+	}
+}
+
+func TestSidebar_ArrowNavigationStepsThenScrollsPreservingSelection(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 12)
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+		"line 6",
+		"line 7",
+		"line 8",
+		"Use <cmd>git status</cmd>",
+		"and <cmd>git log</cmd>",
+	}, "\n"))
+	s.Show()
+	s.FocusInput()
+
+	if s.maxScroll() < 1 {
+		t.Fatalf("expected scrollable content, maxScroll=%d", s.maxScroll())
+	}
+	if len(s.cmdList) != 2 {
+		t.Fatalf("expected 2 commands, got %d", len(s.cmdList))
+	}
+	if !s.commandSelectionEnabled() {
+		t.Fatal("expected command selection to be enabled")
+	}
+	// Follow mode keeps both commands at the bottom; the last is selected.
+	if s.cmdSelectedIdx != 1 {
+		t.Fatalf("expected last command selected, got %d", s.cmdSelectedIdx)
+	}
+
+	// Step up to the upper visible command without scrolling.
+	scrollBefore := s.scrollY
+	s.Update(testutils.TestKeyUp)
+	if s.cmdSelectedIdx != 0 {
+		t.Fatalf("expected up to select upper command 0, got %d", s.cmdSelectedIdx)
+	}
+	if s.scrollY != scrollBefore {
+		t.Fatalf("expected no scroll while stepping, scrollY %d -> %d", scrollBefore, s.scrollY)
+	}
+
+	// No visible command above -> scroll text, selection preserved while visible.
+	s.Update(testutils.TestKeyUp)
+	if s.scrollY != scrollBefore-1 {
+		t.Fatalf("expected scroll up by one line, got scrollY=%d (was %d)", s.scrollY, scrollBefore)
+	}
+	if s.cmdSelectedIdx != 0 {
+		t.Fatalf("expected selection preserved at 0 after scroll, got %d", s.cmdSelectedIdx)
+	}
+}
+
+func TestSidebar_ArrowNavigationFallsBackToScrollWhileStreaming(t *testing.T) {
+	s := NewSidebar()
+	s.SetSize(80, 12)
+	s.StartAssistantMessageWithContent(strings.Join([]string{
+		"Use <cmd>git status</cmd>",
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+		"line 6",
+		"line 7",
+		"line 8",
+		"line 9",
+		"line 10",
+	}, "\n"))
+	s.Show()
+	s.FocusInput()
+	s.SetStreaming(true)
+
+	if s.commandSelectionEnabled() {
+		t.Fatal("expected command selection to be disabled while streaming")
+	}
+
+	s.scrollY = 0
+	s.follow = false
+	s.Update(testutils.TestKeyDown)
+	if s.scrollY != 1 {
+		t.Fatalf("expected down to scroll one line while streaming, got scrollY=%d", s.scrollY)
 	}
 }
 
