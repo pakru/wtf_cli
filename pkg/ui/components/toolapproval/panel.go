@@ -194,7 +194,7 @@ func approvalPanelWidth(screenWidth int) int {
 }
 
 func renderApprovalHeader(width int) string {
-	title := "⚠️Permission Required"
+	title := "Permission Required"
 	if lipgloss.Width(title) >= width {
 		return styles.DialogTitleStyle.Render(utils.TruncateToWidth(title, width))
 	}

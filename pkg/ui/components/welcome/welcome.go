@@ -8,7 +8,7 @@ import (
 	"wtf_cli/pkg/ui/styles"
 	"wtf_cli/pkg/version"
 
-	"github.com/mattn/go-runewidth"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const boxWidth = 53 // Total inner width
@@ -44,8 +44,8 @@ func UpdateBanner(notice *UpdateNotice) string {
 	releaseURL := withFallback(strings.TrimSpace(notice.ReleaseURL), "https://github.com/pakru/wtf_cli/releases")
 	upgradeCmd := withFallback(strings.TrimSpace(notice.UpgradeCommand), "curl -fsSL https://raw.githubusercontent.com/pakru/wtf_cli/main/install.sh | bash")
 
-	// Header: 🆕 Update available: v0.4.14 → v0.4.15
-	header := styles.WelcomeHeaderStyle.Render("  🆕 Update available: ") +
+	// Header: Update available: v0.4.14 → v0.4.15
+	header := styles.WelcomeHeaderStyle.Render("  Update available: ") +
 		styles.WelcomeVersionStyle.Render(cur) +
 		styles.WelcomeHeaderStyle.Render(" → ") +
 		styles.WelcomeUpdateVersionStyle.Render(latest)
@@ -78,9 +78,9 @@ func buildWelcomeBox() string {
 	lines = append(lines, "")
 	lines = append(lines, top)
 
-	// Title: ✨ Welcome to WTF CLI ✨
-	titleText := "✨ Welcome to WTF CLI ✨"
-	rawTitleWidth := runewidth.StringWidth(titleText)
+	// Title: Welcome to WTF CLI
+	titleText := "Welcome to WTF CLI"
+	rawTitleWidth := ansi.StringWidth(titleText)
 	titleLeftPad := (boxWidth - rawTitleWidth) / 2
 	titleLine := strings.Repeat(" ", titleLeftPad) + styles.WelcomeTitleStyle.Render(titleText)
 	lines = append(lines, makeLine(titleLine, titleLeftPad+rawTitleWidth))
@@ -89,7 +89,7 @@ func buildWelcomeBox() string {
 
 	// Shortcuts header
 	shortcutsHeader := "  Shortcuts:"
-	lines = append(lines, makeLine(styles.WelcomeHeaderStyle.Render(shortcutsHeader), runewidth.StringWidth(shortcutsHeader)))
+	lines = append(lines, makeLine(styles.WelcomeHeaderStyle.Render(shortcutsHeader), ansi.StringWidth(shortcutsHeader)))
 
 	// Shortcuts
 	shortcuts := []struct{ key, desc string }{
@@ -102,7 +102,7 @@ func buildWelcomeBox() string {
 	for _, s := range shortcuts {
 		keyFormatted := fmt.Sprintf("    %-10s", s.key)
 		line := styles.WelcomeKeyStyle.Render(keyFormatted) + styles.TextStyle.Render(s.desc)
-		lineWidth := runewidth.StringWidth(keyFormatted) + runewidth.StringWidth(s.desc)
+		lineWidth := ansi.StringWidth(keyFormatted) + ansi.StringWidth(s.desc)
 		lines = append(lines, makeLine(line, lineWidth))
 	}
 
@@ -111,12 +111,12 @@ func buildWelcomeBox() string {
 	// Version at bottom (centered, dimmed)
 	versionText := version.Summary()
 	maxVersionLen := boxWidth - 4
-	if runewidth.StringWidth(versionText) > maxVersionLen {
+	if ansi.StringWidth(versionText) > maxVersionLen {
 		versionText = utils.TruncateToWidth(versionText, maxVersionLen)
 	}
-	versionLeftPad := (boxWidth - runewidth.StringWidth(versionText)) / 2
+	versionLeftPad := (boxWidth - ansi.StringWidth(versionText)) / 2
 	versionLine := strings.Repeat(" ", versionLeftPad) + styles.WelcomeVersionStyle.Render(versionText)
-	lines = append(lines, makeLine(versionLine, versionLeftPad+runewidth.StringWidth(versionText)))
+	lines = append(lines, makeLine(versionLine, versionLeftPad+ansi.StringWidth(versionText)))
 
 	lines = append(lines, bottom)
 	lines = append(lines, "")

@@ -3,6 +3,8 @@ package sidebar
 import (
 	"strings"
 	"testing"
+
+	"charm.land/lipgloss/v2"
 )
 
 func TestRenderMarkdown_Table(t *testing.T) {
@@ -41,6 +43,33 @@ func TestRenderMarkdown_TableFallback(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "one") {
 		t.Fatalf("Expected fallback to include cell text, got:\n%s", joined)
+	}
+}
+
+func TestSidebar_EmojiPrefixDoesNotOverflowBoxHeight(t *testing.T) {
+	// Regression: the assistant prefix emoji (🖥️ = U+1F5A5 + VS16) is measured
+	// as width 1 by go-runewidth but width 2 by lipgloss/the terminal. When such a
+	// line wraps to fill the width, the over-wide rendered line previously made the
+	// border box wrap it onto an extra row, growing the box past its allotted height.
+	for _, width := range []int{30, 40, 46, 60, 80} {
+		s := NewSidebar()
+		s.SetSize(width, 18)
+		s.StartAssistantMessageWithContent(strings.Join([]string{
+			"🖥️ **Assistant:** While your current output only shows the Cursor repo failing, if it happens to multiple repos here are the primary reasons it occurs.",
+			"Many ISPs, corporate networks, or public Wi-Fi hotspots use Transparent Proxies to save bandwidth and cache index files.",
+		}, "\n"))
+		s.Show()
+
+		view := s.View()
+		gotHeight := lipgloss.Height(view)
+		if gotHeight != s.height {
+			t.Fatalf("width=%d: box height %d != allotted %d (vertical overflow)", width, gotHeight, s.height)
+		}
+		for i, row := range strings.Split(view, "\n") {
+			if w := lipgloss.Width(row); w != width {
+				t.Fatalf("width=%d: row %d has width %d (expected %d)", width, i, w, width)
+			}
+		}
 	}
 }
 

@@ -476,7 +476,7 @@ func (h *HelpHandler) Description() string { return "Show help" }
 func (h *HelpHandler) Execute(ctx *Context) *Result {
 	return &Result{
 		Title: "Help",
-		Content: fmt.Sprintf(`📚 WTF CLI Help
+		Content: fmt.Sprintf(`WTF CLI Help
 
 Version: %s
 

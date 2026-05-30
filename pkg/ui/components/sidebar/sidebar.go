@@ -13,7 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	osc52 "github.com/aymanbagabas/go-osc52/v2"
-	"github.com/mattn/go-runewidth"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -228,11 +228,22 @@ func (s *Sidebar) Update(msg tea.KeyPressMsg) tea.Cmd {
 
 // handleScroll processes scroll key events and returns nil command.
 func (s *Sidebar) handleScroll(key string) tea.Cmd {
+	if s.commandSelectionEnabled() && (key == "up" || key == "down") {
+		s.navigateCommandsOrScroll(key)
+		return nil
+	}
 	s.scrollViewport(key)
 	return nil
 }
 
+// scrollViewport scrolls the viewport and re-runs passive command tracking.
 func (s *Sidebar) scrollViewport(key string) {
+	s.applyScroll(key)
+	s.updateActiveCommand()
+}
+
+// applyScroll mutates scrollY and follow only, without touching command selection.
+func (s *Sidebar) applyScroll(key string) {
 	maxScroll := s.maxScroll()
 
 	switch key {
@@ -259,8 +270,85 @@ func (s *Sidebar) scrollViewport(key string) {
 		}
 		s.follow = s.scrollY >= maxScroll
 	}
+}
 
-	s.updateActiveCommand()
+// navigateCommandsOrScroll moves the command selection toward the pressed
+// direction when a visible command exists there; otherwise it scrolls the text
+// one line while preserving the current selection until it leaves the viewport.
+func (s *Sidebar) navigateCommandsOrScroll(key string) {
+	dir := 1
+	if key == "up" {
+		dir = -1
+	}
+	if s.stepVisibleCommand(dir) {
+		return
+	}
+	s.applyScroll(key)
+	if !s.commandVisible(s.cmdSelectedIdx) {
+		s.updateActiveCommand()
+	}
+}
+
+// stepVisibleCommand selects the nearest on-screen command in direction dir
+// (-1 = up, +1 = down) relative to the current selection's rendered line.
+// It returns true when the selection moved.
+func (s *Sidebar) stepVisibleCommand(dir int) bool {
+	top := s.scrollY
+	bottom := top + s.viewportHeight() - 1
+
+	curLine := -1
+	if s.cmdSelectedIdx >= 0 && s.cmdSelectedIdx < len(s.cmdRenderedLines) {
+		curLine = s.cmdRenderedLines[s.cmdSelectedIdx]
+	}
+
+	bestIdx := -1
+	bestLine := -1
+	for i, lineIdx := range s.cmdRenderedLines {
+		if i >= len(s.cmdList) || lineIdx < 0 {
+			continue
+		}
+		if lineIdx < top || lineIdx > bottom {
+			continue // visible commands only
+		}
+		if dir > 0 {
+			if lineIdx <= curLine {
+				continue
+			}
+			if bestLine == -1 || lineIdx < bestLine { // nearest below
+				bestLine = lineIdx
+				bestIdx = i
+			}
+		} else {
+			if curLine >= 0 && lineIdx >= curLine {
+				continue
+			}
+			if lineIdx > bestLine { // nearest above
+				bestLine = lineIdx
+				bestIdx = i
+			}
+		}
+	}
+
+	if bestIdx == -1 {
+		return false
+	}
+	s.cmdSelectedIdx = bestIdx
+	return true
+}
+
+// commandVisible reports whether the command at idx has a rendered line inside
+// the current viewport window.
+func (s *Sidebar) commandVisible(idx int) bool {
+	if idx < 0 || idx >= len(s.cmdRenderedLines) {
+		return false
+	}
+	lineIdx := s.cmdRenderedLines[idx]
+	if lineIdx < 0 {
+		return false
+	}
+	top := s.scrollY
+	bottom := top + s.viewportHeight() - 1
+	return lineIdx >= top && lineIdx <= bottom
 }
 
 // ChatSubmitMsg is returned when the user submits a chat message.
@@ -751,9 +839,9 @@ func (s *Sidebar) viewportHeight() int {
 func (s *Sidebar) commandFooterText(contentWidth int) string {
 	label := s.ActiveLLMLabel()
 	if s.canApplySelectedCommand() {
-		hint := "Enter Apply | Up/Down Scroll | Shift+Tab TTY | Ctrl+T Hide"
+		hint := "Enter Apply | Up/Down Navigate | Shift+Tab TTY | Ctrl+T Hide"
 		full := label + " | " + hint
-		if runewidth.StringWidth(full) <= contentWidth {
+		if ansi.StringWidth(full) <= contentWidth {
 			return full
 		}
 		return label + " | Apply"

@@ -314,7 +314,7 @@ func TestSettingsPanel_BuildFields_Google(t *testing.T) {
 	_ = findFieldIndex(t, sp, "google_max_tokens")
 
 	statusIdx := findFieldIndex(t, sp, "provider_status")
-	if got := sp.fields[statusIdx].Value; got != "✅ Ready" {
+	if got := sp.fields[statusIdx].Value; got != "Ready" {
 		t.Fatalf("Expected provider status ready, got %q", got)
 	}
 }
@@ -328,7 +328,7 @@ func TestSettingsPanel_ApplyField_GoogleAPIKeyRefreshesStatus(t *testing.T) {
 	sp.Show(cfg, "/tmp/test_config.json")
 
 	statusIdx := findFieldIndex(t, sp, "provider_status")
-	if got := sp.fields[statusIdx].Value; got != "❌ Missing API key" {
+	if got := sp.fields[statusIdx].Value; got != "Missing API key" {
 		t.Fatalf("Expected missing-key status, got %q", got)
 	}
 
@@ -339,7 +339,7 @@ func TestSettingsPanel_ApplyField_GoogleAPIKeyRefreshesStatus(t *testing.T) {
 	if sp.config.Providers.Google.APIKey != "new-gemini-key" {
 		t.Fatalf("Expected Google API key to be updated, got %q", sp.config.Providers.Google.APIKey)
 	}
-	if got := sp.fields[statusIdx].Value; got != "✅ Ready" {
+	if got := sp.fields[statusIdx].Value; got != "Ready" {
 		t.Fatalf("Expected provider status ready after API key update, got %q", got)
 	}
 }

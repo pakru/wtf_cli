@@ -168,40 +168,40 @@ func (sp *SettingsPanel) getCopilotStatus() string {
 
 func (sp *SettingsPanel) getOpenAIStatus() string {
 	if strings.TrimSpace(sp.config.Providers.OpenAI.APIKey) != "" {
-		return "✅ API key set"
+		return "API key set"
 	}
 	authMgr := auth.NewAuthManager(auth.DefaultAuthPath())
 	if authMgr.HasCredentials("openai") {
 		creds, err := authMgr.Load("openai")
 		if err == nil && !creds.IsExpired() {
-			return "✅ OAuth connected"
+			return "OAuth connected"
 		}
 		if err == nil && creds.IsExpired() {
-			return "❌ OAuth expired"
+			return "OAuth expired"
 		}
 	}
-	return "❌ Not connected"
+	return "Not connected"
 }
 
 func (sp *SettingsPanel) getOpenRouterStatus() string {
 	if strings.TrimSpace(sp.config.OpenRouter.APIKey) != "" {
-		return "✅ Ready"
+		return "Ready"
 	}
-	return "❌ Missing API key"
+	return "Missing API key"
 }
 
 func (sp *SettingsPanel) getAnthropicStatus() string {
 	if strings.TrimSpace(sp.config.Providers.Anthropic.APIKey) != "" {
-		return "✅ Ready"
+		return "Ready"
 	}
-	return "❌ Missing API key"
+	return "Missing API key"
 }
 
 func (sp *SettingsPanel) getGoogleStatus() string {
 	if strings.TrimSpace(sp.config.Providers.Google.APIKey) != "" {
-		return "✅ Ready"
+		return "Ready"
 	}
-	return "❌ Missing API key"
+	return "Missing API key"
 }
 
 func (sp *SettingsPanel) getSelectedProviderStatus() string {
@@ -710,7 +710,7 @@ func (sp *SettingsPanel) View() string {
 	// Build content
 	var content strings.Builder
 
-	content.WriteString(titleStyle.Render("⚙️  Settings"))
+	content.WriteString(titleStyle.Render("Settings"))
 	content.WriteString("\n\n")
 
 	// Render fields
@@ -745,7 +745,7 @@ func (sp *SettingsPanel) View() string {
 	// Error message
 	if sp.errorMsg != "" {
 		content.WriteString("\n")
-		content.WriteString(errorStyle.Render("⚠️  " + sp.errorMsg))
+		content.WriteString(errorStyle.Render(sp.errorMsg))
 	}
 
 	// Footer

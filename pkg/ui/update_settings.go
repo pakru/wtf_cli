@@ -276,8 +276,8 @@ func fetchCopilotAuthStatusCmd(showPrompt bool) tea.Cmd {
 }
 
 func formatCopilotAuthStatus(status ai.CopilotAuthStatus, err error) (string, string, string) {
-	summary := "❌ Not connected"
-	detail := "❌ Not connected (Enter for details)"
+	summary := "Not connected"
+	detail := "Not connected (Enter for details)"
 	statusLabel := "Not connected"
 	if err != nil {
 		message := fmt.Sprintf("Status: %s\nError: %v", statusLabel, err)
@@ -285,8 +285,8 @@ func formatCopilotAuthStatus(status ai.CopilotAuthStatus, err error) (string, st
 	}
 
 	if status.Authenticated {
-		summary = "✅ Connected"
-		detail = "✅ Connected (Enter for details)"
+		summary = "Connected"
+		detail = "Connected (Enter for details)"
 		statusLabel = "Connected"
 	}
 
