@@ -384,6 +384,13 @@ main() {
     info "Run 'wtf_cli --version' to verify the installation"
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+is_script_entrypoint() {
+    local script_source="$1"
+    local shell_name="$2"
+
+    [ -z "$script_source" ] || [ "$script_source" = "$shell_name" ]
+}
+
+if is_script_entrypoint "${BASH_SOURCE[0]:-}" "$0"; then
     main "$@"
 fi
