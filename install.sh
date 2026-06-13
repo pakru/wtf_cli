@@ -76,7 +76,52 @@ detect_arch() {
 
 # Get default install directory
 get_default_install_dir() {
-    echo "$HOME/.local/bin"
+    local os="${1:-$(detect_os)}"
+
+    case "$os" in
+        darwin|linux) echo "$HOME/.local/bin" ;;
+        *)            echo "$HOME/.local/bin" ;;
+    esac
+}
+
+# Get legacy install paths that older installers may have used.
+get_legacy_install_paths() {
+    local os="$1"
+
+    case "$os" in
+        darwin) echo "/usr/local/bin/${BINARY_NAME}" ;;
+    esac
+}
+
+# Warn when an older install location may still shadow the selected target.
+warn_about_legacy_installations() {
+    local os="$1"
+    local install_path="$2"
+    local resolved_path=""
+
+    if command_exists "$BINARY_NAME"; then
+        resolved_path="$(command -v "$BINARY_NAME")"
+    fi
+
+    while IFS= read -r legacy_path; do
+        [ -n "$legacy_path" ] || continue
+        [ "$legacy_path" != "$install_path" ] || continue
+        [ -x "$legacy_path" ] || continue
+
+        local legacy_version
+        legacy_version=$(get_installed_version "$legacy_path")
+        if [ -n "$legacy_version" ]; then
+            warn "Legacy installation found at ${legacy_path} (${legacy_version})"
+        else
+            warn "Legacy installation found at ${legacy_path}"
+        fi
+
+        if [ "$resolved_path" = "$legacy_path" ]; then
+            warn "Your PATH currently resolves ${BINARY_NAME} to the legacy location. Put $(dirname "$install_path") before $(dirname "$legacy_path") in PATH or remove the legacy binary."
+        fi
+    done << EOF
+$(get_legacy_install_paths "$os")
+EOF
 }
 
 # Check if install directory is in PATH
@@ -256,9 +301,10 @@ main() {
 
     # Determine install directory
     local install_dir
-    install_dir="${custom_dir:-${WTF_INSTALL_DIR:-$(get_default_install_dir)}}"
+    install_dir="${custom_dir:-${WTF_INSTALL_DIR:-$(get_default_install_dir "$os")}}"
     local install_path="${install_dir}/${BINARY_NAME}"
     info "Install location: ${install_path}"
+    warn_about_legacy_installations "$os" "$install_path"
 
     # Check for existing installation
     local installed_version
@@ -338,4 +384,6 @@ main() {
     info "Run 'wtf_cli --version' to verify the installation"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
