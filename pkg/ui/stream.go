@@ -178,6 +178,7 @@ func (m Model) handleWtfStreamEvent(msg commands.WtfStreamEvent) (Model, tea.Cmd
 		m.wtfStream = nil
 		m.streamThrottlePending = false
 		m.streamPlaceholderActive = false
+		m.toolCallNewTurnNeeded = false
 		return m, nil
 	}
 
@@ -272,6 +273,11 @@ func (m Model) handleWtfStreamEvent(msg commands.WtfStreamEvent) (Model, tea.Cmd
 			m.wtfStream = nil
 			m.streamThrottlePending = false
 			m.streamPlaceholderActive = false
+			// A graceful stop can land right after a ToolCallFinished (e.g. the
+			// user chose Stop at the continuation prompt) with no delta to clear
+			// the flag. Reset it so the next stream's first delta replaces its
+			// placeholder instead of being treated as a post-tool continuation.
+			m.toolCallNewTurnNeeded = false
 			return m, nil
 		}
 	}
