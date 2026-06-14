@@ -23,11 +23,23 @@ import (
 // headless flows).
 type ApproverFactory func(out chan<- WtfStreamEvent) Approver
 
+// ContinuerFactory builds a Continuer bound to the per-invocation event
+// channel, mirroring ApproverFactory. The UI injects one so the loop can
+// surface a "continue?" popup on the same channel it reads from.
+//
+// When nil, handlers fall back to AutoStopContinuer (graceful stop at the
+// per-batch limit; suitable for tests and headless flows).
+type ContinuerFactory func(out chan<- WtfStreamEvent) Continuer
+
 // ExplainHandler handles the /explain command.
 type ExplainHandler struct {
 	// ApproverFactory builds the approver for each /explain invocation. Wired
 	// up by the UI layer to surface a popup. Nil ⇒ AutoAllowApprover.
 	ApproverFactory ApproverFactory
+
+	// ContinuerFactory builds the continuer for each /explain invocation. Wired
+	// up by the UI layer to surface a popup. Nil ⇒ AutoStopContinuer.
+	ContinuerFactory ContinuerFactory
 }
 
 func (h *ExplainHandler) Name() string        { return "/explain" }
@@ -52,9 +64,9 @@ func (h *ExplainHandler) Execute(ctx *Context) *Result {
 // WtfStreamEvent represents a streaming event from the agent loop.
 //
 // Most events carry exactly one populated field. Receivers should check fields
-// in this order: Err, ToolApproval, ToolCallStart, ToolCallFinished, Delta,
-// Done. Unknown future variants must be ignored gracefully (no field set ⇒
-// keep listening).
+// in this order: Err, ContinuePrompt, ToolApproval, ToolCallStart,
+// ToolCallFinished, Delta, Done. Unknown future variants must be ignored
+// gracefully (no field set ⇒ keep listening).
 type WtfStreamEvent struct {
 	Delta string
 	Done  bool
@@ -65,6 +77,11 @@ type WtfStreamEvent struct {
 	ToolCallStart    *ToolCallInfo
 	ToolApproval     *ApprovalRequest
 	ToolCallFinished *ToolCallInfo
+
+	// ContinuePrompt is set when the loop reached its per-batch iteration limit
+	// and is asking the user whether to keep going. The loop blocks on the
+	// request's Reply channel until the UI dispatches a ContinuationDecision.
+	ContinuePrompt *ContinuationRequest
 }
 
 // ToolCallInfo carries metadata about a single tool invocation for the UI.
@@ -154,12 +171,14 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 
 	ch := make(chan WtfStreamEvent, 16)
 	approver := h.resolveApprover(ch)
+	continuer := h.resolveContinuer(ch)
 	loopCtx, cancel := context.WithCancel(context.Background())
 	go func() {
 		defer cancel()
 		RunAgentLoop(loopCtx, prep.provider, req, AgentLoopConfig{
 			Registry:       prep.registry,
 			Approver:       approver,
+			Continuer:      continuer,
 			MaxIterations:  prep.maxIterations,
 			PerCallTimeout: time.Duration(prep.timeout) * time.Second,
 			Tag:            "explain",
@@ -176,6 +195,15 @@ func (h *ExplainHandler) resolveApprover(ch chan<- WtfStreamEvent) Approver {
 		}
 	}
 	return AutoAllowApprover{}
+}
+
+func (h *ExplainHandler) resolveContinuer(ch chan<- WtfStreamEvent) Continuer {
+	if h.ContinuerFactory != nil {
+		if c := h.ContinuerFactory(ch); c != nil {
+			return c
+		}
+	}
+	return AutoStopContinuer{}
 }
 
 // agentRunPrep bundles the provider, settings, and tool registry needed to

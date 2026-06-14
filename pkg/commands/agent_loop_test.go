@@ -335,9 +335,25 @@ func TestRunAgentLoop_UnknownToolSoftFails(t *testing.T) {
 	}
 }
 
-func TestRunAgentLoop_MaxIterationsErr(t *testing.T) {
+// fakeContinuer answers a fixed sequence of continue/stop decisions, then
+// stops once the sequence is exhausted. Records how many times it was asked.
+type fakeContinuer struct {
+	answers []bool
+	asked   int
+}
+
+func (c *fakeContinuer) Continue(_ context.Context, _ *ContinuationRequest) (ContinuationDecision, error) {
+	i := c.asked
+	c.asked++
+	if i < len(c.answers) {
+		return ContinuationDecision{Continue: c.answers[i]}, nil
+	}
+	return ContinuationDecision{Continue: false}, nil
+}
+
+func TestRunAgentLoop_BatchCapStopsGracefully(t *testing.T) {
 	echo := &echoTool{}
-	// Three turns, all of which call the tool again. Cap is 2.
+	// Three turns, all of which call the tool again. Per-batch cap is 2.
 	provider := &fakeProvider{
 		caps: ai.ProviderCapabilities{Tools: true},
 		streams: []*fakeStream{
@@ -353,21 +369,106 @@ func TestRunAgentLoop_MaxIterationsErr(t *testing.T) {
 	}, AgentLoopConfig{
 		Registry:      newRegistryWithEcho(echo),
 		Approver:      AutoAllowApprover{},
+		Continuer:     AutoStopContinuer{}, // default: stop at the cap
 		MaxIterations: 2,
 	}, ch)
 	events := drain(t, ch, 2*time.Second)
 
-	gotErr := false
+	doneCount := 0
 	for _, e := range events {
-		if errors.Is(e.Err, ErrMaxIterations) {
-			gotErr = true
+		if e.Err != nil {
+			t.Fatalf("expected graceful stop, got error event: %v", e.Err)
+		}
+		if e.Done {
+			doneCount++
 		}
 	}
-	if !gotErr {
-		t.Fatalf("expected ErrMaxIterations event, got %+v", events)
+	if doneCount != 1 {
+		t.Fatalf("doneCount = %d, want 1 (graceful Done)", doneCount)
 	}
 	if len(provider.receivedReqs) != 2 {
 		t.Fatalf("provider calls = %d, want exactly 2 (cap)", len(provider.receivedReqs))
+	}
+}
+
+func TestRunAgentLoop_BatchedToolCallsCountTowardLimit(t *testing.T) {
+	echo := &echoTool{}
+	// The model returns TWO tool calls in a single turn. The per-batch limit
+	// is 2, so even though this is only one provider round-trip, the loop must
+	// reach the limit and stop (AutoStop) before opening a second round-trip.
+	provider := &fakeProvider{
+		caps: ai.ProviderCapabilities{Tools: true},
+		streams: []*fakeStream{
+			{toolCalls: []ai.ToolCall{
+				{ID: "1", Name: "echo", Arguments: json.RawMessage(`{}`)},
+				{ID: "2", Name: "echo", Arguments: json.RawMessage(`{}`)},
+			}},
+			// This second stream must never be consumed.
+			{textChunks: []string{"should not reach"}, stopReason: "stop"},
+		},
+	}
+
+	ch := make(chan WtfStreamEvent, 32)
+	go RunAgentLoop(context.Background(), provider, ai.ChatRequest{
+		Messages: []ai.Message{{Role: "user", Content: "hi"}},
+	}, AgentLoopConfig{
+		Registry:      newRegistryWithEcho(echo),
+		Approver:      AutoAllowApprover{},
+		Continuer:     AutoStopContinuer{},
+		MaxIterations: 2,
+	}, ch)
+	events := drain(t, ch, 2*time.Second)
+
+	for _, e := range events {
+		if e.Err != nil {
+			t.Fatalf("expected graceful stop, got error event: %v", e.Err)
+		}
+	}
+	if len(echo.calls) != 2 {
+		t.Fatalf("echo executed %d times, want 2 (both calls in the turn run)", len(echo.calls))
+	}
+	if len(provider.receivedReqs) != 1 {
+		t.Fatalf("provider calls = %d, want exactly 1 (limit hit after the batched turn)", len(provider.receivedReqs))
+	}
+}
+
+func TestRunAgentLoop_ContinuerGrantsAnotherBatch(t *testing.T) {
+	echo := &echoTool{}
+	// Every turn calls the tool again. Per-batch cap is 2. The continuer says
+	// "continue" once, then "stop", so the loop runs two batches of 2 = 4
+	// provider calls before stopping gracefully.
+	provider := &fakeProvider{
+		caps: ai.ProviderCapabilities{Tools: true},
+		streams: []*fakeStream{
+			{toolCalls: []ai.ToolCall{{ID: "1", Name: "echo", Arguments: json.RawMessage(`{}`)}}},
+			{toolCalls: []ai.ToolCall{{ID: "2", Name: "echo", Arguments: json.RawMessage(`{}`)}}},
+			{toolCalls: []ai.ToolCall{{ID: "3", Name: "echo", Arguments: json.RawMessage(`{}`)}}},
+			{toolCalls: []ai.ToolCall{{ID: "4", Name: "echo", Arguments: json.RawMessage(`{}`)}}},
+		},
+	}
+	cont := &fakeContinuer{answers: []bool{true, false}}
+
+	ch := make(chan WtfStreamEvent, 64)
+	go RunAgentLoop(context.Background(), provider, ai.ChatRequest{
+		Messages: []ai.Message{{Role: "user", Content: "hi"}},
+	}, AgentLoopConfig{
+		Registry:      newRegistryWithEcho(echo),
+		Approver:      AutoAllowApprover{},
+		Continuer:     cont,
+		MaxIterations: 2,
+	}, ch)
+	events := drain(t, ch, 2*time.Second)
+
+	for _, e := range events {
+		if e.Err != nil {
+			t.Fatalf("expected graceful stop, got error event: %v", e.Err)
+		}
+	}
+	if cont.asked != 2 {
+		t.Fatalf("continuer asked %d times, want 2", cont.asked)
+	}
+	if len(provider.receivedReqs) != 4 {
+		t.Fatalf("provider calls = %d, want exactly 4 (two batches of 2)", len(provider.receivedReqs))
 	}
 }
 

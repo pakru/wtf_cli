@@ -18,6 +18,10 @@ type ChatHandler struct {
 	// ApproverFactory builds the approver for each /chat invocation. Wired up
 	// by the UI layer to surface a popup. Nil ⇒ AutoAllowApprover.
 	ApproverFactory ApproverFactory
+
+	// ContinuerFactory builds the continuer for each /chat invocation. Wired up
+	// by the UI layer to surface a popup. Nil ⇒ AutoStopContinuer.
+	ContinuerFactory ContinuerFactory
 }
 
 // Name returns the command name
@@ -87,12 +91,14 @@ func (h *ChatHandler) StartChatStream(
 
 	ch := make(chan WtfStreamEvent, 16)
 	approver := h.resolveApprover(ch)
+	continuer := h.resolveContinuer(ch)
 	loopCtx, cancel := context.WithCancel(context.Background())
 	go func() {
 		defer cancel()
 		RunAgentLoop(loopCtx, prep.provider, req, AgentLoopConfig{
 			Registry:       prep.registry,
 			Approver:       approver,
+			Continuer:      continuer,
 			MaxIterations:  prep.maxIterations,
 			PerCallTimeout: time.Duration(prep.timeout) * time.Second,
 			Tag:            "chat",
@@ -109,6 +115,15 @@ func (h *ChatHandler) resolveApprover(ch chan<- WtfStreamEvent) Approver {
 		}
 	}
 	return AutoAllowApprover{}
+}
+
+func (h *ChatHandler) resolveContinuer(ch chan<- WtfStreamEvent) Continuer {
+	if h.ContinuerFactory != nil {
+		if c := h.ContinuerFactory(ch); c != nil {
+			return c
+		}
+	}
+	return AutoStopContinuer{}
 }
 
 // buildChatMessages constructs AI messages from chat history + terminal context.

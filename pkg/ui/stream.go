@@ -8,6 +8,7 @@ import (
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/commands"
+	"wtf_cli/pkg/ui/components/continueprompt"
 	"wtf_cli/pkg/ui/components/sidebar"
 	"wtf_cli/pkg/ui/components/toolapproval"
 
@@ -109,6 +110,32 @@ func (m Model) handleToolApprovalDecision(msg toolapproval.DecisionMsg) (Model, 
 	return m, nil
 }
 
+func (m Model) handleContinuePromptDecision(msg continueprompt.DecisionMsg) (Model, tea.Cmd) {
+	// User answered the "continue?" popup. Dispatch the decision on the agent
+	// loop's Reply channel (capacity 1, so the send never blocks). Hiding the
+	// panel before sending keeps the View consistent if events arrive
+	// immediately. A "stop" decision makes the loop emit a graceful Done.
+	if msg.Request == nil || msg.Request.Reply == nil {
+		if m.continuePrompt != nil {
+			m.continuePrompt.Hide()
+		}
+		return m, nil
+	}
+	slog.Info("continue_prompt_user_decision",
+		"continue", msg.Continue,
+		"tool_calls", msg.Request.ToolCalls,
+	)
+	if m.continuePrompt != nil {
+		m.continuePrompt.Hide()
+	}
+	select {
+	case msg.Request.Reply <- commands.ContinuationDecision{Continue: msg.Continue}:
+	default:
+		slog.Warn("continue_prompt_reply_dropped")
+	}
+	return m, nil
+}
+
 func (m Model) handleChatSubmit(msg sidebar.ChatSubmitMsg) (Model, tea.Cmd) {
 	if m.sidebar == nil || msg.Content == "" {
 		return m, nil
@@ -145,9 +172,13 @@ func (m Model) handleWtfStreamEvent(msg commands.WtfStreamEvent) (Model, tea.Cmd
 		if m.toolApproval != nil {
 			m.toolApproval.Hide()
 		}
+		if m.continuePrompt != nil {
+			m.continuePrompt.Hide()
+		}
 		m.wtfStream = nil
 		m.streamThrottlePending = false
 		m.streamPlaceholderActive = false
+		m.toolCallNewTurnNeeded = false
 		return m, nil
 	}
 
@@ -161,6 +192,18 @@ func (m Model) handleWtfStreamEvent(msg commands.WtfStreamEvent) (Model, tea.Cmd
 			m.toolApproval.Show(msg.ToolApproval)
 		}
 		slog.Info("tool_approval_show", "tool", msg.ToolApproval.Name)
+		return m, m.continueStreamListen()
+	}
+
+	// Continue prompt: the loop hit its per-batch iteration limit and is asking
+	// whether to keep going. Same modal pattern as approval — the agent
+	// goroutine blocks on Reply until continueprompt.DecisionMsg is dispatched.
+	if msg.ContinuePrompt != nil {
+		if m.continuePrompt != nil {
+			m.continuePrompt.SetSize(m.width, m.height)
+			m.continuePrompt.Show(msg.ContinuePrompt)
+		}
+		slog.Info("continue_prompt_show", "tool_calls", msg.ContinuePrompt.ToolCalls)
 		return m, m.continueStreamListen()
 	}
 
@@ -230,6 +273,11 @@ func (m Model) handleWtfStreamEvent(msg commands.WtfStreamEvent) (Model, tea.Cmd
 			m.wtfStream = nil
 			m.streamThrottlePending = false
 			m.streamPlaceholderActive = false
+			// A graceful stop can land right after a ToolCallFinished (e.g. the
+			// user chose Stop at the continuation prompt) with no delta to clear
+			// the flag. Reset it so the next stream's first delta replaces its
+			// placeholder instead of being treated as a post-tool continuation.
+			m.toolCallNewTurnNeeded = false
 			return m, nil
 		}
 	}

@@ -70,6 +70,11 @@ func (m Model) handlePaste(msg tea.PasteMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.continuePrompt != nil && m.continuePrompt.IsVisible() {
+		// Continue popup is modal; ignore pastes until the user picks.
+		return m, nil
+	}
+
 	if m.resultPanel.IsVisible() {
 		tracePasteRoute("result_panel_ignored", len(msg.Content))
 		return m, nil
@@ -149,6 +154,13 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// keys before any other overlay or PTY routing.
 	if m.toolApproval != nil && m.toolApproval.IsVisible() {
 		cmd := m.toolApproval.Update(msg)
+		return m, cmd
+	}
+
+	// Priority 4b: Continue-loop popup. Same blocking-modal contract as the
+	// approval popup — absorb all keys until the user answers.
+	if m.continuePrompt != nil && m.continuePrompt.IsVisible() {
+		cmd := m.continuePrompt.Update(msg)
 		return m, cmd
 	}
 
