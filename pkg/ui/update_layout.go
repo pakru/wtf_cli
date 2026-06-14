@@ -116,6 +116,9 @@ func (m *Model) resizeComponents(width, height int) (viewportWidth, viewportHeig
 	if m.toolApproval != nil {
 		m.toolApproval.SetSize(width, height)
 	}
+	if m.continuePrompt != nil {
+		m.continuePrompt.SetSize(width, height)
+	}
 	if m.modelPicker != nil {
 		m.modelPicker.SetSize(width, height)
 	}

@@ -8,6 +8,7 @@ import (
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/commands"
 	"wtf_cli/pkg/pty"
+	"wtf_cli/pkg/ui/components/continueprompt"
 	"wtf_cli/pkg/ui/components/fullscreen"
 	"wtf_cli/pkg/ui/components/historypicker"
 	"wtf_cli/pkg/ui/components/palette"
@@ -40,17 +41,18 @@ type Model struct {
 	secretDetector func(*os.File) bool
 
 	// UI Components
-	viewport      viewport.PTYViewport              // Viewport for PTY output
-	statusBar     *statusbar.StatusBarView          // Status bar at bottom
-	inputHandler  *input.InputHandler               // Input routing to PTY
-	palette       *palette.CommandPalette           // Command palette overlay
-	historyPicker *historypicker.HistoryPickerPanel // History search picker
-	resultPanel   *result.ResultPanel               // Result panel overlay
-	settingsPanel *settings.SettingsPanel           // Settings panel overlay
-	modelPicker   *picker.ModelPickerPanel
-	optionPicker  *picker.OptionPickerPanel
-	sidebar       *sidebar.Sidebar // Sidebar for AI suggestions
-	toolApproval  *toolapproval.Panel
+	viewport       viewport.PTYViewport              // Viewport for PTY output
+	statusBar      *statusbar.StatusBarView          // Status bar at bottom
+	inputHandler   *input.InputHandler               // Input routing to PTY
+	palette        *palette.CommandPalette           // Command palette overlay
+	historyPicker  *historypicker.HistoryPickerPanel // History search picker
+	resultPanel    *result.ResultPanel               // Result panel overlay
+	settingsPanel  *settings.SettingsPanel           // Settings panel overlay
+	modelPicker    *picker.ModelPickerPanel
+	optionPicker   *picker.OptionPickerPanel
+	sidebar        *sidebar.Sidebar // Sidebar for AI suggestions
+	toolApproval   *toolapproval.Panel
+	continuePrompt *continueprompt.Panel
 
 	// Command system
 	dispatcher *commands.Dispatcher
@@ -143,6 +145,7 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		optionPicker:     picker.NewOptionPickerPanel(),
 		sidebar:          sidebar.NewSidebar(),
 		toolApproval:     toolapproval.NewPanel(),
+		continuePrompt:   continueprompt.NewPanel(),
 		dispatcher:       commands.NewDispatcher(),
 		sessionApprovals: commands.NewSessionApprovals(),
 		buffer:           buf,
@@ -159,7 +162,7 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		terminalFocused:     true,
 	}
 	m.sidebar.SetActiveLLM(provider, model)
-	m.installApproverFactories()
+	m.installAgentFactories()
 	return m
 }
 
@@ -175,25 +178,32 @@ func (m *Model) chatHandler() *commands.ChatHandler {
 	return &commands.ChatHandler{}
 }
 
-// installApproverFactories wires the dispatcher's /explain and /chat handlers
-// so each invocation produces a UIApprover bound to that call's event channel
-// and the shared session-approvals store.
+// installAgentFactories wires the dispatcher's /explain and /chat handlers so
+// each invocation produces a UIApprover (tool-call approval popup) and a
+// UIContinuer ("continue the tool-call loop?" popup) bound to that call's event
+// channel, plus the shared session-approvals store.
 //
-// Handlers fall back to AutoAllowApprover when no factory is set, which is
-// what tests and headless runs rely on. Doing this once at construction time
-// (rather than at each call) avoids reaching into the dispatcher mid-flight.
-func (m *Model) installApproverFactories() {
-	factory := func(out chan<- commands.WtfStreamEvent) commands.Approver {
+// Handlers fall back to AutoAllowApprover / AutoStopContinuer when no factory
+// is set, which is what tests and headless runs rely on. Doing this once at
+// construction time (rather than at each call) avoids reaching into the
+// dispatcher mid-flight.
+func (m *Model) installAgentFactories() {
+	approverFactory := func(out chan<- commands.WtfStreamEvent) commands.Approver {
 		return commands.NewUIApprover(out, m.sessionApprovals)
+	}
+	continuerFactory := func(out chan<- commands.WtfStreamEvent) commands.Continuer {
+		return commands.NewUIContinuer(out)
 	}
 	if h, ok := m.dispatcher.GetHandler("/explain"); ok {
 		if eh, ok := h.(*commands.ExplainHandler); ok {
-			eh.ApproverFactory = factory
+			eh.ApproverFactory = approverFactory
+			eh.ContinuerFactory = continuerFactory
 		}
 	}
 	if h, ok := m.dispatcher.GetHandler("/chat"); ok {
 		if ch, ok := h.(*commands.ChatHandler); ok {
-			ch.ApproverFactory = factory
+			ch.ApproverFactory = approverFactory
+			ch.ContinuerFactory = continuerFactory
 		}
 	}
 }
@@ -314,6 +324,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case toolapproval.DecisionMsg:
 		return m.handleToolApprovalDecision(msg)
+
+	case continueprompt.DecisionMsg:
+		return m.handleContinuePromptDecision(msg)
 
 	case sidebar.ChatSubmitMsg:
 		return m.handleChatSubmit(msg)

@@ -210,6 +210,8 @@ type ReadFileToolConfig struct {
 
 Defaults: `MaxIterations=5`, `ReadFile.Enabled=true`, `MaxLines=500`, `MaxBytes=65536`.
 
+> **Update (issue #74):** `MaxIterations` is now a per-batch limit counted in **tool calls** (default raised to **100**). Reaching it no longer aborts with an error — the loop pauses and asks the user whether to continue via a modal popup ("continue?"). Choosing **Continue** grants another batch; **Stop** ends the loop gracefully, preserving the partial answer. See [issue-74-tool-request-streak.md](issue-74-tool-request-streak.md).
+
 When building the registry: only register tools whose `Enabled=true`. If the registry is empty, skip passing `Tools` to the provider (saves tokens).
 
 ### Phase 8 — Logging
