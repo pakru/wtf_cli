@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"os"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 
 const (
 	streamThinkingPlaceholder = "Thinking..."
+	streamCanceledMessage     = "Request canceled."
 	selectedTextCopiedMessage = "Selected text copied to clipboard"
 )
 
@@ -74,6 +76,8 @@ type Model struct {
 
 	// Streaming state
 	wtfStream               <-chan commands.WtfStreamEvent
+	streamCancel            context.CancelFunc
+	streamID                int
 	streamPlaceholderActive bool
 	streamStartPending      bool
 	toolCallNewTurnNeeded   bool // true after a tool call finishes; next delta starts a new assistant message
@@ -331,11 +335,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sidebar.ChatSubmitMsg:
 		return m.handleChatSubmit(msg)
 
+	case wtfStreamEventMsg:
+		if msg.streamID != m.streamID {
+			return m, nil
+		}
+		return m.handleWtfStreamEvent(msg.event)
+
 	case commands.WtfStreamEvent:
 		return m.handleWtfStreamEvent(msg)
 
 	case streamThrottleFlushMsg:
-		return m.handleStreamThrottleFlush()
+		return m.handleStreamThrottleFlush(msg)
 
 	case updateCheckMsg:
 		return m.handleUpdateCheck(msg)

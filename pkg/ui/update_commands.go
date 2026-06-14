@@ -84,6 +84,9 @@ func (m Model) handlePaletteSelect(msg palette.PaletteSelectMsg) (Model, tea.Cmd
 	}
 
 	if streamHandler, ok := handler.(commands.StreamingHandler); ok {
+		if m.hasActiveStream() {
+			return m, nil
+		}
 		isExplain := handler.Name() == "/explain"
 		if m.sidebar != nil {
 			m.sidebar.Show()
@@ -98,9 +101,9 @@ func (m Model) handlePaletteSelect(msg palette.PaletteSelectMsg) (Model, tea.Cmd
 			m.sidebar.AppendUserMessage(m.buildExplainUserMessage(ctx))
 			m.sidebar.RefreshView()
 		}
+		runCtx, streamID := m.beginStreamRun()
 		m.startStreamPlaceholder()
-		m.streamStartPending = true
-		return m, startExplainStreamCmd(ctx, streamHandler, result)
+		return m, startExplainStreamCmd(streamID, runCtx, ctx, streamHandler, result)
 	}
 
 	// Show result in panel

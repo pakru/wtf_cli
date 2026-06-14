@@ -149,6 +149,10 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.statusBar.SetMessage("")
 	}
 
+	if msg.String() == "esc" && m.hasActiveStream() {
+		return m.cancelActiveStream()
+	}
+
 	// Priority 4: Tool-approval popup. It's a blocking modal — the agent
 	// loop is paused waiting for the user's reply, so it must absorb all
 	// keys before any other overlay or PTY routing.
