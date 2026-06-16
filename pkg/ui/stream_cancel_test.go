@@ -6,6 +6,7 @@ import (
 	"wtf_cli/pkg/buffer"
 	"wtf_cli/pkg/capture"
 	"wtf_cli/pkg/commands"
+	"wtf_cli/pkg/config"
 	"wtf_cli/pkg/ui/components/testutils"
 )
 
@@ -114,6 +115,69 @@ func TestModel_EscCancelsContinuePromptWait(t *testing.T) {
 	case decision := <-req.Reply:
 		t.Fatalf("Esc should cancel the run via context, not send continuation decision: %+v", decision)
 	default:
+	}
+}
+
+func TestModel_EscLetsPaletteHandleBeforeCancelingActiveStream(t *testing.T) {
+	m, canceled := modelWithCancelableStream()
+	m.palette.Show()
+
+	updated, cmd := m.Update(testutils.TestKeyEsc)
+	if cmd == nil {
+		t.Fatal("expected palette Esc handling to emit a cancel command")
+	}
+	m = updated.(Model)
+
+	if *canceled {
+		t.Fatal("expected palette Esc handling not to cancel active stream")
+	}
+	if !m.hasActiveStream() {
+		t.Fatal("expected active stream to remain active")
+	}
+	if m.palette.IsVisible() {
+		t.Fatal("expected palette to be hidden")
+	}
+}
+
+func TestModel_EscLetsHistoryPickerHandleBeforeCancelingActiveStream(t *testing.T) {
+	m, canceled := modelWithCancelableStream()
+	m.historyPicker.Show("", []string{"echo one"})
+
+	updated, cmd := m.Update(testutils.TestKeyEsc)
+	if cmd == nil {
+		t.Fatal("expected history picker Esc handling to emit a cancel command")
+	}
+	m = updated.(Model)
+
+	if *canceled {
+		t.Fatal("expected history picker Esc handling not to cancel active stream")
+	}
+	if !m.hasActiveStream() {
+		t.Fatal("expected active stream to remain active")
+	}
+	if m.historyPicker.IsVisible() {
+		t.Fatal("expected history picker to be hidden")
+	}
+}
+
+func TestModel_EscLetsSettingsHandleBeforeCancelingActiveStream(t *testing.T) {
+	m, canceled := modelWithCancelableStream()
+	m.settingsPanel.Show(config.Default(), "/tmp/test_config.json")
+
+	updated, cmd := m.Update(testutils.TestKeyEsc)
+	if cmd == nil {
+		t.Fatal("expected settings Esc handling to emit a close command")
+	}
+	m = updated.(Model)
+
+	if *canceled {
+		t.Fatal("expected settings Esc handling not to cancel active stream")
+	}
+	if !m.hasActiveStream() {
+		t.Fatal("expected active stream to remain active")
+	}
+	if m.settingsPanel.IsVisible() {
+		t.Fatal("expected settings panel to be hidden")
 	}
 }
 
