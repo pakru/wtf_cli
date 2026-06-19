@@ -232,7 +232,7 @@ func RunAgentLoop(
 			return
 		}
 
-		assistantText, drainErr := drainStreamText(stream, out)
+		assistantText, drainErr := drainStreamText(ctx, stream, out)
 		toolCalls := stream.ToolCalls()
 		stopReason := stream.StopReason()
 		stream.Close()
@@ -303,15 +303,22 @@ func RunAgentLoop(
 // drainStreamText forwards every non-empty text delta to out and returns the
 // concatenated assistant text and any stream error. Tool-call deltas are
 // already absorbed by the provider's stream wrapper; we only deal with text.
-func drainStreamText(stream ai.ChatStream, out chan<- WtfStreamEvent) (string, error) {
+func drainStreamText(ctx context.Context, stream ai.ChatStream, out chan<- WtfStreamEvent) (string, error) {
 	var sb strings.Builder
 	for stream.Next() {
+		if err := ctx.Err(); err != nil {
+			return sb.String(), err
+		}
 		delta := stream.Content()
 		if delta == "" {
 			continue
 		}
 		sb.WriteString(delta)
-		out <- WtfStreamEvent{Delta: delta}
+		select {
+		case out <- WtfStreamEvent{Delta: delta}:
+		case <-ctx.Done():
+			return sb.String(), ctx.Err()
+		}
 	}
 	return sb.String(), stream.Err()
 }

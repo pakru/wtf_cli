@@ -44,6 +44,19 @@ func (h *ChatHandler) StartChatStream(
 	ctx *Context,
 	messages []ai.ChatMessage,
 ) (<-chan WtfStreamEvent, error) {
+	return h.StartChatStreamWithContext(context.Background(), ctx, messages)
+}
+
+// StartChatStreamWithContext is like StartChatStream, but the caller owns the
+// parent context so UI actions can cancel the active provider request or agent loop.
+func (h *ChatHandler) StartChatStreamWithContext(
+	runCtx context.Context,
+	ctx *Context,
+	messages []ai.ChatMessage,
+) (<-chan WtfStreamEvent, error) {
+	if runCtx == nil {
+		runCtx = context.Background()
+	}
 	// Cap history to last N messages
 	capped := messages
 	if len(messages) > MaxChatHistoryMessages {
@@ -92,7 +105,7 @@ func (h *ChatHandler) StartChatStream(
 	ch := make(chan WtfStreamEvent, 16)
 	approver := h.resolveApprover(ch)
 	continuer := h.resolveContinuer(ch)
-	loopCtx, cancel := context.WithCancel(context.Background())
+	loopCtx, cancel := context.WithCancel(runCtx)
 	go func() {
 		defer cancel()
 		RunAgentLoop(loopCtx, prep.provider, req, AgentLoopConfig{

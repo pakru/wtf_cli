@@ -12,11 +12,10 @@ import "context"
 //     immediately blocks on Reply; an unbuffered channel could deadlock.
 //   - req.Reply is allocated by the continuer with capacity 1, so the UI's
 //     single send never blocks.
-//   - The continuer honors ctx.Done() while waiting. Today nothing cancels the
-//     loop context from the UI, so in practice the user answers via the modal;
-//     the ctx.Done() branch is defensive. The continue feature does not depend
-//     on ctx cancellation — a "stop" decision is a normal reply that makes the
-//     loop emit a graceful Done.
+//   - The continuer honors ctx.Done() while waiting, so Esc cancellation can
+//     abort the active loop even when the prompt is visible. The continue feature
+//     does not depend on ctx cancellation — a "stop" decision is a normal reply
+//     that makes the loop emit a graceful Done.
 type UIContinuer struct {
 	out chan<- WtfStreamEvent
 }

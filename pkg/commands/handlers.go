@@ -110,6 +110,15 @@ type StreamingHandler interface {
 // (e.g. read_file) between turns; tool-call lifecycle events are emitted on
 // the returned channel for the UI to surface.
 func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error) {
+	return h.StartStreamWithContext(context.Background(), ctx)
+}
+
+// StartStreamWithContext is like StartStream, but the caller owns the parent
+// context so UI actions can cancel the active provider request or agent loop.
+func (h *ExplainHandler) StartStreamWithContext(runCtx context.Context, ctx *Context) (<-chan WtfStreamEvent, error) {
+	if runCtx == nil {
+		runCtx = context.Background()
+	}
 	lines := ctx.GetLastNLines(ai.DefaultContextLines)
 	if len(lines) == 0 {
 		slog.Info("wtf_stream_skip", "reason", "no_output")
@@ -172,7 +181,7 @@ func (h *ExplainHandler) StartStream(ctx *Context) (<-chan WtfStreamEvent, error
 	ch := make(chan WtfStreamEvent, 16)
 	approver := h.resolveApprover(ch)
 	continuer := h.resolveContinuer(ch)
-	loopCtx, cancel := context.WithCancel(context.Background())
+	loopCtx, cancel := context.WithCancel(runCtx)
 	go func() {
 		defer cancel()
 		RunAgentLoop(loopCtx, prep.provider, req, AgentLoopConfig{
