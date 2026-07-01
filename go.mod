@@ -4,20 +4,19 @@ go 1.26.3
 
 require (
 	charm.land/bubbles/v2 v2.1.0
-	charm.land/bubbletea/v2 v2.0.6
-	charm.land/lipgloss/v2 v2.0.3
-	github.com/aymanbagabas/go-osc52/v2 v2.0.1
+	charm.land/bubbletea/v2 v2.0.7
+	charm.land/lipgloss/v2 v2.0.4
 	github.com/charmbracelet/x/ansi v0.11.7
-	github.com/charmbracelet/x/exp/golden v0.0.0-20260519012233-798e623c8447
+	github.com/charmbracelet/x/exp/golden v0.0.0-20260629091435-9c70f75e26a4
 	github.com/creack/pty v1.1.24
-	github.com/github/copilot-sdk/go v0.3.0
+	github.com/github/copilot-sdk/go v1.0.4
 	github.com/go-git/go-git/v5 v5.19.1
-	github.com/mattn/go-runewidth v0.0.23
-	github.com/openai/openai-go/v3 v3.37.0
+	github.com/mattn/go-runewidth v0.0.24
+	github.com/openai/openai-go/v3 v3.41.0
 	github.com/vito/midterm v0.2.4
-	golang.org/x/sys v0.45.0
-	golang.org/x/term v0.43.0
-	google.golang.org/genai v1.58.0
+	golang.org/x/sys v0.46.0
+	golang.org/x/term v0.44.0
+	google.golang.org/genai v1.62.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
@@ -29,16 +28,18 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
+	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/aymanbagabas/go-udiff v0.4.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20260511121909-c840852527f3 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20260525132238-948f4557a654 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/danielgatis/go-ansicode v1.0.10 // indirect
 	github.com/danielgatis/go-iterator v0.0.1 // indirect
