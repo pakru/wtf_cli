@@ -92,6 +92,19 @@ func (t *echoTool) Execute(_ context.Context, args json.RawMessage) (tools.Resul
 	return tools.Result{Content: "echoed: " + string(args)}, nil
 }
 
+// softFailTool always returns a recoverable Result{IsError: true} — the
+// contract used by e.g. read_file/list_directory for bad arguments, missing
+// paths, etc. It never returns a Go error.
+type softFailTool struct{}
+
+func (softFailTool) Name() string { return "soft_fail" }
+func (softFailTool) Definition() ai.ToolDefinition {
+	return ai.ToolDefinition{Name: "soft_fail", Description: "always soft-fails", JSONSchema: json.RawMessage(`{}`)}
+}
+func (softFailTool) Execute(_ context.Context, _ json.RawMessage) (tools.Result, error) {
+	return tools.Result{Content: "path rejected: outside working directory", IsError: true}, nil
+}
+
 // drain pulls every event from the channel into a slice.
 func drain(t *testing.T, ch <-chan WtfStreamEvent, timeout time.Duration) []WtfStreamEvent {
 	t.Helper()
@@ -332,6 +345,52 @@ func TestRunAgentLoop_UnknownToolSoftFails(t *testing.T) {
 	last := provider.receivedReqs[1].Messages[len(provider.receivedReqs[1].Messages)-1]
 	if last.Role != "tool" || !containsString(last.Content, "Unknown tool") {
 		t.Fatalf("expected 'Unknown tool' soft-error tool message, got %+v", last)
+	}
+}
+
+func TestRunAgentLoop_ToolSoftErrorPopulatesErrorMessage(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(softFailTool{})
+	provider := &fakeProvider{
+		caps: ai.ProviderCapabilities{Tools: true},
+		streams: []*fakeStream{
+			{
+				toolCalls: []ai.ToolCall{
+					{ID: "call_1", Name: "soft_fail", Arguments: json.RawMessage(`{}`)},
+				},
+				stopReason: "tool_calls",
+			},
+			{textChunks: []string{"done"}, stopReason: "stop"},
+		},
+	}
+
+	ch := make(chan WtfStreamEvent, 16)
+	go RunAgentLoop(context.Background(), provider, ai.ChatRequest{
+		Messages: []ai.Message{{Role: "user", Content: "hi"}},
+	}, AgentLoopConfig{
+		Registry:      registry,
+		Approver:      AutoAllowApprover{},
+		MaxIterations: 5,
+	}, ch)
+	events := drain(t, ch, 2*time.Second)
+
+	var finished *ToolCallInfo
+	for _, e := range events {
+		if e.ToolCallFinished != nil {
+			finished = e.ToolCallFinished
+		}
+	}
+	if finished == nil {
+		t.Fatal("expected a ToolCallFinished event")
+	}
+	if finished.Denied {
+		t.Fatal("soft error is not a denial")
+	}
+	if finished.ErrorMessage == "" {
+		t.Fatalf("expected ErrorMessage to be populated for a soft-erroring tool, got empty (Result=%q)", finished.Result)
+	}
+	if !containsString(finished.ErrorMessage, "path rejected") {
+		t.Fatalf("ErrorMessage = %q, want it to carry the tool's error content", finished.ErrorMessage)
 	}
 }
 

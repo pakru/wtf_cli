@@ -162,7 +162,7 @@ func AppendToolInstructions(prompt string, tools []ToolDefinition) string {
 	const instructions = "You have access to tools that can gather more information than what is shown in the terminal output. " +
 		"Prefer the terminal output already provided; only call tools when you need content not visible above. " +
 		"When a tool is needed, call it directly — do not ask the user for permission, the harness will. " +
-		"Read narrow ranges (a few hundred lines max) per call."
+		"Keep each call narrow: a few hundred lines of a file, or one directory level, per call."
 	return prompt + " " + instructions
 }
 

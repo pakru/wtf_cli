@@ -36,7 +36,8 @@ type AgentConfig struct {
 
 // AgentTools holds per-tool configuration for the agent loop.
 type AgentTools struct {
-	ReadFile ReadFileToolConfig `json:"read_file"`
+	ReadFile      ReadFileToolConfig      `json:"read_file"`
+	ListDirectory ListDirectoryToolConfig `json:"list_directory"`
 }
 
 // ReadFileToolConfig configures the read_file tool.
@@ -44,6 +45,13 @@ type ReadFileToolConfig struct {
 	Enabled  bool `json:"enabled"`
 	MaxLines int  `json:"max_lines"`
 	MaxBytes int  `json:"max_bytes"`
+}
+
+// ListDirectoryToolConfig configures the list_directory tool.
+type ListDirectoryToolConfig struct {
+	Enabled    bool `json:"enabled"`
+	MaxEntries int  `json:"max_entries"`
+	MaxBytes   int  `json:"max_bytes"`
 }
 
 // ProvidersConfig holds configuration for all LLM providers.
@@ -120,6 +128,8 @@ const (
 	defaultAgentMaxIterations       = 100
 	defaultReadFileMaxLines         = 500
 	defaultReadFileMaxBytes         = 65536
+	defaultListDirectoryMaxEntries  = 500
+	defaultListDirectoryMaxBytes    = 65536
 )
 
 // Default returns a configuration with default values
@@ -152,6 +162,11 @@ func Default() Config {
 					Enabled:  true,
 					MaxLines: defaultReadFileMaxLines,
 					MaxBytes: defaultReadFileMaxBytes,
+				},
+				ListDirectory: ListDirectoryToolConfig{
+					Enabled:    true,
+					MaxEntries: defaultListDirectoryMaxEntries,
+					MaxBytes:   defaultListDirectoryMaxBytes,
 				},
 			},
 		},
@@ -350,6 +365,24 @@ func (c Config) validateGoogle() error {
 	return nil
 }
 
+// agentToolsPresence mirrors AgentTools, tracking which fields were present
+// in the raw config JSON (as opposed to defaulted) so each tool's config can
+// be defaulted independently in applyAgentToolsDefaults. Named (rather than
+// inlined at each use site) so the configPresence.Agent.Tools field and the
+// applyAgentDefaults parameter type can't drift out of sync.
+type agentToolsPresence struct {
+	ReadFile *struct {
+		Enabled  *bool `json:"enabled"`
+		MaxLines *int  `json:"max_lines"`
+		MaxBytes *int  `json:"max_bytes"`
+	} `json:"read_file"`
+	ListDirectory *struct {
+		Enabled    *bool `json:"enabled"`
+		MaxEntries *int  `json:"max_entries"`
+		MaxBytes   *int  `json:"max_bytes"`
+	} `json:"list_directory"`
+}
+
 type configPresence struct {
 	LLMProvider *string `json:"llm_provider"`
 	OpenRouter  *struct {
@@ -372,14 +405,8 @@ type configPresence struct {
 		} `json:"google"`
 	} `json:"providers"`
 	Agent *struct {
-		MaxIterations *int `json:"max_iterations"`
-		Tools         *struct {
-			ReadFile *struct {
-				Enabled  *bool `json:"enabled"`
-				MaxLines *int  `json:"max_lines"`
-				MaxBytes *int  `json:"max_bytes"`
-			} `json:"read_file"`
-		} `json:"tools"`
+		MaxIterations *int                `json:"max_iterations"`
+		Tools         *agentToolsPresence `json:"tools"`
 	} `json:"agent"`
 	BufferSize    *int `json:"buffer_size"`
 	ContextWindow *int `json:"context_window"`
@@ -504,14 +531,8 @@ func applyDefaults(cfg Config, data []byte) Config {
 }
 
 func applyAgentDefaults(cfg AgentConfig, presence *struct {
-	MaxIterations *int `json:"max_iterations"`
-	Tools         *struct {
-		ReadFile *struct {
-			Enabled  *bool `json:"enabled"`
-			MaxLines *int  `json:"max_lines"`
-			MaxBytes *int  `json:"max_bytes"`
-		} `json:"read_file"`
-	} `json:"tools"`
+	MaxIterations *int                `json:"max_iterations"`
+	Tools         *agentToolsPresence `json:"tools"`
 }, defaults AgentConfig) AgentConfig {
 	if presence == nil {
 		return defaults
@@ -519,20 +540,50 @@ func applyAgentDefaults(cfg AgentConfig, presence *struct {
 	if presence.MaxIterations == nil || cfg.MaxIterations <= 0 {
 		cfg.MaxIterations = defaults.MaxIterations
 	}
-	if presence.Tools == nil || presence.Tools.ReadFile == nil {
-		cfg.Tools.ReadFile = defaults.Tools.ReadFile
-		return cfg
+	cfg.Tools = applyAgentToolsDefaults(cfg.Tools, presence.Tools, defaults.Tools)
+	return cfg
+}
+
+// applyAgentToolsDefaults defaults each tool independently: a config that
+// specifies only one tool must not zero out the other's fields. presence nil
+// (no "tools" key at all) defaults both tools wholesale; otherwise each
+// tool falls back to its whole default struct when absent, or per-field
+// when partially specified.
+func applyAgentToolsDefaults(cfg AgentTools, presence *agentToolsPresence, defaults AgentTools) AgentTools {
+	if presence == nil {
+		return defaults
 	}
-	rf := presence.Tools.ReadFile
-	if rf.Enabled == nil {
-		cfg.Tools.ReadFile.Enabled = defaults.Tools.ReadFile.Enabled
+
+	if presence.ReadFile == nil {
+		cfg.ReadFile = defaults.ReadFile
+	} else {
+		rf := presence.ReadFile
+		if rf.Enabled == nil {
+			cfg.ReadFile.Enabled = defaults.ReadFile.Enabled
+		}
+		if rf.MaxLines == nil || cfg.ReadFile.MaxLines <= 0 {
+			cfg.ReadFile.MaxLines = defaults.ReadFile.MaxLines
+		}
+		if rf.MaxBytes == nil || cfg.ReadFile.MaxBytes <= 0 {
+			cfg.ReadFile.MaxBytes = defaults.ReadFile.MaxBytes
+		}
 	}
-	if rf.MaxLines == nil || cfg.Tools.ReadFile.MaxLines <= 0 {
-		cfg.Tools.ReadFile.MaxLines = defaults.Tools.ReadFile.MaxLines
+
+	if presence.ListDirectory == nil {
+		cfg.ListDirectory = defaults.ListDirectory
+	} else {
+		ld := presence.ListDirectory
+		if ld.Enabled == nil {
+			cfg.ListDirectory.Enabled = defaults.ListDirectory.Enabled
+		}
+		if ld.MaxEntries == nil || cfg.ListDirectory.MaxEntries <= 0 {
+			cfg.ListDirectory.MaxEntries = defaults.ListDirectory.MaxEntries
+		}
+		if ld.MaxBytes == nil || cfg.ListDirectory.MaxBytes <= 0 {
+			cfg.ListDirectory.MaxBytes = defaults.ListDirectory.MaxBytes
+		}
 	}
-	if rf.MaxBytes == nil || cfg.Tools.ReadFile.MaxBytes <= 0 {
-		cfg.Tools.ReadFile.MaxBytes = defaults.Tools.ReadFile.MaxBytes
-	}
+
 	return cfg
 }
 

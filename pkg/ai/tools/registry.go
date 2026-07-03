@@ -1,5 +1,6 @@
 // Package tools provides the agentic tool registry and tool implementations
-// (read_file, etc.) callable by the LLM during a /explain or /chat run.
+// (read_file, list_directory, etc.) callable by the LLM during a /explain or
+// /chat run.
 package tools
 
 import (

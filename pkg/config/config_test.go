@@ -41,6 +41,151 @@ func TestDefault(t *testing.T) {
 	}
 }
 
+func TestDefault_AgentTools(t *testing.T) {
+	cfg := Default()
+
+	if !cfg.Agent.Tools.ReadFile.Enabled {
+		t.Error("Expected read_file enabled by default")
+	}
+	if cfg.Agent.Tools.ReadFile.MaxLines != defaultReadFileMaxLines {
+		t.Errorf("Expected read_file max_lines %d, got %d", defaultReadFileMaxLines, cfg.Agent.Tools.ReadFile.MaxLines)
+	}
+	if cfg.Agent.Tools.ReadFile.MaxBytes != defaultReadFileMaxBytes {
+		t.Errorf("Expected read_file max_bytes %d, got %d", defaultReadFileMaxBytes, cfg.Agent.Tools.ReadFile.MaxBytes)
+	}
+
+	if !cfg.Agent.Tools.ListDirectory.Enabled {
+		t.Error("Expected list_directory enabled by default")
+	}
+	if cfg.Agent.Tools.ListDirectory.MaxEntries != defaultListDirectoryMaxEntries {
+		t.Errorf("Expected list_directory max_entries %d, got %d", defaultListDirectoryMaxEntries, cfg.Agent.Tools.ListDirectory.MaxEntries)
+	}
+	if cfg.Agent.Tools.ListDirectory.MaxBytes != defaultListDirectoryMaxBytes {
+		t.Errorf("Expected list_directory max_bytes %d, got %d", defaultListDirectoryMaxBytes, cfg.Agent.Tools.ListDirectory.MaxBytes)
+	}
+}
+
+// Each of these covers one cell of the agent.tools presence matrix: whether
+// "agent" or "tools" is present at all, and whether each tool block is
+// present, partially present, or absent. applyAgentToolsDefaults must default
+// each tool independently — a config specifying only one tool must not zero
+// out the other's fields.
+func TestLoad_AgentToolsPresenceMatrix(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want func(t *testing.T, cfg Config)
+	}{
+		{
+			name: "agent key absent entirely",
+			raw:  `{"buffer_size": 2000, "context_window": 1000}`,
+			want: func(t *testing.T, cfg Config) {
+				if cfg.Agent.Tools.ReadFile.MaxLines != defaultReadFileMaxLines {
+					t.Errorf("read_file.max_lines = %d, want default %d", cfg.Agent.Tools.ReadFile.MaxLines, defaultReadFileMaxLines)
+				}
+				if cfg.Agent.Tools.ListDirectory.MaxEntries != defaultListDirectoryMaxEntries {
+					t.Errorf("list_directory.max_entries = %d, want default %d", cfg.Agent.Tools.ListDirectory.MaxEntries, defaultListDirectoryMaxEntries)
+				}
+			},
+		},
+		{
+			name: "tools key absent under agent",
+			raw:  `{"agent": {"max_iterations": 3}}`,
+			want: func(t *testing.T, cfg Config) {
+				if cfg.Agent.MaxIterations != 3 {
+					t.Errorf("max_iterations = %d, want 3", cfg.Agent.MaxIterations)
+				}
+				if !cfg.Agent.Tools.ReadFile.Enabled || cfg.Agent.Tools.ReadFile.MaxLines != defaultReadFileMaxLines {
+					t.Errorf("expected read_file defaults, got %+v", cfg.Agent.Tools.ReadFile)
+				}
+				if !cfg.Agent.Tools.ListDirectory.Enabled || cfg.Agent.Tools.ListDirectory.MaxEntries != defaultListDirectoryMaxEntries {
+					t.Errorf("expected list_directory defaults, got %+v", cfg.Agent.Tools.ListDirectory)
+				}
+			},
+		},
+		{
+			name: "only read_file present",
+			raw:  `{"agent": {"tools": {"read_file": {"enabled": true, "max_lines": 42, "max_bytes": 4096}}}}`,
+			want: func(t *testing.T, cfg Config) {
+				if cfg.Agent.Tools.ReadFile.MaxLines != 42 || cfg.Agent.Tools.ReadFile.MaxBytes != 4096 {
+					t.Errorf("read_file config not applied: %+v", cfg.Agent.Tools.ReadFile)
+				}
+				if !cfg.Agent.Tools.ListDirectory.Enabled || cfg.Agent.Tools.ListDirectory.MaxEntries != defaultListDirectoryMaxEntries || cfg.Agent.Tools.ListDirectory.MaxBytes != defaultListDirectoryMaxBytes {
+					t.Errorf("expected list_directory to fall back to full defaults, got %+v", cfg.Agent.Tools.ListDirectory)
+				}
+			},
+		},
+		{
+			name: "only list_directory present",
+			raw:  `{"agent": {"tools": {"list_directory": {"enabled": true, "max_entries": 10, "max_bytes": 2048}}}}`,
+			want: func(t *testing.T, cfg Config) {
+				if cfg.Agent.Tools.ListDirectory.MaxEntries != 10 || cfg.Agent.Tools.ListDirectory.MaxBytes != 2048 {
+					t.Errorf("list_directory config not applied: %+v", cfg.Agent.Tools.ListDirectory)
+				}
+				if !cfg.Agent.Tools.ReadFile.Enabled || cfg.Agent.Tools.ReadFile.MaxLines != defaultReadFileMaxLines || cfg.Agent.Tools.ReadFile.MaxBytes != defaultReadFileMaxBytes {
+					t.Errorf("expected read_file to fall back to full defaults, got %+v", cfg.Agent.Tools.ReadFile)
+				}
+			},
+		},
+		{
+			name: "list_directory partial fields fill remaining from defaults",
+			raw:  `{"agent": {"tools": {"list_directory": {"max_entries": 25}}}}`,
+			want: func(t *testing.T, cfg Config) {
+				if cfg.Agent.Tools.ListDirectory.MaxEntries != 25 {
+					t.Errorf("max_entries = %d, want 25", cfg.Agent.Tools.ListDirectory.MaxEntries)
+				}
+				if cfg.Agent.Tools.ListDirectory.MaxBytes != defaultListDirectoryMaxBytes {
+					t.Errorf("max_bytes = %d, want default %d", cfg.Agent.Tools.ListDirectory.MaxBytes, defaultListDirectoryMaxBytes)
+				}
+				if !cfg.Agent.Tools.ListDirectory.Enabled {
+					t.Error("expected enabled to default to true when omitted")
+				}
+			},
+		},
+		{
+			name: "list_directory explicitly disabled",
+			raw:  `{"agent": {"tools": {"list_directory": {"enabled": false}}}}`,
+			want: func(t *testing.T, cfg Config) {
+				if cfg.Agent.Tools.ListDirectory.Enabled {
+					t.Error("expected list_directory to remain disabled")
+				}
+				// Caps still default even when disabled.
+				if cfg.Agent.Tools.ListDirectory.MaxEntries != defaultListDirectoryMaxEntries {
+					t.Errorf("max_entries = %d, want default %d", cfg.Agent.Tools.ListDirectory.MaxEntries, defaultListDirectoryMaxEntries)
+				}
+			},
+		},
+		{
+			name: "list_directory non-positive caps replaced by defaults",
+			raw:  `{"agent": {"tools": {"list_directory": {"max_entries": 0, "max_bytes": -5}}}}`,
+			want: func(t *testing.T, cfg Config) {
+				if cfg.Agent.Tools.ListDirectory.MaxEntries != defaultListDirectoryMaxEntries {
+					t.Errorf("max_entries = %d, want default %d", cfg.Agent.Tools.ListDirectory.MaxEntries, defaultListDirectoryMaxEntries)
+				}
+				if cfg.Agent.Tools.ListDirectory.MaxBytes != defaultListDirectoryMaxBytes {
+					t.Errorf("max_bytes = %d, want default %d", cfg.Agent.Tools.ListDirectory.MaxBytes, defaultListDirectoryMaxBytes)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "config.json")
+			if err := os.WriteFile(configPath, []byte(tt.raw), 0600); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
+
+			cfg, err := Load(configPath)
+			if err != nil {
+				t.Fatalf("Load() failed: %v", err)
+			}
+			tt.want(t, cfg)
+		})
+	}
+}
+
 func TestLoad_CreateDefault(t *testing.T) {
 	// Use temp directory
 	tmpDir := t.TempDir()
