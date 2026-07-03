@@ -26,8 +26,10 @@ type Config struct {
 
 // AgentConfig controls the agentic tool-execution loop used by /explain and /chat.
 type AgentConfig struct {
-	// MaxIterations bounds the number of provider round-trips per invocation.
-	// Denials count as iterations.
+	// MaxIterations is the number of tool calls the agent may run before the
+	// loop pauses and asks the user whether to continue; choosing "continue"
+	// grants another batch. Tool calls batched into a single turn all count, so
+	// e.g. a turn returning 3 read_file calls advances the count by 3.
 	MaxIterations int        `json:"max_iterations"`
 	Tools         AgentTools `json:"tools"`
 }
@@ -123,7 +125,7 @@ type UpdateCheckConfig struct {
 
 const (
 	defaultUpdateCheckIntervalHours = 1
-	defaultAgentMaxIterations       = 5
+	defaultAgentMaxIterations       = 100
 	defaultReadFileMaxLines         = 500
 	defaultReadFileMaxBytes         = 65536
 	defaultListDirectoryMaxEntries  = 500

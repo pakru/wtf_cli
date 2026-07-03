@@ -12,6 +12,7 @@ import (
 	"wtf_cli/pkg/ai"
 
 	copilot "github.com/github/copilot-sdk/go"
+	"github.com/github/copilot-sdk/go/rpc"
 )
 
 const (
@@ -41,7 +42,7 @@ type copilotSession interface {
 	SendAndWait(context.Context, copilot.MessageOptions) (*copilot.SessionEvent, error)
 	On(handler copilot.SessionEventHandler) func()
 	Abort(context.Context) error
-	Destroy() error
+	Disconnect() error
 }
 
 type sdkCopilotClient struct {
@@ -88,8 +89,8 @@ func (s *sdkCopilotSession) Abort(ctx context.Context) error {
 	return s.session.Abort(ctx)
 }
 
-func (s *sdkCopilotSession) Destroy() error {
-	return s.session.Destroy()
+func (s *sdkCopilotSession) Disconnect() error {
+	return s.session.Disconnect()
 }
 
 var newCopilotClient = func() copilotClient {
@@ -170,7 +171,7 @@ func (p *CopilotProvider) CreateChatCompletion(ctx context.Context, req ai.ChatR
 		return ai.ChatResponse{}, fmt.Errorf("copilot session create: %w", err)
 	}
 	slog.Debug("copilot_session_create_done", "model", model)
-	defer session.Destroy()
+	defer session.Disconnect()
 
 	sendCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
@@ -301,20 +302,18 @@ func ensureCopilotAuthenticated(ctx context.Context, client copilotClient) error
 func newCopilotSessionConfig(model string, streaming bool, systemMsg string) *copilot.SessionConfig {
 	return &copilot.SessionConfig{
 		Model:               model,
-		Streaming:           streaming,
+		Streaming:           copilot.Bool(streaming),
 		SystemMessage:       copilotSystemMessage(systemMsg),
 		OnPermissionRequest: denyCopilotPermission,
 	}
 }
 
-func denyCopilotPermission(request copilot.PermissionRequest, invocation copilot.PermissionInvocation) (copilot.PermissionRequestResult, error) {
+func denyCopilotPermission(request copilot.PermissionRequest, invocation copilot.PermissionInvocation) (rpc.PermissionDecision, error) {
 	slog.Debug("copilot_permission_denied",
-		"kind", request.Kind,
+		"kind", request.Kind(),
 		"session_id", invocation.SessionID,
 	)
-	return copilot.PermissionRequestResult{
-		Kind: copilot.PermissionRequestResultKindDeniedCouldNotRequestFromUser,
-	}, nil
+	return &rpc.PermissionDecisionDeniedNoApprovalRuleAndCouldNotRequestFromUser{}, nil
 }
 
 func copilotSystemMessage(content string) *copilot.SystemMessageConfig {
@@ -407,7 +406,7 @@ func newCopilotStream(ctx context.Context, client copilotClient, session copilot
 		events: events,
 		cleanup: func() {
 			if session != nil {
-				_ = session.Destroy()
+				_ = session.Disconnect()
 			}
 			stopCopilotClient(client)
 		},
@@ -459,7 +458,7 @@ func (s *copilotStream) sessionSend(prompt string) (string, error) {
 
 func (s *copilotStream) handleEvent(event copilot.SessionEvent) {
 	s.eventCount++
-	switch event.Type {
+	switch event.Type() {
 	case copilot.SessionEventTypeAssistantMessageDelta:
 		if data, ok := event.Data.(*copilot.AssistantMessageDeltaData); ok && data.DeltaContent != "" {
 			s.sawDelta = true

@@ -16,6 +16,7 @@ import (
 	"wtf_cli/pkg/config"
 
 	copilot "github.com/github/copilot-sdk/go"
+	"github.com/github/copilot-sdk/go/rpc"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -590,7 +591,7 @@ func TestCopilotProvider_SessionConfigSetsPermissionHandler(t *testing.T) {
 	if cfg.Model != "claude-haiku-4.5" {
 		t.Fatalf("expected model to be set, got %q", cfg.Model)
 	}
-	if !cfg.Streaming {
+	if cfg.Streaming == nil || !*cfg.Streaming {
 		t.Fatal("expected streaming to be enabled")
 	}
 	if cfg.SystemMessage == nil || cfg.SystemMessage.Content != "system rules" {
@@ -601,16 +602,14 @@ func TestCopilotProvider_SessionConfigSetsPermissionHandler(t *testing.T) {
 	}
 
 	result, err := cfg.OnPermissionRequest(
-		copilot.PermissionRequest{
-			Kind: copilot.PermissionRequestKindShell,
-		},
+		copilot.PermissionRequestShell{},
 		copilot.PermissionInvocation{SessionID: "test-session"},
 	)
 	if err != nil {
 		t.Fatalf("permission handler error: %v", err)
 	}
-	if result.Kind != copilot.PermissionRequestResultKindDeniedCouldNotRequestFromUser {
-		t.Fatalf("expected deny result, got %q", result.Kind)
+	if result.Kind() != rpc.PermissionDecisionKindDeniedNoApprovalRuleAndCouldNotRequestFromUser {
+		t.Fatalf("expected deny result, got %q", result.Kind())
 	}
 }
 

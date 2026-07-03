@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"wtf_cli/pkg/ai"
 	"wtf_cli/pkg/commands"
+	"wtf_cli/pkg/ui/components/continueprompt"
 	"wtf_cli/pkg/ui/components/sidebar"
 	"wtf_cli/pkg/ui/components/toolapproval"
 
@@ -19,7 +21,9 @@ import (
 // - Stream listener is re-armed after every stream event, including tool-approval events.
 // - Tool approval modal remains topmost overlay.
 
-type streamThrottleFlushMsg struct{}
+type streamThrottleFlushMsg struct {
+	streamID int
+}
 
 type streamStartOrigin int
 
@@ -29,13 +33,26 @@ const (
 )
 
 type streamStartResultMsg struct {
-	origin streamStartOrigin
-	stream <-chan commands.WtfStreamEvent
-	err    error
-	result *commands.Result
+	streamID int
+	origin   streamStartOrigin
+	stream   <-chan commands.WtfStreamEvent
+	err      error
+	result   *commands.Result
+}
+
+type wtfStreamEventMsg struct {
+	streamID int
+	event    commands.WtfStreamEvent
+}
+
+type contextStreamingHandler interface {
+	StartStreamWithContext(context.Context, *commands.Context) (<-chan commands.WtfStreamEvent, error)
 }
 
 func (m Model) handleStreamStartResult(msg streamStartResultMsg) (Model, tea.Cmd) {
+	if msg.streamID != m.streamID {
+		return m, nil
+	}
 	m.streamStartPending = false
 	if msg.err != nil {
 		slog.Error("wtf_stream_start_error", "error", msg.err)
@@ -47,8 +64,7 @@ func (m Model) handleStreamStartResult(msg streamStartResultMsg) (Model, tea.Cmd
 		} else {
 			m.resultPanel.Show("Error", fmt.Sprintf("Error: %v", msg.err))
 		}
-		m.wtfStream = nil
-		m.streamPlaceholderActive = false
+		m.endStreamRun()
 		return m, nil
 	}
 
@@ -63,8 +79,7 @@ func (m Model) handleStreamStartResult(msg streamStartResultMsg) (Model, tea.Cmd
 		} else if msg.origin == streamOriginExplain && msg.result != nil {
 			m.resultPanel.Show(msg.result.Title, msg.result.Content)
 		}
-		m.wtfStream = nil
-		m.streamPlaceholderActive = false
+		m.endStreamRun()
 		return m, nil
 	}
 
@@ -109,13 +124,39 @@ func (m Model) handleToolApprovalDecision(msg toolapproval.DecisionMsg) (Model, 
 	return m, nil
 }
 
+func (m Model) handleContinuePromptDecision(msg continueprompt.DecisionMsg) (Model, tea.Cmd) {
+	// User answered the "continue?" popup. Dispatch the decision on the agent
+	// loop's Reply channel (capacity 1, so the send never blocks). Hiding the
+	// panel before sending keeps the View consistent if events arrive
+	// immediately. A "stop" decision makes the loop emit a graceful Done.
+	if msg.Request == nil || msg.Request.Reply == nil {
+		if m.continuePrompt != nil {
+			m.continuePrompt.Hide()
+		}
+		return m, nil
+	}
+	slog.Info("continue_prompt_user_decision",
+		"continue", msg.Continue,
+		"tool_calls", msg.Request.ToolCalls,
+	)
+	if m.continuePrompt != nil {
+		m.continuePrompt.Hide()
+	}
+	select {
+	case msg.Request.Reply <- commands.ContinuationDecision{Continue: msg.Continue}:
+	default:
+		slog.Warn("continue_prompt_reply_dropped")
+	}
+	return m, nil
+}
+
 func (m Model) handleChatSubmit(msg sidebar.ChatSubmitMsg) (Model, tea.Cmd) {
 	if m.sidebar == nil || msg.Content == "" {
 		return m, nil
 	}
 
 	// Guard: refuse new stream while one is active (prevents deadlock)
-	if m.wtfStream != nil || m.streamStartPending {
+	if m.hasActiveStream() {
 		return m, nil
 	}
 
@@ -126,10 +167,9 @@ func (m Model) handleChatSubmit(msg sidebar.ChatSubmitMsg) (Model, tea.Cmd) {
 	// Build context and start chat stream
 	ctx := commands.NewContext(m.buffer, m.session, m.currentDir)
 	history := append([]ai.ChatMessage(nil), m.sidebar.GetMessages()...)
-	m.streamStartPending = true
-	m.streamPlaceholderActive = false
+	runCtx, streamID := m.beginStreamRun()
 	m.startStreamPlaceholder()
-	return m, startChatStreamCmd(ctx, m.chatHandler(), history)
+	return m, startChatStreamCmd(streamID, runCtx, ctx, m.chatHandler(), history)
 }
 
 func (m Model) handleWtfStreamEvent(msg commands.WtfStreamEvent) (Model, tea.Cmd) {
@@ -145,9 +185,10 @@ func (m Model) handleWtfStreamEvent(msg commands.WtfStreamEvent) (Model, tea.Cmd
 		if m.toolApproval != nil {
 			m.toolApproval.Hide()
 		}
-		m.wtfStream = nil
-		m.streamThrottlePending = false
-		m.streamPlaceholderActive = false
+		if m.continuePrompt != nil {
+			m.continuePrompt.Hide()
+		}
+		m.endStreamRun()
 		return m, nil
 	}
 
@@ -161,6 +202,18 @@ func (m Model) handleWtfStreamEvent(msg commands.WtfStreamEvent) (Model, tea.Cmd
 			m.toolApproval.Show(msg.ToolApproval)
 		}
 		slog.Info("tool_approval_show", "tool", msg.ToolApproval.Name)
+		return m, m.continueStreamListen()
+	}
+
+	// Continue prompt: the loop hit its per-batch iteration limit and is asking
+	// whether to keep going. Same modal pattern as approval — the agent
+	// goroutine blocks on Reply until continueprompt.DecisionMsg is dispatched.
+	if msg.ContinuePrompt != nil {
+		if m.continuePrompt != nil {
+			m.continuePrompt.SetSize(m.width, m.height)
+			m.continuePrompt.Show(msg.ContinuePrompt)
+		}
+		slog.Info("continue_prompt_show", "tool_calls", msg.ContinuePrompt.ToolCalls)
 		return m, m.continueStreamListen()
 	}
 
@@ -215,9 +268,9 @@ func (m Model) handleWtfStreamEvent(msg commands.WtfStreamEvent) (Model, tea.Cmd
 				m.sidebar.RefreshView()
 				return m, tea.Batch(
 					tea.Tick(m.streamThrottleDelay, func(time.Time) tea.Msg {
-						return streamThrottleFlushMsg{}
+						return streamThrottleFlushMsg{streamID: m.streamID}
 					}),
-					listenToWtfStream(m.wtfStream),
+					listenToWtfStream(m.streamID, m.wtfStream),
 				)
 			}
 			// Subsequent chunks: just listen, don't schedule another tick
@@ -227,16 +280,21 @@ func (m Model) handleWtfStreamEvent(msg commands.WtfStreamEvent) (Model, tea.Cmd
 			m.clearStreamPlaceholder()
 			m.sidebar.SetStreaming(false)
 			m.sidebar.RefreshView() // Final refresh
-			m.wtfStream = nil
-			m.streamThrottlePending = false
-			m.streamPlaceholderActive = false
+			m.endStreamRun()
+			// A graceful stop can land right after a ToolCallFinished (e.g. the
+			// user chose Stop at the continuation prompt) with no delta to clear
+			// the flag. Reset it so the next stream's first delta replaces its
+			// placeholder instead of being treated as a post-tool continuation.
 			return m, nil
 		}
 	}
 	return m, m.continueStreamListen()
 }
 
-func (m Model) handleStreamThrottleFlush() (Model, tea.Cmd) {
+func (m Model) handleStreamThrottleFlush(msg streamThrottleFlushMsg) (Model, tea.Cmd) {
+	if msg.streamID != 0 && msg.streamID != m.streamID {
+		return m, nil
+	}
 	m.streamThrottlePending = false
 
 	// Re-render from chat messages.
@@ -250,7 +308,75 @@ func (m Model) continueStreamListen() tea.Cmd {
 	if m.wtfStream == nil {
 		return nil
 	}
-	return listenToWtfStream(m.wtfStream)
+	return listenToWtfStream(m.streamID, m.wtfStream)
+}
+
+func (m *Model) beginStreamRun() (context.Context, int) {
+	if m.streamCancel != nil {
+		m.streamCancel()
+	}
+	m.streamID++
+	runCtx, cancel := context.WithCancel(context.Background())
+	m.streamCancel = cancel
+	m.wtfStream = nil
+	m.streamStartPending = true
+	m.streamThrottlePending = false
+	m.streamPlaceholderActive = false
+	m.toolCallNewTurnNeeded = false
+	return runCtx, m.streamID
+}
+
+func (m *Model) endStreamRun() {
+	if m.streamCancel != nil {
+		m.streamCancel()
+		m.streamCancel = nil
+	}
+	m.wtfStream = nil
+	m.streamStartPending = false
+	m.streamThrottlePending = false
+	m.toolCallNewTurnNeeded = false
+}
+
+func (m Model) hasActiveStream() bool {
+	return m.streamCancel != nil || m.streamStartPending || m.wtfStream != nil
+}
+
+func (m Model) cancelActiveStream() (Model, tea.Cmd) {
+	if !m.hasActiveStream() {
+		return m, nil
+	}
+	if m.streamCancel != nil {
+		m.streamCancel()
+		m.streamCancel = nil
+	}
+	m.streamID++
+	m.wtfStream = nil
+	m.streamStartPending = false
+	m.streamThrottlePending = false
+	m.toolCallNewTurnNeeded = false
+	if m.toolApproval != nil {
+		m.toolApproval.Hide()
+	}
+	if m.continuePrompt != nil {
+		m.continuePrompt.Hide()
+	}
+	m.showStreamCanceledMessage()
+	return m, nil
+}
+
+func (m *Model) showStreamCanceledMessage() {
+	if m.sidebar == nil {
+		m.streamPlaceholderActive = false
+		return
+	}
+	if m.streamPlaceholderActive {
+		m.sidebar.SetLastMessageContent(streamCanceledMessage)
+		m.streamPlaceholderActive = false
+	} else {
+		m.sidebar.StartAssistantMessageWithContent(streamCanceledMessage)
+	}
+	m.sidebar.SetStreaming(false)
+	m.sidebar.RefreshView()
 }
 
 func (m *Model) buildExplainUserMessage(ctx *commands.Context) string {
@@ -274,35 +400,45 @@ func (m *Model) buildExplainUserMessage(ctx *commands.Context) string {
 	return fmt.Sprintf("[Asked to explain last %d lines from terminal. Last command: `%s`]", lineCount, command)
 }
 
-func listenToWtfStream(stream <-chan commands.WtfStreamEvent) tea.Cmd {
+func listenToWtfStream(streamID int, stream <-chan commands.WtfStreamEvent) tea.Cmd {
 	return func() tea.Msg {
 		event, ok := <-stream
 		if !ok {
-			return commands.WtfStreamEvent{Done: true}
+			event = commands.WtfStreamEvent{Done: true}
 		}
-		return event
+		return wtfStreamEventMsg{streamID: streamID, event: event}
 	}
 }
 
-func startExplainStreamCmd(ctx *commands.Context, handler commands.StreamingHandler, result *commands.Result) tea.Cmd {
+func startExplainStreamCmd(streamID int, runCtx context.Context, ctx *commands.Context, handler commands.StreamingHandler, result *commands.Result) tea.Cmd {
 	return func() tea.Msg {
-		stream, err := handler.StartStream(ctx)
+		var (
+			stream <-chan commands.WtfStreamEvent
+			err    error
+		)
+		if h, ok := handler.(contextStreamingHandler); ok {
+			stream, err = h.StartStreamWithContext(runCtx, ctx)
+		} else {
+			stream, err = handler.StartStream(ctx)
+		}
 		return streamStartResultMsg{
-			origin: streamOriginExplain,
-			stream: stream,
-			err:    err,
-			result: result,
+			streamID: streamID,
+			origin:   streamOriginExplain,
+			stream:   stream,
+			err:      err,
+			result:   result,
 		}
 	}
 }
 
-func startChatStreamCmd(ctx *commands.Context, handler *commands.ChatHandler, messages []ai.ChatMessage) tea.Cmd {
+func startChatStreamCmd(streamID int, runCtx context.Context, ctx *commands.Context, handler *commands.ChatHandler, messages []ai.ChatMessage) tea.Cmd {
 	return func() tea.Msg {
-		stream, err := handler.StartChatStream(ctx, messages)
+		stream, err := handler.StartChatStreamWithContext(runCtx, ctx, messages)
 		return streamStartResultMsg{
-			origin: streamOriginChat,
-			stream: stream,
-			err:    err,
+			streamID: streamID,
+			origin:   streamOriginChat,
+			stream:   stream,
+			err:      err,
 		}
 	}
 }

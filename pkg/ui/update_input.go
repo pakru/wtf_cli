@@ -70,6 +70,11 @@ func (m Model) handlePaste(msg tea.PasteMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.continuePrompt != nil && m.continuePrompt.IsVisible() {
+		// Continue popup is modal; ignore pastes until the user picks.
+		return m, nil
+	}
+
 	if m.resultPanel.IsVisible() {
 		tracePasteRoute("result_panel_ignored", len(msg.Content))
 		return m, nil
@@ -111,6 +116,11 @@ func (m Model) inSecretMode() bool {
 	return m.ptyFile != nil && m.secretDetector != nil && m.secretDetector(m.ptyFile)
 }
 
+func (m Model) hasStreamPromptOverlay() bool {
+	return (m.toolApproval != nil && m.toolApproval.IsVisible()) ||
+		(m.continuePrompt != nil && m.continuePrompt.IsVisible())
+}
+
 func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	// Full-screen mode: bypass all shortcuts, route to PTY
 	if m.fullScreenMode {
@@ -144,11 +154,22 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.statusBar.SetMessage("")
 	}
 
+	if msg.String() == "esc" && m.hasActiveStream() && m.hasStreamPromptOverlay() {
+		return m.cancelActiveStream()
+	}
+
 	// Priority 4: Tool-approval popup. It's a blocking modal — the agent
 	// loop is paused waiting for the user's reply, so it must absorb all
 	// keys before any other overlay or PTY routing.
 	if m.toolApproval != nil && m.toolApproval.IsVisible() {
 		cmd := m.toolApproval.Update(msg)
+		return m, cmd
+	}
+
+	// Priority 4b: Continue-loop popup. Same blocking-modal contract as the
+	// approval popup — absorb all keys until the user answers.
+	if m.continuePrompt != nil && m.continuePrompt.IsVisible() {
+		cmd := m.continuePrompt.Update(msg)
 		return m, cmd
 	}
 
@@ -183,6 +204,10 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.resultPanel.IsVisible() {
 		cmd := m.resultPanel.Update(msg)
 		return m, cmd
+	}
+
+	if msg.String() == "esc" && m.hasActiveStream() {
+		return m.cancelActiveStream()
 	}
 
 	// Intercept Shift+Tab before sidebar/PTY routing so focus switching works

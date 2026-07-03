@@ -18,6 +18,10 @@ type ChatHandler struct {
 	// ApproverFactory builds the approver for each /chat invocation. Wired up
 	// by the UI layer to surface a popup. Nil ⇒ AutoAllowApprover.
 	ApproverFactory ApproverFactory
+
+	// ContinuerFactory builds the continuer for each /chat invocation. Wired up
+	// by the UI layer to surface a popup. Nil ⇒ AutoStopContinuer.
+	ContinuerFactory ContinuerFactory
 }
 
 // Name returns the command name
@@ -40,6 +44,19 @@ func (h *ChatHandler) StartChatStream(
 	ctx *Context,
 	messages []ai.ChatMessage,
 ) (<-chan WtfStreamEvent, error) {
+	return h.StartChatStreamWithContext(context.Background(), ctx, messages)
+}
+
+// StartChatStreamWithContext is like StartChatStream, but the caller owns the
+// parent context so UI actions can cancel the active provider request or agent loop.
+func (h *ChatHandler) StartChatStreamWithContext(
+	runCtx context.Context,
+	ctx *Context,
+	messages []ai.ChatMessage,
+) (<-chan WtfStreamEvent, error) {
+	if runCtx == nil {
+		runCtx = context.Background()
+	}
 	// Cap history to last N messages
 	capped := messages
 	if len(messages) > MaxChatHistoryMessages {
@@ -87,12 +104,14 @@ func (h *ChatHandler) StartChatStream(
 
 	ch := make(chan WtfStreamEvent, 16)
 	approver := h.resolveApprover(ch)
-	loopCtx, cancel := context.WithCancel(context.Background())
+	continuer := h.resolveContinuer(ch)
+	loopCtx, cancel := context.WithCancel(runCtx)
 	go func() {
 		defer cancel()
 		RunAgentLoop(loopCtx, prep.provider, req, AgentLoopConfig{
 			Registry:       prep.registry,
 			Approver:       approver,
+			Continuer:      continuer,
 			MaxIterations:  prep.maxIterations,
 			PerCallTimeout: time.Duration(prep.timeout) * time.Second,
 			Tag:            "chat",
@@ -109,6 +128,15 @@ func (h *ChatHandler) resolveApprover(ch chan<- WtfStreamEvent) Approver {
 		}
 	}
 	return AutoAllowApprover{}
+}
+
+func (h *ChatHandler) resolveContinuer(ch chan<- WtfStreamEvent) Continuer {
+	if h.ContinuerFactory != nil {
+		if c := h.ContinuerFactory(ch); c != nil {
+			return c
+		}
+	}
+	return AutoStopContinuer{}
 }
 
 // buildChatMessages constructs AI messages from chat history + terminal context.

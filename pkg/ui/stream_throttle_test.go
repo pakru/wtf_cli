@@ -112,6 +112,49 @@ func TestStreamErrorResetsThrottle(t *testing.T) {
 	}
 }
 
+// TestStreamStopAfterToolCallResetsTurnState reproduces the PR #78 review
+// finding: when the agent loop stops gracefully right after a tool call (e.g.
+// the user chose Stop at the continuation prompt), Done arrives with no delta
+// to clear toolCallNewTurnNeeded. If left set, the next stream's first delta is
+// treated as a post-tool continuation, leaving a stale "Thinking…" placeholder
+// and appending a new message instead of replacing it.
+func TestStreamStopAfterToolCallResetsTurnState(t *testing.T) {
+	m := NewModel(nil, buffer.New(100), capture.NewSessionContext(), nil)
+
+	// First stream: a tool call runs, then a graceful Stop (Done immediately
+	// after ToolCallFinished, no delta).
+	m.startStreamPlaceholder()
+	updated, _ := m.Update(commands.WtfStreamEvent{ToolCallStart: &commands.ToolCallInfo{Name: "read_file"}})
+	m = updated.(Model)
+	updated, _ = m.Update(commands.WtfStreamEvent{ToolCallFinished: &commands.ToolCallInfo{Name: "read_file"}})
+	m = updated.(Model)
+	if !m.toolCallNewTurnNeeded {
+		t.Fatal("expected toolCallNewTurnNeeded set after ToolCallFinished")
+	}
+	updated, _ = m.Update(commands.WtfStreamEvent{Done: true})
+	m = updated.(Model)
+	if m.toolCallNewTurnNeeded {
+		t.Fatal("Done after a tool call should clear toolCallNewTurnNeeded")
+	}
+
+	// Next stream: placeholder, then the first delta must replace it in place
+	// rather than appending a new message after a stale placeholder.
+	m.startStreamPlaceholder()
+	beforeCount := len(m.sidebar.GetMessages())
+	updated, _ = m.Update(commands.WtfStreamEvent{Delta: "hello"})
+	m = updated.(Model)
+
+	if m.streamPlaceholderActive {
+		t.Fatal("first delta should have replaced the placeholder")
+	}
+	if afterCount := len(m.sidebar.GetMessages()); afterCount != beforeCount {
+		t.Fatalf("first delta should replace placeholder in place, not append (before=%d after=%d)", beforeCount, afterCount)
+	}
+	if got := latestAssistantMessageContent(t, m); got != "hello" {
+		t.Fatalf("expected placeholder replaced with 'hello', got %q", got)
+	}
+}
+
 func latestAssistantMessageContent(t *testing.T, m Model) string {
 	t.Helper()
 	if m.sidebar == nil {

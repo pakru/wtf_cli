@@ -1,8 +1,6 @@
 package sidebar
 
 import (
-	"fmt"
-	"os"
 	"strings"
 
 	"wtf_cli/pkg/ai"
@@ -12,7 +10,6 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	osc52 "github.com/aymanbagabas/go-osc52/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -469,11 +466,7 @@ func (s *Sidebar) renderFooter(contentWidth int) string {
 }
 
 func (s *Sidebar) copyToClipboard() tea.Cmd {
-	text := StripCommandMarkers(s.content)
-	return func() tea.Msg {
-		_, _ = fmt.Fprint(os.Stdout, osc52.New(text))
-		return nil
-	}
+	return tea.SetClipboard(StripCommandMarkers(s.content))
 }
 
 func (s *Sidebar) commandExecuteCmd() tea.Cmd {

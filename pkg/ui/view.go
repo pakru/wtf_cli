@@ -58,7 +58,7 @@ func (m Model) renderCanvas() *lipgloss.Canvas {
 		baseLayerZ        = 0
 		settingsLayerZ    = 1
 		overlayLayerZ     = 2
-		toolApprovalLayer = 3 // popup is the topmost overlay (modal)
+		toolApprovalLayer = 3 // approval/continue popups are topmost overlays (modal)
 	)
 
 	width := m.width
@@ -126,6 +126,8 @@ func (m Model) renderCanvas() *lipgloss.Canvas {
 
 	if m.toolApproval != nil && m.toolApproval.IsVisible() {
 		layers = addOverlayLayer(layers, m.toolApproval.View(), width, height, toolApprovalLayer)
+	} else if m.continuePrompt != nil && m.continuePrompt.IsVisible() {
+		layers = addOverlayLayer(layers, m.continuePrompt.View(), width, height, toolApprovalLayer)
 	}
 
 	return lipgloss.NewCanvas(width, height).Compose(lipgloss.NewCompositor(layers...))
