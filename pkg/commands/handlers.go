@@ -228,7 +228,7 @@ func prepareAgentRun(ctx *Context, tag string) (*agentRunPrep, error) {
 // buildToolRegistry constructs the per-invocation tool registry from config.
 //
 // cwd is snapshotted at agent-loop start so a mid-stream `cd` in the user's
-// shell does not change which directory tools see. read_file enforces cwd
+// shell does not change which directory tools see. Each tool enforces cwd
 // containment against this value.
 func buildToolRegistry(cfg config.Config, cwd string) *tools.Registry {
 	registry := tools.NewRegistry()
@@ -237,6 +237,13 @@ func buildToolRegistry(cfg config.Config, cwd string) *tools.Registry {
 			cwd,
 			cfg.Agent.Tools.ReadFile.MaxLines,
 			cfg.Agent.Tools.ReadFile.MaxBytes,
+		))
+	}
+	if cfg.Agent.Tools.ListDirectory.Enabled {
+		registry.Register(tools.NewListDirectory(
+			cwd,
+			cfg.Agent.Tools.ListDirectory.MaxEntries,
+			cfg.Agent.Tools.ListDirectory.MaxBytes,
 		))
 	}
 	return registry

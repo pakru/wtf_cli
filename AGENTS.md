@@ -28,7 +28,7 @@ wtf_cli/
 │   ├── ai/               # AI/LLM integration
 │   │   ├── auth/         # OAuth device flow + PKCE for provider auth
 │   │   ├── providers/    # Provider implementations (openai, anthropic, google, openrouter, copilot)
-│   │   ├── tools/        # Tool calling (read_file, registry)
+│   │   ├── tools/        # Tool calling (read_file, list_directory, registry)
 │   │   ├── context.go    # Conversation context assembly
 │   │   ├── platform.go   # Host platform detection
 │   │   ├── registry.go   # Provider registry
@@ -186,6 +186,13 @@ GitHub Actions in `.github/workflows/`:
       "temperature": 0.7,
       "max_tokens": 2000,
       "api_timeout_seconds": 30
+    }
+  },
+  "agent": {
+    "max_iterations": 5,
+    "tools": {
+      "read_file": { "enabled": true, "max_lines": 500, "max_bytes": 65536 },
+      "list_directory": { "enabled": true, "max_entries": 500, "max_bytes": 65536 }
     }
   },
   "buffer_size": 2000,

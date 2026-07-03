@@ -317,6 +317,9 @@ func executeOneTool(
 	}
 
 	finished.Result = result.Content
+	if result.IsError {
+		finished.ErrorMessage = result.Content
+	}
 	logResult := result.Content
 	if len(logResult) > 200 {
 		logResult = logResult[:200] + "…"

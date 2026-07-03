@@ -14,6 +14,33 @@ func TestStripANSICodes(t *testing.T) {
 	}
 }
 
+func TestAppendToolInstructions_EmptyToolsLeavesPromptUnchanged(t *testing.T) {
+	prompt := "You are a helpful terminal assistant."
+	got := AppendToolInstructions(prompt, nil)
+	if got != prompt {
+		t.Fatalf("expected prompt unchanged for empty tools, got %q", got)
+	}
+}
+
+func TestAppendToolInstructions_MentionsBoundedFileAndDirectoryUse(t *testing.T) {
+	prompt := "You are a helpful terminal assistant."
+	toolDefs := []ToolDefinition{
+		{Name: "read_file", Description: "reads a file"},
+		{Name: "list_directory", Description: "lists a directory"},
+	}
+	got := AppendToolInstructions(prompt, toolDefs)
+
+	if !strings.HasPrefix(got, prompt) {
+		t.Fatalf("expected original prompt to be preserved as a prefix, got %q", got)
+	}
+	if !strings.Contains(got, "file") {
+		t.Fatalf("expected guidance to mention bounded file reads, got %q", got)
+	}
+	if !strings.Contains(got, "directory") {
+		t.Fatalf("expected guidance to mention one-level directory listings, got %q", got)
+	}
+}
+
 func TestBuildTerminalContext_MaxLines(t *testing.T) {
 	lines := make([][]byte, 0, 150)
 	for i := 0; i < 150; i++ {
