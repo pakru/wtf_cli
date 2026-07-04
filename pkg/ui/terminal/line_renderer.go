@@ -9,9 +9,75 @@ import (
 
 const lineRendererTabWidth = 4
 
+// cellStyle is the rendition (SGR state) attached to a visible cell. The
+// zero value means "default style". Values are interned (see internStyle)
+// and, once stored on a cell, must never be mutated in place — doing so
+// would retroactively recolor every cell already sharing that pointer.
+type cellStyle struct {
+	fg    string // canonical SGR fragment: "31", "38;5;208", "38;2;r;g;b"; "" = default
+	bg    string // "41", "48;5;n", "48;2;r;g;b"; "" = default
+	attrs uint16
+}
+
+const (
+	attrBold uint16 = 1 << iota
+	attrDim
+	attrItalic
+	attrUnderline
+	attrBlink
+	attrReverse
+	attrConceal
+	attrStrike
+)
+
+// sgrCodes returns the SGR parameter codes representing this style, in a
+// fixed, deterministic order. A nil receiver yields no codes.
+func (s *cellStyle) sgrCodes() []string {
+	if s == nil {
+		return nil
+	}
+	var codes []string
+	if s.attrs&attrBold != 0 {
+		codes = append(codes, "1")
+	}
+	if s.attrs&attrDim != 0 {
+		codes = append(codes, "2")
+	}
+	if s.attrs&attrItalic != 0 {
+		codes = append(codes, "3")
+	}
+	if s.attrs&attrUnderline != 0 {
+		codes = append(codes, "4")
+	}
+	if s.attrs&attrBlink != 0 {
+		codes = append(codes, "5")
+	}
+	if s.attrs&attrReverse != 0 {
+		codes = append(codes, "7")
+	}
+	if s.attrs&attrConceal != 0 {
+		codes = append(codes, "8")
+	}
+	if s.attrs&attrStrike != 0 {
+		codes = append(codes, "9")
+	}
+	if s.fg != "" {
+		codes = append(codes, s.fg)
+	}
+	if s.bg != "" {
+		codes = append(codes, s.bg)
+	}
+	return codes
+}
+
+func (s *cellStyle) sgrString() string {
+	return "\x1b[" + strings.Join(s.sgrCodes(), ";") + "m"
+}
+
 type lineCell struct {
 	text  string
 	width int
+	style *cellStyle // nil = default style
 }
 
 type lineBuffer struct {
@@ -26,30 +92,16 @@ func (l *lineBuffer) visibleLen() int {
 	return count
 }
 
+// indexForCol returns the cell index whose visible column is col, and
+// whether a cell actually starts there. If col falls beyond the end of the
+// line (or inside a wide cell), it returns the insertion point and false.
 func (l *lineBuffer) indexForCol(col int) (int, bool) {
 	visible := 0
-	insertIdx := 0
 	for i, c := range l.cells {
-		if c.width == 0 {
-			if visible == col {
-				insertIdx = i + 1
-			}
-			continue
-		}
 		if visible == col {
-			if insertIdx > 0 {
-				return insertIdx, true
-			}
 			return i, true
 		}
 		visible += c.width
-		insertIdx = 0
-	}
-	if visible == col {
-		if insertIdx > 0 {
-			return insertIdx, false
-		}
-		return len(l.cells), false
 	}
 	return len(l.cells), false
 }
@@ -71,22 +123,17 @@ func (l *lineBuffer) padToCol(col int) {
 	}
 }
 
-func (l *lineBuffer) setCellAt(col int, text string, width int) {
+func (l *lineBuffer) setCellAt(col int, text string, width int, style *cellStyle) {
 	if width < 1 {
 		width = 1
 	}
 	l.padToCol(col)
 	idx, hasVisible := l.indexForCol(col)
 	if hasVisible && idx < len(l.cells) && l.cells[idx].width > 0 {
-		l.cells[idx] = lineCell{text: text, width: width}
+		l.cells[idx] = lineCell{text: text, width: width, style: style}
 		return
 	}
-	l.insertCell(idx, lineCell{text: text, width: width})
-}
-
-func (l *lineBuffer) insertZeroWidthAt(col int, seq string) {
-	idx, _ := l.indexForCol(col)
-	l.insertCell(idx, lineCell{text: seq, width: 0})
+	l.insertCell(idx, lineCell{text: text, width: width, style: style})
 }
 
 func (l *lineBuffer) insertSpacesAtCol(col int, count int) int {
@@ -125,10 +172,6 @@ func (l *lineBuffer) deleteCellsAtCol(col int, count int) {
 	i := 0
 	for i < len(l.cells) && count > 0 {
 		c := l.cells[i]
-		if c.width == 0 {
-			i++
-			continue
-		}
 		if visible+c.width <= col {
 			visible += c.width
 			i++
@@ -146,15 +189,43 @@ func (l *lineBuffer) truncateFromCol(col int) {
 	}
 }
 
+// String renders the line, emitting SGR transitions only where the style
+// actually changes between adjacent cells. Every line is self-balanced: if
+// it ends styled, a trailing reset is appended, so styling never bleeds
+// into a following line.
 func (l *lineBuffer) String() string {
 	if len(l.cells) == 0 {
 		return ""
 	}
 	var b strings.Builder
+	var current *cellStyle
 	for _, c := range l.cells {
+		if c.style != current {
+			emitStyleTransition(&b, current, c.style)
+			current = c.style
+		}
 		b.WriteString(c.text)
 	}
+	if current != nil {
+		b.WriteString("\x1b[0m")
+	}
 	return b.String()
+}
+
+// emitStyleTransition writes the escape sequence needed to move the pen
+// from "from" to "to". Moving to default only needs a reset. Moving from
+// default to a style needs no leading reset (there is nothing to cancel).
+// Moving between two non-default styles conservatively resets first, since
+// partial-reset codes (22/24/...) can't be derived from a diff alone.
+func emitStyleTransition(b *strings.Builder, from, to *cellStyle) {
+	if to == nil {
+		b.WriteString("\x1b[0m")
+		return
+	}
+	if from != nil {
+		b.WriteString("\x1b[0m")
+	}
+	b.WriteString(to.sgrString())
 }
 
 // LineRenderer tracks a minimal terminal line buffer for normal shell output.
@@ -170,7 +241,16 @@ type LineRenderer struct {
 	oscEsc     bool
 	csiParam   int
 	csiHas     bool
+	csiSep     bool
 	csiParams  []int
+
+	pen        *cellStyle
+	styleCache map[cellStyle]*cellStyle
+
+	savedRow   int
+	savedCol   int
+	savedPen   *cellStyle
+	savedValid bool
 }
 
 // NewLineRenderer creates a new line renderer.
@@ -190,7 +270,14 @@ func (r *LineRenderer) Reset() {
 	r.oscEsc = false
 	r.csiParam = 0
 	r.csiHas = false
+	r.csiSep = false
 	r.csiParams = nil
+	r.pen = nil
+	r.styleCache = nil
+	r.savedRow = 0
+	r.savedCol = 0
+	r.savedPen = nil
+	r.savedValid = false
 }
 
 // CursorPosition returns the current cursor row/col (0-indexed).
@@ -221,12 +308,60 @@ func (r *LineRenderer) moveCursorRight(n int) {
 	r.col += n
 }
 
-func (r *LineRenderer) pushCSIParam() {
-	if r.csiHas || len(r.csiParams) > 0 {
+func (r *LineRenderer) saveCursor() {
+	r.savedRow = r.row
+	r.savedCol = r.col
+	r.savedPen = r.pen
+	r.savedValid = true
+}
+
+func (r *LineRenderer) restoreCursor() {
+	if !r.savedValid {
+		return
+	}
+	r.row = r.savedRow
+	r.col = r.savedCol
+	r.pen = r.savedPen
+	r.ensureLine(r.row)
+}
+
+// internStyle returns a shared pointer for the given style value, or nil
+// for the default (zero) style. Returned pointers are never mutated after
+// creation — applySGR always derives a fresh value and interns that.
+func (r *LineRenderer) internStyle(s cellStyle) *cellStyle {
+	if s == (cellStyle{}) {
+		return nil
+	}
+	if r.styleCache == nil {
+		r.styleCache = make(map[cellStyle]*cellStyle)
+	}
+	if p, ok := r.styleCache[s]; ok {
+		return p
+	}
+	p := &s
+	r.styleCache[s] = p
+	return p
+}
+
+// pushCSISeparatorParam handles a ';' inside a CSI sequence: a separator
+// always yields a parameter (defaulting to 0 if no digits preceded it).
+func (r *LineRenderer) pushCSISeparatorParam() {
+	r.csiParams = append(r.csiParams, r.csiParam)
+	r.csiParam = 0
+	r.csiHas = false
+	r.csiSep = true
+}
+
+// finishCSIParams handles the final byte of a CSI sequence: a trailing
+// parameter is appended only if a digit or a previous separator was seen,
+// so a bare "CSI m" yields nil params (an implicit reset for applySGR).
+func (r *LineRenderer) finishCSIParams() {
+	if r.csiHas || r.csiSep {
 		r.csiParams = append(r.csiParams, r.csiParam)
 	}
 	r.csiParam = 0
 	r.csiHas = false
+	r.csiSep = false
 }
 
 // Append processes raw PTY data and updates the line buffer.
@@ -261,22 +396,26 @@ func (r *LineRenderer) Append(data []byte) {
 		}
 
 		if r.inEscape {
-			if b == '[' {
+			switch b {
+			case '[':
 				r.inCSI = true
 				r.inEscape = false
 				r.csiParam = 0
 				r.csiHas = false
+				r.csiSep = false
 				r.csiParams = nil
-				i++
-				continue
-			}
-			if b == ']' {
+			case ']':
 				r.inEscape = false
 				r.inOSC = true
-				i++
-				continue
+			case '7':
+				r.saveCursor()
+				r.inEscape = false
+			case '8':
+				r.restoreCursor()
+				r.inEscape = false
+			default:
+				r.inEscape = false
 			}
-			r.inEscape = false
 			i++
 			continue
 		}
@@ -289,11 +428,11 @@ func (r *LineRenderer) Append(data []byte) {
 				i++
 				continue
 			case b == ';':
-				r.pushCSIParam()
+				r.pushCSISeparatorParam()
 				i++
 				continue
 			case b >= 0x40 && b <= 0x7E:
-				r.pushCSIParam()
+				r.finishCSIParams()
 				r.handleCSI(b)
 				r.inCSI = false
 				r.csiParams = nil
@@ -324,7 +463,7 @@ func (r *LineRenderer) Append(data []byte) {
 			r.ensureLine(r.row)
 			steps := lineRendererTabWidth - (r.col % lineRendererTabWidth)
 			for i := 0; i < steps; i++ {
-				r.lines[r.row].setCellAt(r.col, " ", 1)
+				r.lines[r.row].setCellAt(r.col, " ", 1, r.pen)
 				r.col++
 			}
 			i++
@@ -346,7 +485,7 @@ func (r *LineRenderer) Append(data []byte) {
 					if r.insertMode {
 						r.lines[r.row].insertSpacesAtCol(r.col, 1)
 					}
-					r.lines[r.row].setCellAt(r.col, string(rune(b)), 1)
+					r.lines[r.row].setCellAt(r.col, string(rune(b)), 1, r.pen)
 					r.col++
 					i++
 					continue
@@ -357,12 +496,12 @@ func (r *LineRenderer) Append(data []byte) {
 				}
 				if r.insertMode {
 					insertIdx := r.lines[r.row].insertSpacesAtCol(r.col, width)
-					r.lines[r.row].setCellAt(r.col, string(rn), width)
+					r.lines[r.row].setCellAt(r.col, string(rn), width, r.pen)
 					if width > 1 {
 						r.lines[r.row].deleteCellsAtIndex(insertIdx+1, width-1)
 					}
 				} else {
-					r.lines[r.row].setCellAt(r.col, string(rn), width)
+					r.lines[r.row].setCellAt(r.col, string(rn), width, r.pen)
 				}
 				r.col += width
 				i += size
@@ -373,20 +512,122 @@ func (r *LineRenderer) Append(data []byte) {
 	}
 }
 
+// applySGR updates the current pen (rendition) from CSI "m" parameters. An
+// empty/nil params slice means a bare "CSI m", equivalent to SGR 0 (reset).
+func (r *LineRenderer) applySGR(params []int) {
+	if len(params) == 0 {
+		params = []int{0}
+	}
+	cur := cellStyle{}
+	if r.pen != nil {
+		cur = *r.pen
+	}
+	for i := 0; i < len(params); i++ {
+		p := params[i]
+		switch {
+		case p == 0:
+			cur = cellStyle{}
+		case p == 1:
+			cur.attrs |= attrBold
+		case p == 2:
+			cur.attrs |= attrDim
+		case p == 3:
+			cur.attrs |= attrItalic
+		case p == 4:
+			cur.attrs |= attrUnderline
+		case p == 5:
+			cur.attrs |= attrBlink
+		case p == 7:
+			cur.attrs |= attrReverse
+		case p == 8:
+			cur.attrs |= attrConceal
+		case p == 9:
+			cur.attrs |= attrStrike
+		case p == 21:
+			// SGR 21 is double-underline (ECMA-48), not a bold-off partial
+			// reset. Not modeled; explicitly ignored rather than misapplied.
+		case p == 22:
+			cur.attrs &^= attrBold | attrDim
+		case p == 23:
+			cur.attrs &^= attrItalic
+		case p == 24:
+			cur.attrs &^= attrUnderline
+		case p == 25:
+			cur.attrs &^= attrBlink
+		case p == 27:
+			cur.attrs &^= attrReverse
+		case p == 28:
+			cur.attrs &^= attrConceal
+		case p == 29:
+			cur.attrs &^= attrStrike
+		case p >= 30 && p <= 37:
+			cur.fg = itoa(p)
+		case p == 38:
+			if code, next, ok := parseExtendedColor(params, i+1); ok {
+				cur.fg = "38;" + code
+				i = next - 1
+			} else {
+				i = len(params)
+			}
+		case p == 39:
+			cur.fg = ""
+		case p >= 40 && p <= 47:
+			cur.bg = itoa(p)
+		case p == 48:
+			if code, next, ok := parseExtendedColor(params, i+1); ok {
+				cur.bg = "48;" + code
+				i = next - 1
+			} else {
+				i = len(params)
+			}
+		case p == 49:
+			cur.bg = ""
+		case p >= 90 && p <= 97:
+			cur.fg = itoa(p)
+		case p >= 100 && p <= 107:
+			cur.bg = itoa(p)
+		default:
+			// Unknown/unsupported SGR parameter: ignore.
+		}
+	}
+	r.pen = r.internStyle(cur)
+}
+
+// parseExtendedColor parses the parameters following a 38 or 48 SGR
+// introducer, starting at params[start]. It returns the color fragment
+// (e.g. "5;208" or "2;10;20;30", without the leading 38/48), the index just
+// past the consumed parameters, and whether the form was well-formed.
+// Malformed input (missing index/channels) reports ok=false; the caller
+// must then consume the rest of the sequence rather than reinterpret
+// leftover parameters as unrelated attributes.
+func parseExtendedColor(params []int, start int) (code string, next int, ok bool) {
+	if start >= len(params) {
+		return "", start, false
+	}
+	switch params[start] {
+	case 5:
+		if start+1 >= len(params) {
+			return "", start, false
+		}
+		return "5;" + itoa(params[start+1]), start + 2, true
+	case 2:
+		if start+3 >= len(params) {
+			return "", start, false
+		}
+		return "2;" + itoa(params[start+1]) + ";" + itoa(params[start+2]) + ";" + itoa(params[start+3]), start + 4, true
+	default:
+		return "", start, false
+	}
+}
+
 func (r *LineRenderer) handleCSI(final byte) {
 	switch final {
 	case 'm':
-		r.ensureLine(r.row)
-		seq := "\x1b["
-		if len(r.csiParams) > 0 {
-			params := make([]string, 0, len(r.csiParams))
-			for _, p := range r.csiParams {
-				params = append(params, itoa(p))
-			}
-			seq += strings.Join(params, ";")
-		}
-		seq += "m"
-		r.lines[r.row].insertZeroWidthAt(r.col, seq)
+		r.applySGR(r.csiParams)
+	case 's':
+		r.saveCursor()
+	case 'u':
+		r.restoreCursor()
 	case 'A':
 		n := 1
 		if len(r.csiParams) > 0 && r.csiParams[0] > 0 {
@@ -478,7 +719,7 @@ func (r *LineRenderer) handleCSI(final byte) {
 		}
 		r.ensureLine(r.row)
 		for i := 0; i < n; i++ {
-			r.lines[r.row].setCellAt(r.col+i, " ", 1)
+			r.lines[r.row].setCellAt(r.col+i, " ", 1, nil)
 		}
 	case 'h':
 		if hasCSIParam(r.csiParams, 4) {
