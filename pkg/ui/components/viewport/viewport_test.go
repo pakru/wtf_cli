@@ -306,6 +306,60 @@ func TestPTYViewport_SelectionExtractsText(t *testing.T) {
 	}
 }
 
+// TestPTYViewport_StyledContent_SelectionAndCursorCompose exercises the
+// real composition order in renderContent (styled LineRenderer output ->
+// selection highlight -> cursor overlay) together, for issue #73: none of
+// the three should corrupt the others now that SGR is emitted as balanced,
+// per-line state instead of positional zero-width cells.
+func TestPTYViewport_StyledContent_SelectionAndCursorCompose(t *testing.T) {
+	vp := NewPTYViewport()
+	vp.SetSize(40, 5)
+	vp.SetCursorVisible(true)
+
+	vp.AppendOutput([]byte("\x1b[31mred\x1b[0m plain text"))
+
+	// "red plain text": cols 0-2 "red" (styled), 3 space, 4-8 "plain".
+	vp.StartSelection(0, 4)
+	vp.UpdateSelection(0, 9)
+	if !vp.HasActiveSelection() {
+		t.Fatal("expected active selection")
+	}
+
+	// While the selection is active, the highlight, the styled "red" run,
+	// and the cursor overlay must all compose in the same rendered view
+	// (this is renderContent's real order: content -> ApplyHighlight ->
+	// RenderCursorOverlay), not just survive individually.
+	activeView := vp.View()
+	if !strings.Contains(activeView, "\x1b[7m") {
+		t.Errorf("expected active-selection inverse-video highlight in view, got %q", activeView)
+	}
+	if !strings.Contains(activeView, "\x1b[31mred\x1b[0m") {
+		t.Errorf("expected styled 'red' preserved alongside active selection, got %q", activeView)
+	}
+	if !strings.Contains(activeView, "█") {
+		t.Errorf("expected cursor overlay present alongside active selection, got %q", activeView)
+	}
+
+	got := vp.FinishSelection()
+	want := "plain"
+	if got != want {
+		t.Fatalf("expected selected (ANSI-stripped) text %q, got %q", want, got)
+	}
+	if vp.HasActiveSelection() || vp.HasSelection() {
+		t.Fatal("expected selection cleared after finish")
+	}
+
+	// Styled content and the cursor overlay must still render correctly
+	// after the selection highlight has been applied and removed.
+	view := vp.View()
+	if !strings.Contains(view, "\x1b[31mred\x1b[0m") {
+		t.Errorf("expected styled 'red' preserved in view, got %q", view)
+	}
+	if !strings.Contains(view, "█") {
+		t.Errorf("expected cursor overlay present in view, got %q", view)
+	}
+}
+
 func TestPTYViewport_AppendOutputClearsSelection(t *testing.T) {
 	vp := NewPTYViewport()
 	vp.SetSize(20, 5)

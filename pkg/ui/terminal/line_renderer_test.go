@@ -1,6 +1,13 @@
 package terminal
 
-import "testing"
+import (
+	"os"
+	"testing"
+
+	"wtf_cli/pkg/ui/components/welcome"
+
+	"github.com/charmbracelet/x/ansi"
+)
 
 func TestLineRenderer_CRLF(t *testing.T) {
 	r := NewLineRenderer()
@@ -609,5 +616,521 @@ func TestLineRenderer_InkRenderCycle(t *testing.T) {
 	frame2 := "> d\n~ no sandbox\nshift+tab to accept"
 	if got := r.Content(); got != frame2 {
 		t.Fatalf("frame 2: expected %q, got %q", frame2, got)
+	}
+}
+
+// --- Issue #73: color bleed & progress-bar corruption --------------------
+
+// TestLineRenderer_ColorBleed_EraseNoLongerDropsReset is the original
+// issue #73 repro: erasing to end-of-line used to delete the stored SGR
+// reset while an opener earlier in the line survived, bleeding color into
+// every following line. SGR is state now, not a positional cell, so the
+// erase can no longer touch it.
+func TestLineRenderer_ColorBleed_EraseNoLongerDropsReset(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[33mYELLOW STATUS\x1b[0m"))
+	r.Append([]byte("\rok\x1b[K\n"))
+	r.Append([]byte("plain line\n"))
+
+	expected := "ok\nplain line\n"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+// TestLineRenderer_ColorBleed_OverwriteNoLongerKeepsStaleStyle is the
+// second issue #73 repro: overwriting after CR used to leave the old
+// zero-width SGR cells in place around the new plain text.
+func TestLineRenderer_ColorBleed_OverwriteNoLongerKeepsStaleStyle(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[32m[=== ] 50%\x1b[0m"))
+	r.Append([]byte("\rDONE......"))
+
+	expected := "DONE......"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_SGR_MidLineColorChangeBalanced(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("A\x1b[31mB\x1b[0mC"))
+
+	expected := "A\x1b[31mB\x1b[0mC"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+// TestLineRenderer_SGR_PenPersistsAcrossNewline verifies the pen is
+// terminal-like state, not per-line content: a color opened before a
+// newline continues to apply on the next line, and each rendered line is
+// independently balanced.
+func TestLineRenderer_SGR_PenPersistsAcrossNewline(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[31mred\nstill red\x1b[0m\n"))
+
+	expected := "\x1b[31mred\x1b[0m\n\x1b[31mstill red\x1b[0m\n"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_SGR_PartialReset22ClearsBoldAndDim(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[1;2mBD\x1b[22mplain"))
+
+	// SGR 22 must clear BOTH bold(1) and dim(2), returning to the fully
+	// default style (which interns to nil) — not just one of the two. If
+	// either attribute survived, "plain" would render under a non-default
+	// (non-empty) style instead of plain text after a single reset.
+	expected := "\x1b[1;2mBD\x1b[0mplain"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+// TestLineRenderer_SGR_PartialResets_EachAttributeFullyClears covers the
+// remaining partial resets (22/bold+dim is covered above): setting a single
+// attribute then clearing it with its dedicated code must return fully to
+// default (interning to nil), not merely toggle a bit that leaves some
+// other latent state behind.
+func TestLineRenderer_SGR_PartialResets_EachAttributeFullyClears(t *testing.T) {
+	cases := []struct {
+		name      string
+		setCode   string
+		clearCode string
+	}{
+		{"italic", "3", "23"},
+		{"underline", "4", "24"},
+		{"blink", "5", "25"},
+		{"reverse", "7", "27"},
+		{"conceal", "8", "28"},
+		{"strike", "9", "29"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := NewLineRenderer()
+			r.Append([]byte("\x1b[" + c.setCode + "mX\x1b[" + c.clearCode + "mplain"))
+			expected := "\x1b[" + c.setCode + "mX\x1b[0mplain"
+			if got := r.Content(); got != expected {
+				t.Fatalf("attribute %s: expected %q, got %q", c.name, expected, got)
+			}
+		})
+	}
+}
+
+func TestLineRenderer_SGR_21IsIgnoredNotTreatedAsReset(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[1;31mA\x1b[21mB\x1b[0m"))
+
+	// SGR 21 is double-underline, not bold-off. A styled run must
+	// continue uninterrupted across it (no transition at 'B').
+	expected := "\x1b[1;31mAB\x1b[0m"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_SGR_256Color(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[38;5;208mX\x1b[0m"))
+
+	expected := "\x1b[38;5;208mX\x1b[0m"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_SGR_TruecolorBackground(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[48;2;10;20;30mX\x1b[0m"))
+
+	expected := "\x1b[48;2;10;20;30mX\x1b[0m"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_SGR_MalformedExtendedColor_NoIndex(t *testing.T) {
+	r := NewLineRenderer()
+	// "38;5" with no color index must not crash and must not corrupt fg.
+	r.Append([]byte("\x1b[38;5mX"))
+
+	if got := r.Content(); got != "X" {
+		t.Fatalf("expected unstyled %q, got %q", "X", got)
+	}
+}
+
+func TestLineRenderer_SGR_ExtendedColor_ConsumesExactlyItsParams(t *testing.T) {
+	r := NewLineRenderer()
+	// "38;5;1" is well-formed (fg = 256-color index 1); this asserts the
+	// happy path consumes exactly its 3 parameters and nothing bleeds into
+	// a following attribute.
+	r.Append([]byte("\x1b[38;5;1mX\x1b[0m"))
+
+	expected := "\x1b[38;5;1mX\x1b[0m"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_SGR_MalformedExtendedColor_ConsumesRestOfSequence(t *testing.T) {
+	r := NewLineRenderer()
+	// "38;5" with no index: the malformed parse must consume the rest of
+	// the sequence and leave the pen exactly as it was (fg unchanged from
+	// the prior well-formed 38;5;1), never partially applying a stray
+	// attribute from the leftover parameter.
+	r.Append([]byte("\x1b[38;5;1mX\x1b[38;5mY"))
+
+	expected := "\x1b[38;5;1mXY\x1b[0m"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_SGR_EmptyCSIMeansReset(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[31mA\x1b[mB"))
+
+	expected := "\x1b[31mA\x1b[0mB"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+// TestLineRenderer_StyleImmutability_RedBlueRed is a direct regression test
+// for interned style mutation: if applySGR ever mutated a *cellStyle in
+// place instead of interning a fresh value, the first "red1" run would be
+// retroactively recolored once the pen changes later in the sequence.
+func TestLineRenderer_StyleImmutability_RedBlueRed(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[31mred1\x1b[34mblue\x1b[31mred2\x1b[0m"))
+
+	expected := "\x1b[31mred1\x1b[0m\x1b[34mblue\x1b[0m\x1b[31mred2\x1b[0m"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_StyleInterning_ReusesPointerForIdenticalValue(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[31mA"))
+	first := r.pen
+	r.Append([]byte("\x1b[34mB\x1b[31mC"))
+	second := r.pen
+	if first == nil || second == nil || first != second {
+		t.Fatalf("expected identical SGR state to reuse the same interned pointer, got %p vs %p", first, second)
+	}
+}
+
+// --- Issue #73: DECSC/DECRC and CSI s/u -----------------------------------
+
+func TestLineRenderer_DECSC_DECRC_RestoresPositionAndPen(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("label \x1b[32m"))
+	r.Append([]byte("\x1b7")) // save: after "label ", pen=green
+	// Change the pen to red BEFORE restoring, so the test actually
+	// discriminates: if DECRC failed to restore the pen (only position),
+	// "frame two" would come out red instead of green.
+	r.Append([]byte("\x1b[31m[frame one]\n"))
+	r.Append([]byte("\x1b8"))       // restore: back to col 6, pen=green (not red)
+	r.Append([]byte("[frame two]")) // overwrites frame one in place
+
+	// "label " was written before any pen change, so it stays unstyled;
+	// the restored frame is green, proving DECRC restored the saved pen
+	// rather than leaving the red pen active from before the restore.
+	expected := "label \x1b[32m[frame two]\x1b[0m\n"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_DECRC_WithoutSaveIsNoOp(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("abc"))
+	r.Append([]byte("\x1b8")) // no prior ESC 7: documented no-op
+	r.Append([]byte("XYZ"))
+
+	// Cursor stays where it was (end of "abc"); "XYZ" appends, not overwrites.
+	expected := "abcXYZ"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_CSI_su_SaveRestore(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("head-"))
+	r.Append([]byte("\x1b[s"))
+	r.Append([]byte("AAAA\n"))
+	r.Append([]byte("\x1b[u"))
+	r.Append([]byte("BBBB"))
+
+	// The saved position is row 0 (before the newline), so BBBB overwrites
+	// AAAA on row 0. The newline already materialized an empty row 1, and
+	// restoring the cursor does not erase the display, so it persists.
+	expected := "head-BBBB\n"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_DECSC_RepeatedSaveOverwritesSlot(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("first-"))
+	r.Append([]byte("\x1b7")) // save at col 6
+	r.Append([]byte("XXXXXX"))
+	r.Append([]byte("\x1b7")) // save again at col 12 (end of XXXXXX)
+	r.Append([]byte("\x1b8")) // restore: must go to col 12, not col 6
+	r.Append([]byte("Y"))
+
+	expected := "first-XXXXXXY"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_DECSC_ESC7SplitFromESC8ByChunking(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("head-"))
+	r.Append([]byte{0x1b})
+	r.Append([]byte{'7'})
+	r.Append([]byte("AAAA"))
+	r.Append([]byte{0x1b})
+	r.Append([]byte{'8'})
+	r.Append([]byte("BBBB"))
+
+	expected := "head-BBBB"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+// --- Issue #73: empty CSI parameters ---------------------------------------
+
+func TestLineRenderer_EmptyCSIParam_LeadingSemicolon(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("first\nsecond\nthird"))
+	r.Append([]byte("\x1b[;5H")) // CSI ;5H == row default(1) -> parsed [0,5] -> row=0,col=4
+	r.Append([]byte("X"))
+
+	expected := "firsX\nsecond\nthird"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_EmptyCSIParam_TrailingSemicolon(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("first\nsecond\nthird"))
+	r.Append([]byte("\x1b[2;H")) // CSI 2;H -> parsed [2,0] -> row=1,col=0
+	r.Append([]byte("X"))
+
+	expected := "first\nXecond\nthird"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_EmptyCSIParam_AllEmpty(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("first\nsecond\nthird"))
+	r.Append([]byte("\x1b[;;H")) // CSI ;;H -> parsed [0,0,0] -> row=0,col=0 (extra param ignored)
+	r.Append([]byte("X"))
+
+	expected := "Xirst\nsecond\nthird"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+// --- Issue #73: styled edit/erase ops --------------------------------------
+
+func TestLineRenderer_Styled_ErasureDoesNotResetPen(t *testing.T) {
+	r := NewLineRenderer()
+	// "red and more" all under the red pen; erase actually removes "and
+	// more" (proving CSI K did something), and the pen must still be red
+	// for "NEW" afterward, since erasure does not touch the pen.
+	r.Append([]byte("\x1b[31mred and more"))
+	r.Append([]byte("\x1b[8D\x1b[K")) // back to right after "red ", erase the rest
+	r.Append([]byte("NEW"))
+
+	expected := "\x1b[31mred NEW\x1b[0m"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_Styled_ClearToEOLDropsOnlyErasedCells(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[31mred\x1b[0mplain"))
+	r.Append([]byte("\r\x1b[3C\x1b[K")) // to col 3 (end of "red"), erase rest
+
+	expected := "\x1b[31mred\x1b[0m"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_Styled_DeleteCharacterCSI(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[32mabcdef\x1b[0m"))
+	r.Append([]byte("\x1b[3D\x1b[P")) // back to col 3, delete 1 char ('d')
+
+	expected := "\x1b[32mabcef\x1b[0m"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_Styled_InsertCharacterCSI(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[35mabcdef\x1b[0m"))
+	r.Append([]byte("\x1b[3D\x1b[@")) // back to col 3, insert 1 blank
+
+	expected := "\x1b[35mabc\x1b[0m \x1b[35mdef\x1b[0m"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_Styled_EraseCharacterCSI(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[36mabcdef\x1b[0m"))
+	r.Append([]byte("\x1b[6D\x1b[3X")) // back to col 0, erase 3 chars
+
+	expected := "   \x1b[36mdef\x1b[0m"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestLineRenderer_Styled_EraseDisplayAll(t *testing.T) {
+	r := NewLineRenderer()
+	// No trailing reset before CSI 2J: the pen is still yellow when the
+	// display is erased. ED clears all lines but, like other erase ops,
+	// must not touch the pen — "after" must render yellow, not default.
+	r.Append([]byte("\x1b[33mline0\nline1"))
+	r.Append([]byte("\x1b[2J"))
+	r.Append([]byte("after"))
+
+	expected := "\x1b[33mafter\x1b[0m"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+// --- Issue #73: Reset() clears the new state -------------------------------
+
+func TestLineRenderer_Reset_ClearsStyleAndSavedCursor(t *testing.T) {
+	r := NewLineRenderer()
+	r.Append([]byte("\x1b[31mred\x1b7"))
+	r.Reset()
+
+	r.Append([]byte("plain"))
+	if got := r.Content(); got != "plain" {
+		t.Fatalf("expected pen cleared by Reset, got %q", got)
+	}
+
+	r.Append([]byte("\x1b8MOVED"))
+	expected := "plainMOVED"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected saved cursor cleared by Reset (ESC 8 no-op), got %q", got)
+	}
+}
+
+// --- Issue #73: chunk-split robustness (ASCII/escape sequences only) ------
+
+func TestLineRenderer_ChunkSplitRobustness(t *testing.T) {
+	inputs := [][]byte{
+		[]byte("\x1b[33mYELLOW STATUS\x1b[0m\rok\x1b[K\nplain line\n"),
+		[]byte("label-\x1b7AAAA\x1b8BBBB\n"),
+		[]byte("\x1b[1;31;4mstyled\x1b[0m\x1b[38;5;208mextended\x1b[0m"),
+		[]byte("\x1b[;5H\x1b[5;H\x1b[;;H"),
+		[]byte("\x1b[s move \x1b[u done"),
+	}
+
+	for _, in := range inputs {
+		whole := NewLineRenderer()
+		whole.Append(in)
+		wantContent := whole.Content()
+		wantRow, wantCol := whole.CursorPosition()
+
+		split := NewLineRenderer()
+		for _, b := range in {
+			split.Append([]byte{b})
+		}
+		gotContent := split.Content()
+		gotRow, gotCol := split.CursorPosition()
+
+		if gotContent != wantContent {
+			t.Errorf("chunk-split content mismatch for %q:\n whole: %q\n split: %q", in, wantContent, gotContent)
+		}
+		if gotRow != wantRow || gotCol != wantCol {
+			t.Errorf("chunk-split cursor mismatch for %q: whole=(%d,%d) split=(%d,%d)", in, wantRow, wantCol, gotRow, gotCol)
+		}
+	}
+}
+
+// --- Issue #73: pkcon fixture (ESC 7 / ESC 8 progress-bar redraw) ---------
+
+func TestLineRenderer_PkconFixture_NoFrameConcatenation(t *testing.T) {
+	data, err := os.ReadFile("testdata/pkcon_capture.raw")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	r := NewLineRenderer()
+	r.Append(data)
+
+	// Without DECSC/DECRC support, every ESC 8 frame would append after
+	// the previous one instead of overwriting it. The exact expected
+	// content pins the fix: only the final (100%) frame survives (the
+	// fixture's trailing newline materializes an empty second line).
+	expected := "Downloading updates [====================] (100%)\n"
+	if got := r.Content(); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+// --- Issue #73: welcome banner semantics survive rendering -----------------
+
+func TestLineRenderer_WelcomeBannerSemanticsPreserved(t *testing.T) {
+	r := NewLineRenderer()
+	msg := welcome.WelcomeMessage()
+	r.Append([]byte(msg))
+
+	got := ansi.Strip(r.Content())
+	want := ansi.Strip(msg)
+	if got != want {
+		t.Fatalf("welcome banner text changed after rendering:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+// --- Issue #73: memory/rendering overhead of the style representation ----
+//
+// Documents the real cost the plan's Risks section flagged: an 8-byte
+// style pointer on every cell, plus one interned *cellStyle allocation per
+// distinct pen. Compare with: go test ./pkg/ui/terminal/ -bench Scrollback -run xxx -benchmem
+
+func BenchmarkLineRenderer_PlainScrollback(b *testing.B) {
+	line := "the quick brown fox jumps over the lazy dog 0123456789\n"
+	for i := 0; i < b.N; i++ {
+		r := NewLineRenderer()
+		for j := 0; j < 2000; j++ {
+			r.Append([]byte(line))
+		}
+		_ = r.Content()
+	}
+}
+
+func BenchmarkLineRenderer_StyledScrollback(b *testing.B) {
+	line := "\x1b[31mthe quick\x1b[0m brown \x1b[32mfox jumps\x1b[0m over the lazy dog\n"
+	for i := 0; i < b.N; i++ {
+		r := NewLineRenderer()
+		for j := 0; j < 2000; j++ {
+			r.Append([]byte(line))
+		}
+		_ = r.Content()
 	}
 }
