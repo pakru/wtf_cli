@@ -25,12 +25,16 @@ func TestDefault(t *testing.T) {
 		t.Errorf("Expected Google model 'gemini-3-flash-preview', got %q", cfg.Providers.Google.Model)
 	}
 
-	if cfg.BufferSize != 2000 {
-		t.Errorf("Expected BufferSize 2000, got %d", cfg.BufferSize)
+	if cfg.BufferSize != 64000 {
+		t.Errorf("Expected BufferSize 64000, got %d", cfg.BufferSize)
 	}
 
-	if cfg.ContextWindow != 1000 {
-		t.Errorf("Expected ContextWindow 1000, got %d", cfg.ContextWindow)
+	if cfg.ContextWindow != 32000 {
+		t.Errorf("Expected ContextWindow 32000, got %d", cfg.ContextWindow)
+	}
+
+	if cfg.LogFormat != "text" {
+		t.Errorf("Expected LogFormat 'text', got %q", cfg.LogFormat)
 	}
 
 	if !cfg.UpdateCheck.Enabled {
@@ -82,7 +86,7 @@ func TestLoad_AgentToolsPresenceMatrix(t *testing.T) {
 	}{
 		{
 			name: "agent key absent entirely",
-			raw:  `{"buffer_size": 2000, "context_window": 1000}`,
+			raw:  `{}`,
 			want: func(t *testing.T, cfg Config) {
 				if cfg.Agent.Tools.ReadFile.MaxLines != defaultReadFileMaxLines {
 					t.Errorf("read_file.max_lines = %d, want default %d", cfg.Agent.Tools.ReadFile.MaxLines, defaultReadFileMaxLines)
@@ -238,8 +242,14 @@ func TestLoad_CreateDefault(t *testing.T) {
 	}
 
 	// Should be default config
-	if cfg.BufferSize != 2000 {
-		t.Errorf("Expected default BufferSize 2000, got %d", cfg.BufferSize)
+	if cfg.BufferSize != 64000 {
+		t.Errorf("Expected default BufferSize 64000, got %d", cfg.BufferSize)
+	}
+	if cfg.ContextWindow != 32000 {
+		t.Errorf("Expected default ContextWindow 32000, got %d", cfg.ContextWindow)
+	}
+	if cfg.LogFormat != "text" {
+		t.Errorf("Expected default LogFormat 'text', got %q", cfg.LogFormat)
 	}
 
 	// File should exist now

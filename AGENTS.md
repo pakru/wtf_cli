@@ -197,8 +197,8 @@ GitHub Actions in `.github/workflows/`:
       "list_directory": { "enabled": true, "max_entries": 500, "max_bytes": 65536 }
     }
   },
-  "buffer_size": 2000,
-  "context_window": 1000,
+  "buffer_size": 64000,
+  "context_window": 32000,
   "status_bar": {
     "position": "bottom"
   },
@@ -207,7 +207,7 @@ GitHub Actions in `.github/workflows/`:
     "interval_hours": 1
   },
   "log_file": "~/.wtf_cli/logs/wtf_cli.log",
-  "log_format": "json",
+  "log_format": "text",
   "log_level": "info"
 }
 ```
