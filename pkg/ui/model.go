@@ -64,6 +64,12 @@ type Model struct {
 	// "always" persists across multiple /explain or /chat invocations.
 	sessionApprovals *commands.SessionApprovals
 
+	// pathGrants holds per-(tool, directory) "allow always this session"
+	// decisions for out-of-workdir tool calls. Kept separate from
+	// sessionApprovals so a blanket tool-name grant never implies filesystem
+	// access beyond the working directory.
+	pathGrants *commands.PathGrants
+
 	// Data
 	buffer     *buffer.CircularBuffer
 	session    *capture.SessionContext
@@ -152,6 +158,7 @@ func NewModel(ptyFile *os.File, buf *buffer.CircularBuffer, sess *capture.Sessio
 		continuePrompt:   continueprompt.NewPanel(),
 		dispatcher:       commands.NewDispatcher(),
 		sessionApprovals: commands.NewSessionApprovals(),
+		pathGrants:       commands.NewPathGrants(),
 		buffer:           buf,
 		session:          sess,
 		currentDir:       initialDir,
@@ -193,7 +200,7 @@ func (m *Model) chatHandler() *commands.ChatHandler {
 // dispatcher mid-flight.
 func (m *Model) installAgentFactories() {
 	approverFactory := func(out chan<- commands.WtfStreamEvent) commands.Approver {
-		return commands.NewUIApprover(out, m.sessionApprovals)
+		return commands.NewUIApprover(out, m.sessionApprovals, m.pathGrants)
 	}
 	continuerFactory := func(out chan<- commands.WtfStreamEvent) commands.Continuer {
 		return commands.NewUIContinuer(out)

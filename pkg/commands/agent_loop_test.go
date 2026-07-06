@@ -84,7 +84,7 @@ func (t *echoTool) Name() string { return "echo" }
 func (t *echoTool) Definition() ai.ToolDefinition {
 	return ai.ToolDefinition{Name: "echo", Description: "echoes input", JSONSchema: json.RawMessage(`{}`)}
 }
-func (t *echoTool) Execute(_ context.Context, args json.RawMessage) (tools.Result, error) {
+func (t *echoTool) Execute(_ context.Context, args json.RawMessage, _ tools.ExecGrant) (tools.Result, error) {
 	t.calls = append(t.calls, append([]byte(nil), args...))
 	if t.err != nil {
 		return tools.Result{}, t.err
@@ -101,7 +101,7 @@ func (softFailTool) Name() string { return "soft_fail" }
 func (softFailTool) Definition() ai.ToolDefinition {
 	return ai.ToolDefinition{Name: "soft_fail", Description: "always soft-fails", JSONSchema: json.RawMessage(`{}`)}
 }
-func (softFailTool) Execute(_ context.Context, _ json.RawMessage) (tools.Result, error) {
+func (softFailTool) Execute(_ context.Context, _ json.RawMessage, _ tools.ExecGrant) (tools.Result, error) {
 	return tools.Result{Content: "path rejected: outside working directory", IsError: true}, nil
 }
 
@@ -672,4 +672,226 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+// --- Escape classification and grant plumbing -------------------------------
+
+// escapeAwareTool implements both tools.Tool and tools.EscapeClassifier. Its
+// ClassifyCall always returns the configured escape (nil disables
+// classification for tests that want an ordinary in-workdir call), and its
+// Execute records the grant it was handed for assertions.
+type escapeAwareTool struct {
+	escape        *tools.EscapeRequest
+	executed      bool
+	receivedGrant tools.ExecGrant
+}
+
+func (t *escapeAwareTool) Name() string { return "escape_tool" }
+func (t *escapeAwareTool) Definition() ai.ToolDefinition {
+	return ai.ToolDefinition{Name: "escape_tool", Description: "d", JSONSchema: json.RawMessage(`{}`)}
+}
+func (t *escapeAwareTool) ClassifyCall(_ json.RawMessage) *tools.EscapeRequest {
+	return t.escape
+}
+func (t *escapeAwareTool) Execute(_ context.Context, _ json.RawMessage, grant tools.ExecGrant) (tools.Result, error) {
+	t.executed = true
+	t.receivedGrant = grant
+	return tools.Result{Content: "ok"}, nil
+}
+
+// fixedDecisionApprover returns a fixed decision for every call and records
+// the last request it saw (particularly Escape) for assertions.
+type fixedDecisionApprover struct {
+	decision ApprovalDecision
+	lastReq  *ApprovalRequest
+}
+
+func (a *fixedDecisionApprover) Approve(_ context.Context, req *ApprovalRequest) (ApprovalDecision, error) {
+	a.lastReq = req
+	return a.decision, nil
+}
+
+// countingApprover records how many times it was asked, always allowing.
+type countingApprover struct{ count int }
+
+func (a *countingApprover) Approve(_ context.Context, _ *ApprovalRequest) (ApprovalDecision, error) {
+	a.count++
+	return ApprovalDecision{Allow: true}, nil
+}
+
+func runEscapeToolLoop(t *testing.T, tool *escapeAwareTool, approver Approver) {
+	t.Helper()
+	registry := tools.NewRegistry()
+	registry.Register(tool)
+	provider := &fakeProvider{
+		caps: ai.ProviderCapabilities{Tools: true},
+		streams: []*fakeStream{
+			{toolCalls: []ai.ToolCall{{ID: "1", Name: "escape_tool", Arguments: json.RawMessage(`{}`)}}},
+			{textChunks: []string{"done"}, stopReason: "stop"},
+		},
+	}
+	ch := make(chan WtfStreamEvent, 16)
+	go RunAgentLoop(context.Background(), provider, ai.ChatRequest{
+		Messages: []ai.Message{{Role: "user", Content: "hi"}},
+	}, AgentLoopConfig{
+		Registry:      registry,
+		Approver:      approver,
+		MaxIterations: 5,
+	}, ch)
+	_ = drain(t, ch, 2*time.Second)
+}
+
+func TestRunAgentLoop_GrantPassedOnlyWhenEscapeApprovedWithAllowOutsideWorkdir(t *testing.T) {
+	esc := &tools.EscapeRequest{
+		RequestedPath: "/etc/hosts",
+		ResolvedPath:  "/etc/hosts",
+		GrantDir:      "/etc",
+		Target:        tools.FileID{Dev: 1, Ino: 2, Valid: true},
+	}
+	tool := &escapeAwareTool{escape: esc}
+	approver := &fixedDecisionApprover{decision: ApprovalDecision{Allow: true, AllowOutsideWorkdir: true}}
+
+	runEscapeToolLoop(t, tool, approver)
+
+	if !tool.executed {
+		t.Fatal("expected the tool to execute")
+	}
+	if tool.receivedGrant.ApprovedPath != esc.ResolvedPath {
+		t.Fatalf("grant.ApprovedPath = %q, want %q", tool.receivedGrant.ApprovedPath, esc.ResolvedPath)
+	}
+	if tool.receivedGrant.Target != esc.Target {
+		t.Fatalf("grant.Target = %+v, want %+v", tool.receivedGrant.Target, esc.Target)
+	}
+}
+
+func TestRunAgentLoop_AllowWithoutAllowOutsideWorkdirYieldsZeroGrant(t *testing.T) {
+	esc := &tools.EscapeRequest{
+		ResolvedPath: "/etc/hosts",
+		GrantDir:     "/etc",
+		Target:       tools.FileID{Dev: 1, Ino: 2, Valid: true},
+	}
+	tool := &escapeAwareTool{escape: esc}
+	// Allow=true but AllowOutsideWorkdir unset — must not authorize an escape.
+	approver := &fixedDecisionApprover{decision: ApprovalDecision{Allow: true}}
+
+	runEscapeToolLoop(t, tool, approver)
+
+	if !tool.executed {
+		t.Fatal("expected the tool to execute")
+	}
+	if tool.receivedGrant != (tools.ExecGrant{}) {
+		t.Fatalf("expected the zero grant when AllowOutsideWorkdir is unset, got %+v", tool.receivedGrant)
+	}
+}
+
+// TestRunAgentLoop_AutoAllowApproverNeverYieldsEscapeGrant guards the
+// headless-safety invariant: AutoAllowApprover never sets
+// AllowOutsideWorkdir, so an escape-classified call must still execute with
+// the zero grant (workdir containment only).
+func TestRunAgentLoop_AutoAllowApproverNeverYieldsEscapeGrant(t *testing.T) {
+	esc := &tools.EscapeRequest{
+		ResolvedPath: "/etc/hosts",
+		GrantDir:     "/etc",
+		Target:       tools.FileID{Dev: 1, Ino: 2, Valid: true},
+	}
+	tool := &escapeAwareTool{escape: esc}
+
+	runEscapeToolLoop(t, tool, AutoAllowApprover{})
+
+	if !tool.executed {
+		t.Fatal("expected the tool to execute")
+	}
+	if tool.receivedGrant != (tools.ExecGrant{}) {
+		t.Fatalf("AutoAllowApprover must never yield an escape grant, got %+v", tool.receivedGrant)
+	}
+}
+
+func TestRunAgentLoop_ApprovalRequestEscapePopulatedFromClassifier(t *testing.T) {
+	esc := &tools.EscapeRequest{
+		ResolvedPath: "/etc/hosts",
+		GrantDir:     "/etc",
+		Target:       tools.FileID{Dev: 1, Ino: 2, Valid: true},
+	}
+	tool := &escapeAwareTool{escape: esc}
+	approver := &fixedDecisionApprover{decision: ApprovalDecision{Allow: true}}
+
+	runEscapeToolLoop(t, tool, approver)
+
+	if approver.lastReq == nil || approver.lastReq.Escape == nil {
+		t.Fatal("expected ApprovalRequest.Escape to be populated from the classifier")
+	}
+	if approver.lastReq.Escape.ResolvedPath != esc.ResolvedPath {
+		t.Fatalf("Escape.ResolvedPath = %q, want %q", approver.lastReq.Escape.ResolvedPath, esc.ResolvedPath)
+	}
+}
+
+func TestRunAgentLoop_ClassifierNilResultLeavesEscapeNil(t *testing.T) {
+	tool := &escapeAwareTool{escape: nil} // classifier declines to offer an escape
+	approver := &fixedDecisionApprover{decision: ApprovalDecision{Allow: true}}
+
+	runEscapeToolLoop(t, tool, approver)
+
+	if approver.lastReq == nil {
+		t.Fatal("expected the approver to be called")
+	}
+	if approver.lastReq.Escape != nil {
+		t.Fatalf("expected ApprovalRequest.Escape to be nil, got %+v", approver.lastReq.Escape)
+	}
+}
+
+// TestRunAgentLoop_NonClassifierToolLeavesEscapeNil covers ordinary tools
+// (like echoTool) that don't implement EscapeClassifier at all.
+func TestRunAgentLoop_NonClassifierToolLeavesEscapeNil(t *testing.T) {
+	echo := &echoTool{}
+	approver := &fixedDecisionApprover{decision: ApprovalDecision{Allow: true}}
+	provider := &fakeProvider{
+		caps: ai.ProviderCapabilities{Tools: true},
+		streams: []*fakeStream{
+			{toolCalls: []ai.ToolCall{{ID: "1", Name: "echo", Arguments: json.RawMessage(`{}`)}}},
+			{textChunks: []string{"done"}, stopReason: "stop"},
+		},
+	}
+	ch := make(chan WtfStreamEvent, 16)
+	go RunAgentLoop(context.Background(), provider, ai.ChatRequest{
+		Messages: []ai.Message{{Role: "user", Content: "hi"}},
+	}, AgentLoopConfig{
+		Registry:      newRegistryWithEcho(echo),
+		Approver:      approver,
+		MaxIterations: 5,
+	}, ch)
+	_ = drain(t, ch, 2*time.Second)
+
+	if approver.lastReq == nil {
+		t.Fatal("expected the approver to be called")
+	}
+	if approver.lastReq.Escape != nil {
+		t.Fatalf("expected ApprovalRequest.Escape to be nil for a non-classifier tool, got %+v", approver.lastReq.Escape)
+	}
+}
+
+// TestRunAgentLoop_UnknownToolDoesNotCallApprover is the reorder regression:
+// registry lookup now happens before approval, so a hallucinated tool name
+// must soft-fail without ever prompting the user.
+func TestRunAgentLoop_UnknownToolDoesNotCallApprover(t *testing.T) {
+	approver := &countingApprover{}
+	provider := &fakeProvider{
+		caps: ai.ProviderCapabilities{Tools: true},
+		streams: []*fakeStream{
+			{toolCalls: []ai.ToolCall{{ID: "1", Name: "no_such_tool", Arguments: json.RawMessage(`{}`)}}},
+			{textChunks: []string{"sorry"}, stopReason: "stop"},
+		},
+	}
+	ch := make(chan WtfStreamEvent, 16)
+	go RunAgentLoop(context.Background(), provider, ai.ChatRequest{
+		Messages: []ai.Message{{Role: "user", Content: "hi"}},
+	}, AgentLoopConfig{
+		Registry:      tools.NewRegistry(),
+		Approver:      approver,
+		MaxIterations: 5,
+	}, ch)
+	_ = drain(t, ch, 2*time.Second)
+
+	if approver.count != 0 {
+		t.Fatalf("approver should not be called for an unknown tool, got %d call(s)", approver.count)
+	}
 }

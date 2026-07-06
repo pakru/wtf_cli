@@ -27,8 +27,13 @@ type DecisionKind int
 const (
 	// DecisionAllowOnce permits this single tool call.
 	DecisionAllowOnce DecisionKind = iota
-	// DecisionAllowSession permits this and any future call to the same tool
-	// for the rest of the wtf_cli session.
+	// DecisionAllowSession permits remembering this decision for the rest of
+	// the wtf_cli session. Its scope is contextual, mirroring
+	// commands.ApprovalDecision.Persistent: for an ordinary request
+	// (Request.Escape == nil) it means "always allow this tool by name"; for
+	// an escape request (Request.Escape != nil) it means "always allow this
+	// tool to access this directory" — the Model interprets which one
+	// applies and dispatches to the corresponding store.
 	DecisionAllowSession
 	// DecisionDeny refuses the tool call.
 	DecisionDeny
@@ -159,14 +164,52 @@ func (p *Panel) View() string {
 	buttons := p.renderButtons(contentWidth)
 	help := renderApprovalHelp(contentWidth)
 
-	parts := []string{header, "", metadata}
+	parts := []string{header}
+	if p.request.Escape != nil {
+		parts = append(parts, "", renderEscapeWarning(contentWidth))
+	}
+	parts = append(parts, "", metadata)
 	if content != "" {
 		parts = append(parts, "", content)
+	}
+	if p.request.Escape != nil {
+		parts = append(parts, "", renderEscapeScopeNote(p.request, contentWidth))
 	}
 	parts = append(parts, "", buttons, "", help)
 	body := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	return boxStyle.Width(panelWidth).Render(body)
+}
+
+// escapeWarningStyle highlights the out-of-workdir banner shown on an escape
+// request's popup.
+var escapeWarningStyle = lipgloss.NewStyle().Foreground(styles.ColorWarning).Bold(true)
+
+func renderEscapeWarning(width int) string {
+	text := "⚠ Path is OUTSIDE your working directory"
+	return escapeWarningStyle.Render(utils.TruncateToWidth(text, width))
+}
+
+// renderEscapeScopeNote clarifies what "Allow for session" grants on an
+// escape popup: this tool, this directory — never the tool everywhere, and
+// never other tools under the same directory.
+//
+// The directory is rendered on its own line so it gets the *entire* content
+// width as its truncation budget, not whatever is left over after a fixed
+// sentence. An earlier version embedded the directory mid-sentence and
+// shared one budget between fixed text and the directory: at ordinary popup
+// widths the fixed text alone consumed nearly all of it, leaving only a
+// couple of cells for the directory — technically tail-preserving but
+// practically useless. The label line (short, fixed, never model-controlled)
+// can safely head-truncate in the rare case it doesn't fit.
+func renderEscapeScopeNote(req *commands.ApprovalRequest, width int) string {
+	label := fmt.Sprintf("%q scopes to %s, directory:", "Allow for session", req.Name)
+	dir := utils.TailPreservingTruncate(utils.EscapeControl(req.Escape.GrantDir), width)
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		styles.DialogHelpTextStyle.Render(utils.TruncateToWidth(label, width)),
+		styles.DialogMetaValueStyle.Render(dir),
+	)
 }
 
 func approvalPanelWidth(screenWidth int) int {
@@ -208,10 +251,13 @@ func renderApprovalHeader(width int) string {
 }
 
 func (p *Panel) renderMetadata(width int) string {
+	if p.request.Escape != nil {
+		return p.renderEscapeMetadata(width)
+	}
 	summary := summarizeArgs(p.request.Args)
 	lines := []string{renderApprovalKV("Tool", p.request.Name, width)}
 	if summary.path != "" {
-		lines = append(lines, renderApprovalKV("Path", summary.path, width))
+		lines = append(lines, renderApprovalKVTail("Path", summary.path, width))
 	}
 	if summary.desc != "" {
 		lines = append(lines, renderApprovalKV("Desc", summary.desc, width))
@@ -219,13 +265,44 @@ func (p *Panel) renderMetadata(width int) string {
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
+// renderEscapeMetadata shows the requested path and, when symlink resolution
+// changed it, the resolved path — e.g. a request for "../logs" that turns
+// out to be a symlink to "/var/log" shows both, so the user approves what
+// will actually be accessed, not just the innocuous-looking argument.
+func (p *Panel) renderEscapeMetadata(width int) string {
+	esc := p.request.Escape
+	lines := []string{
+		renderApprovalKV("Tool", p.request.Name, width),
+		renderApprovalKVTail("Path", esc.RequestedPath, width),
+	}
+	if esc.ResolvedPath != esc.RequestedPath {
+		lines = append(lines, renderApprovalKVTail("Resolves to", esc.ResolvedPath, width))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// renderApprovalKV renders a "Key value" metadata row, head-truncating the
+// value. Used for fields where the front of the value is what identifies it
+// (tool names, free-text descriptions).
 func renderApprovalKV(key, value string, width int) string {
+	return renderApprovalKVStyled(key, value, width, utils.TruncateToWidth)
+}
+
+// renderApprovalKVTail is renderApprovalKV but tail-preserving: for a path,
+// the distinguishing part is often the suffix ("…/secret"), so truncating
+// from the front instead of the back must never hide it.
+func renderApprovalKVTail(key, value string, width int) string {
+	return renderApprovalKVStyled(key, value, width, utils.TailPreservingTruncate)
+}
+
+func renderApprovalKVStyled(key, value string, width int, truncate func(string, int) string) string {
 	keyText := styles.DialogMetaKeyStyle.Render(key)
 	valueWidth := width - lipgloss.Width(keyText) - 1
 	if valueWidth < 0 {
 		valueWidth = 0
 	}
-	valueText := styles.DialogMetaValueStyle.Render(utils.TruncateToWidth(value, valueWidth))
+	escaped := utils.EscapeControl(value)
+	valueText := styles.DialogMetaValueStyle.Render(truncate(escaped, valueWidth))
 	return lipgloss.JoinHorizontal(lipgloss.Top, keyText, " ", valueText)
 }
 
@@ -250,13 +327,17 @@ func (p *Panel) renderContentPanel(width int) string {
 		lines = append(lines[:maxPreviewLines], "...")
 	}
 	for i, line := range lines {
-		lines[i] = utils.TruncateToWidth(line, innerWidth)
+		lines[i] = utils.TruncateToWidth(utils.EscapeControl(line), innerWidth)
 	}
 	return panelStyle.Width(width).Render(strings.Join(lines, "\n"))
 }
 
 func (p *Panel) renderButtons(width int) string {
-	labels := []string{"1. Allow", "2. Allow for Session", "3. Deny"}
+	sessionLabel := "2. Allow for Session"
+	if p.request.Escape != nil {
+		sessionLabel = "2. Allow dir for session"
+	}
+	labels := []string{"1. Allow", sessionLabel, "3. Deny"}
 	buttons := make([]string, len(labels))
 	for i, label := range labels {
 		style := styles.DialogButtonStyle

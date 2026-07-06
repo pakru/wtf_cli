@@ -41,7 +41,7 @@ Introduce structured logging for app workflow visibility without breaking the TU
 **Tasks:**
 - Extend `config.Config` with optional logging settings:
   - `log_file` (string, default `~/.wtf_cli/logs/wtf_cli.log`)
-  - `log_format` (string, default `json`)
+  - `log_format` (string, default `text`)
   - `log_level` (already present)
 - Update defaults and validation (supported levels only).
 - Update settings UI to surface log level and log file path.

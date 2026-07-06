@@ -17,7 +17,7 @@ func (f *fakeTool) Name() string { return f.name }
 func (f *fakeTool) Definition() ai.ToolDefinition {
 	return ai.ToolDefinition{Name: f.name, Description: f.desc, JSONSchema: json.RawMessage(`{}`)}
 }
-func (f *fakeTool) Execute(_ context.Context, _ json.RawMessage) (Result, error) {
+func (f *fakeTool) Execute(_ context.Context, _ json.RawMessage, _ ExecGrant) (Result, error) {
 	return Result{Content: "ok"}, nil
 }
 

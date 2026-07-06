@@ -118,7 +118,7 @@ GitHub Actions in `.github/workflows/`:
 - `pkg/ai/registry.go` selects the active provider from config.
 - Each provider in `pkg/ai/providers/` implements a common interface.
 - OAuth-based providers (Copilot, Google) use `pkg/ai/auth/` for device flow / PKCE.
-- Tool calling is handled via `pkg/ai/tools/` with an approval flow (`pkg/ui/components/toolapproval/`).
+- Tool calling is handled via `pkg/ai/tools/` with an approval flow (`pkg/ui/components/toolapproval/`). By default (`out_of_workdir_access: "ask"`), a call targeting a path outside the working directory triggers a separate escape-approval popup and a per-(tool, directory) session grant (`pkg/commands/PathGrants`), independent of the ordinary per-tool "allow for session" grant.
 
 ## Agent Guidelines
 
@@ -148,6 +148,7 @@ GitHub Actions in `.github/workflows/`:
 - Config file location: `~/.wtf_cli/config.json`
 - AI providers are configured per-provider; OAuth-based providers store credentials via `pkg/ai/auth/`.
 - Only the fields for the active `llm_provider` need to be set. `copilot` uses GitHub Copilot CLI authentication — no API key required.
+- `agent.tools.out_of_workdir_access`: `"ask"` (default) prompts the user before a tool reads/lists a path outside the working directory, with a per-(tool, directory) "allow for session" option; `"deny"` keeps tools strictly confined to the working directory, with no escape prompt ever shown.
 
 ```json
 {
@@ -191,12 +192,13 @@ GitHub Actions in `.github/workflows/`:
   "agent": {
     "max_iterations": 5,
     "tools": {
+      "out_of_workdir_access": "ask",
       "read_file": { "enabled": true, "max_lines": 500, "max_bytes": 65536 },
       "list_directory": { "enabled": true, "max_entries": 500, "max_bytes": 65536 }
     }
   },
-  "buffer_size": 2000,
-  "context_window": 1000,
+  "buffer_size": 64000,
+  "context_window": 32000,
   "status_bar": {
     "position": "bottom"
   },
@@ -205,7 +207,7 @@ GitHub Actions in `.github/workflows/`:
     "interval_hours": 1
   },
   "log_file": "~/.wtf_cli/logs/wtf_cli.log",
-  "log_format": "json",
+  "log_format": "text",
   "log_level": "info"
 }
 ```

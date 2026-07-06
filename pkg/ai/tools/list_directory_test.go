@@ -22,7 +22,7 @@ func mustExecLD(t *testing.T, tool *ListDirectory, args any) Result {
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
-	res, err := tool.Execute(context.Background(), raw)
+	res, err := tool.Execute(context.Background(), raw, ExecGrant{})
 	if err != nil {
 		t.Fatalf("execute returned hard error: %v", err)
 	}
@@ -41,7 +41,7 @@ func findLineContaining(lines []string, substr string) int {
 // --- Definition / constructor -----------------------------------------
 
 func TestListDirectory_Definition(t *testing.T) {
-	tool := NewListDirectory(t.TempDir(), 100, 8192)
+	tool := NewListDirectory(t.TempDir(), 100, 8192, false)
 	def := tool.Definition()
 	if def.Name != "list_directory" {
 		t.Fatalf("name = %q, want list_directory", def.Name)
@@ -56,7 +56,7 @@ func TestListDirectory_Definition(t *testing.T) {
 }
 
 func TestListDirectory_NewListDirectoryNormalizesCaps(t *testing.T) {
-	tool := NewListDirectory("/tmp", -10, -10)
+	tool := NewListDirectory("/tmp", -10, -10, false)
 	if tool.MaxEntries < listDirectoryMinMaxEntries {
 		t.Errorf("MaxEntries = %d, want >= %d", tool.MaxEntries, listDirectoryMinMaxEntries)
 	}
@@ -75,7 +75,7 @@ func TestListDirectory_HappyPath(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "."})
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
@@ -115,7 +115,7 @@ func TestListDirectory_DefaultPathListsCwd(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "only.txt"), "x")
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{})
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
@@ -136,7 +136,7 @@ func TestListDirectory_PathWithSurroundingWhitespaceIsNotTrimmed(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(dir, weird, "inside.txt"), "x")
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: weird})
 	if res.IsError {
 		t.Fatalf("a real whitespace-padded directory name should be usable as-is, got error: %s", res.Content)
@@ -147,7 +147,7 @@ func TestListDirectory_PathWithSurroundingWhitespaceIsNotTrimmed(t *testing.T) {
 }
 
 func TestListDirectory_UnconfiguredCwd(t *testing.T) {
-	tool := NewListDirectory("", 100, 65536)
+	tool := NewListDirectory("", 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{})
 	if !res.IsError {
 		t.Fatalf("expected error for empty cwd, got: %s", res.Content)
@@ -164,7 +164,7 @@ func TestListDirectory_HiddenExcludedByDefault(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "visible.txt"), "x")
 	writeFile(t, filepath.Join(dir, ".hidden"), "x")
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "."})
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
@@ -181,7 +181,7 @@ func TestListDirectory_HiddenIncludedWithFlag(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, ".hidden"), "x")
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: ".", IncludeHidden: true})
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
@@ -195,7 +195,7 @@ func TestListDirectory_OnlyDotfilesRendersEmptyWithoutFlag(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, ".onlyhidden"), "x")
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "."})
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
@@ -209,8 +209,11 @@ func TestListDirectory_OnlyDotfilesRendersEmptyWithoutFlag(t *testing.T) {
 
 func TestListDirectory_RejectsTraversal(t *testing.T) {
 	dir := t.TempDir()
-	tool := NewListDirectory(dir, 100, 65536)
-	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "../../../etc"})
+	tool := NewListDirectory(dir, 100, 65536, false)
+	// A generous, depth-independent "../" count: t.TempDir() nests only a
+	// couple of levels on Linux but considerably deeper on macOS (a
+	// supported target), so a fixed small count is not portable.
+	res := mustExecLD(t, tool, ListDirectoryArgs{Path: strings.Repeat("../", 20) + "etc"})
 	if !res.IsError {
 		t.Fatalf("expected error for traversal, got: %s", res.Content)
 	}
@@ -223,7 +226,7 @@ func TestListDirectory_RejectsAbsoluteOutsideCwd(t *testing.T) {
 	cwd := t.TempDir()
 	outside := t.TempDir()
 
-	tool := NewListDirectory(cwd, 100, 65536)
+	tool := NewListDirectory(cwd, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: outside})
 	if !res.IsError {
 		t.Fatalf("expected error for outside-cwd absolute path, got: %s", res.Content)
@@ -243,7 +246,7 @@ func TestListDirectory_RejectsAbsoluteSiblingPrefix(t *testing.T) {
 		t.Fatalf("mkdir sibling: %v", err)
 	}
 
-	tool := NewListDirectory(cwd, 100, 65536)
+	tool := NewListDirectory(cwd, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: sibling})
 	if !res.IsError {
 		t.Fatalf("expected sibling directory with prefixed name to be rejected, got: %s", res.Content)
@@ -268,7 +271,7 @@ func TestListDirectory_AllowsRelativeSymlinkedDirInsideCwd(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	tool := NewListDirectory(cwd, 100, 65536)
+	tool := NewListDirectory(cwd, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "alias"})
 	if res.IsError {
 		t.Fatalf("relative in-tree symlinked dir should be traversable, got error: %s", res.Content)
@@ -294,7 +297,7 @@ func TestListDirectory_RejectsAbsoluteSymlinkedDirEvenPointingInsideCwd(t *testi
 		t.Fatalf("symlink: %v", err)
 	}
 
-	tool := NewListDirectory(cwd, 100, 65536)
+	tool := NewListDirectory(cwd, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "alias"})
 	if !res.IsError {
 		t.Fatalf("expected absolute-target symlink traversal to be rejected by os.Root, got: %s", res.Content)
@@ -311,7 +314,7 @@ func TestListDirectory_SymlinkEntryShowsTargetNotFollowed(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "."})
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
@@ -338,7 +341,7 @@ func TestListDirectory_BrokenSymlinkEntryStillRenders(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "."})
 	if res.IsError {
 		t.Fatalf("broken symlink should not fail the listing: %s", res.Content)
@@ -361,7 +364,7 @@ func TestListDirectory_SymlinkEntryWithAbsoluteTargetIsListedNotFollowed(t *test
 		t.Fatalf("symlink: %v", err)
 	}
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "."})
 	if res.IsError {
 		t.Fatalf("listing a directory containing an absolute-target symlink entry should succeed: %s", res.Content)
@@ -374,7 +377,7 @@ func TestListDirectory_SymlinkEntryWithAbsoluteTargetIsListedNotFollowed(t *test
 // --- Not-a-directory / missing / permission --------------------------------
 
 func TestListDirectory_MissingDirectory(t *testing.T) {
-	tool := NewListDirectory(t.TempDir(), 100, 65536)
+	tool := NewListDirectory(t.TempDir(), 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "does_not_exist"})
 	if !res.IsError {
 		t.Fatalf("expected error for missing directory, got: %s", res.Content)
@@ -388,7 +391,7 @@ func TestListDirectory_RejectsFileAsPath(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "file.txt"), "x")
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "file.txt"})
 	if !res.IsError {
 		t.Fatalf("expected error for file path, got: %s", res.Content)
@@ -405,7 +408,7 @@ func TestListDirectory_PathThroughFileComponentReportsNotADirectory(t *testing.T
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "file"), "x")
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "file/child"})
 	if !res.IsError {
 		t.Fatalf("expected error for path traversing through a file component, got: %s", res.Content)
@@ -432,7 +435,7 @@ func TestListDirectory_PermissionDenied(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(sub, 0o755) }) // allow TempDir cleanup
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "locked"})
 	if !res.IsError {
 		t.Fatalf("expected permission error, got: %s", res.Content)
@@ -446,7 +449,7 @@ func TestListDirectory_PermissionDenied(t *testing.T) {
 
 func TestListDirectory_EmptyDirectory(t *testing.T) {
 	dir := t.TempDir()
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "."})
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
@@ -464,7 +467,7 @@ func TestListDirectory_MaxEntriesCap(t *testing.T) {
 		writeFile(t, filepath.Join(dir, fmt.Sprintf("f%02d.txt", i)), "x")
 	}
 
-	tool := NewListDirectory(dir, 5, 65536)
+	tool := NewListDirectory(dir, 5, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "."})
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
@@ -486,7 +489,7 @@ func TestListDirectory_MaxBytesCap(t *testing.T) {
 		writeFile(t, filepath.Join(dir, fmt.Sprintf("file-%03d.txt", i)), "x")
 	}
 
-	tool := NewListDirectory(dir, 1000, 400) // generous entry cap, tight byte cap
+	tool := NewListDirectory(dir, 1000, 400, false) // generous entry cap, tight byte cap
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "."})
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
@@ -541,7 +544,7 @@ func TestListDirectory_ByteCapAtRealMinimumStillProducesUsefulOutput(t *testing.
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "f.txt"), "x")
 
-	tool := NewListDirectory(dir, 100, listDirectoryMinMaxBytes)
+	tool := NewListDirectory(dir, 100, listDirectoryMinMaxBytes, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "."})
 
 	if len(res.Content) > tool.MaxBytes {
@@ -596,7 +599,7 @@ func TestListDirectory_EarlyExitErrorsRespectMaxBytes(t *testing.T) {
 			scanCap:    listDirectoryDefaultScanCap,
 			readBatch:  listDirectoryDefaultReadBatch,
 		}
-		res, err := tool.Execute(context.Background(), json.RawMessage(`{not valid json at all, and this decode error text could run long`))
+		res, err := tool.Execute(context.Background(), json.RawMessage(`{not valid json at all, and this decode error text could run long`), ExecGrant{})
 		if err != nil {
 			t.Fatalf("expected soft error, got hard error: %v", err)
 		}
@@ -635,7 +638,7 @@ func TestListDirectory_PathContainingNotADirectoryPhraseIsNotMisclassified(t *te
 	dir := t.TempDir()
 	weird := "not a directory-" + strings.Repeat("x", 300) // single component > NAME_MAX
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: weird})
 	if !res.IsError {
 		t.Fatalf("expected an error for an overlong path component, got: %s", res.Content)
@@ -666,7 +669,7 @@ func TestListDirectory_LongRealPathAtFloorStillProducesStructuredOutput(t *testi
 		t.Fatalf("test setup: relPath is %d bytes, want > %d to actually exercise bounding", len(relPath), listDirectoryMaxDisplayBytes)
 	}
 
-	tool := NewListDirectory(dir, 100, listDirectoryMinMaxBytes)
+	tool := NewListDirectory(dir, 100, listDirectoryMinMaxBytes, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: relPath})
 
 	if len(res.Content) > tool.MaxBytes {
@@ -714,7 +717,7 @@ func TestListDirectory_OwnerGroupResolvesOrFallsBackToNumeric(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "f.txt"), "x")
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	res := mustExecLD(t, tool, ListDirectoryArgs{Path: "."})
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.Content)
@@ -748,8 +751,8 @@ func TestListDirectory_OwnerGroupResolvesOrFallsBackToNumeric(t *testing.T) {
 // --- Args / cancellation ------------------------------------------------
 
 func TestListDirectory_BadJSON(t *testing.T) {
-	tool := NewListDirectory(t.TempDir(), 100, 65536)
-	res, err := tool.Execute(context.Background(), json.RawMessage(`{not json`))
+	tool := NewListDirectory(t.TempDir(), 100, 65536, false)
+	res, err := tool.Execute(context.Background(), json.RawMessage(`{not json`), ExecGrant{})
 	if err != nil {
 		t.Fatalf("expected soft error, got hard error: %v", err)
 	}
@@ -766,9 +769,9 @@ func TestListDirectory_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	tool := NewListDirectory(dir, 100, 65536)
+	tool := NewListDirectory(dir, 100, 65536, false)
 	raw, _ := json.Marshal(ListDirectoryArgs{Path: "."})
-	_, err := tool.Execute(ctx, raw)
+	_, err := tool.Execute(ctx, raw, ExecGrant{})
 	if err == nil {
 		t.Fatal("expected hard error from canceled context")
 	}
@@ -1054,5 +1057,264 @@ func TestCollectEntries_ContextCancelledBetweenBatches(t *testing.T) {
 	}
 	if len(names) != 1 || names[0] != "a" {
 		t.Fatalf("expected the first batch to still be collected before cancellation, got %v", names)
+	}
+}
+
+// --- Escapes: Definition() is policy-aware ---------------------------------
+
+func TestListDirectory_DefinitionDiffersByAllowEscapes(t *testing.T) {
+	denyTool := NewListDirectory(t.TempDir(), 100, 65536, false)
+	askTool := NewListDirectory(t.TempDir(), 100, 65536, true)
+
+	if denyTool.Definition().Description == askTool.Definition().Description {
+		t.Fatal("description should differ between deny and ask policies")
+	}
+	if strings.Contains(denyTool.Definition().Description, "harness will ask") {
+		t.Fatal("deny-policy description should not advertise escape prompting")
+	}
+	if !strings.Contains(askTool.Definition().Description, "harness will ask") {
+		t.Fatal("ask-policy description should advertise escape prompting")
+	}
+	if !strings.Contains(denyTool.Definition().Description, "~/") {
+		t.Fatal("deny-policy description should still mention ~/ expansion, since it applies regardless of policy")
+	}
+}
+
+// --- Escapes: ClassifyCall --------------------------------------------------
+
+func TestListDirectory_ClassifyCall_NilWhenEscapesDisabled(t *testing.T) {
+	cwd := t.TempDir()
+	outside := t.TempDir()
+	tool := NewListDirectory(cwd, 100, 65536, false)
+	raw, _ := json.Marshal(ListDirectoryArgs{Path: outside})
+	if req := tool.ClassifyCall(raw); req != nil {
+		t.Fatalf("expected nil classification with AllowEscapes=false, got %+v", req)
+	}
+}
+
+func TestListDirectory_ClassifyCall_NilForInWorkdirPath(t *testing.T) {
+	cwd := t.TempDir()
+	tool := NewListDirectory(cwd, 100, 65536, true)
+	raw, _ := json.Marshal(ListDirectoryArgs{Path: "."})
+	if req := tool.ClassifyCall(raw); req != nil {
+		t.Fatalf("expected nil classification for an in-workdir path, got %+v", req)
+	}
+}
+
+func TestListDirectory_ClassifyCall_NilOnBadJSON(t *testing.T) {
+	tool := NewListDirectory(t.TempDir(), 100, 65536, true)
+	if req := tool.ClassifyCall(json.RawMessage(`{not json`)); req != nil {
+		t.Fatalf("expected nil classification on invalid JSON, got %+v", req)
+	}
+}
+
+func TestListDirectory_ClassifyCall_OutsidePathPopulatesRequest(t *testing.T) {
+	cwd := t.TempDir()
+	outside := t.TempDir()
+	writeFile(t, filepath.Join(outside, "f.txt"), "x")
+
+	tool := NewListDirectory(cwd, 100, 65536, true)
+	raw, _ := json.Marshal(ListDirectoryArgs{Path: outside})
+	req := tool.ClassifyCall(raw)
+	if req == nil {
+		t.Fatal("expected a non-nil escape request for an outside directory")
+	}
+	if req.RequestedPath != outside {
+		t.Errorf("RequestedPath = %q, want %q", req.RequestedPath, outside)
+	}
+	if req.ResolvedPath != outside {
+		t.Errorf("ResolvedPath = %q, want %q", req.ResolvedPath, outside)
+	}
+	if req.GrantDir != outside {
+		t.Errorf("GrantDir = %q, want the directory itself %q", req.GrantDir, outside)
+	}
+	if !req.Target.Valid {
+		t.Error("expected Target.Valid=true for an existing directory")
+	}
+}
+
+// --- Escapes: Execute grant enforcement -------------------------------------
+
+func TestListDirectory_Execute_OutsidePathWithoutGrantIsRejected(t *testing.T) {
+	cwd := t.TempDir()
+	outside := t.TempDir()
+
+	tool := NewListDirectory(cwd, 100, 65536, true)
+	res := mustExecLD(t, tool, ListDirectoryArgs{Path: outside})
+	if !res.IsError {
+		t.Fatalf("expected rejection without a grant, got: %s", res.Content)
+	}
+}
+
+func TestListDirectory_Execute_MatchingGrantListsOutsideDir(t *testing.T) {
+	cwd := t.TempDir()
+	outside := t.TempDir()
+	writeFile(t, filepath.Join(outside, "only.txt"), "x")
+
+	tool := NewListDirectory(cwd, 100, 65536, true)
+	raw, _ := json.Marshal(ListDirectoryArgs{Path: outside})
+	req := tool.ClassifyCall(raw)
+	if req == nil {
+		t.Fatal("expected classification to succeed")
+	}
+
+	grant := ExecGrant{ApprovedPath: req.ResolvedPath, Target: req.Target}
+	res, err := tool.Execute(context.Background(), raw, grant)
+	if err != nil {
+		t.Fatalf("execute returned hard error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected error with a valid grant: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "only.txt") {
+		t.Fatalf("expected directory listing, got: %s", res.Content)
+	}
+}
+
+func TestListDirectory_Execute_GrantWithMismatchedPathIsRejected(t *testing.T) {
+	cwd := t.TempDir()
+	outside := t.TempDir()
+	otherDir := t.TempDir()
+
+	tool := NewListDirectory(cwd, 100, 65536, true)
+	raw, _ := json.Marshal(ListDirectoryArgs{Path: outside})
+
+	otherID, err := captureIdentity(otherDir)
+	if err != nil {
+		t.Fatalf("captureIdentity: %v", err)
+	}
+	grant := ExecGrant{ApprovedPath: otherDir, Target: otherID}
+	res, execErr := tool.Execute(context.Background(), raw, grant)
+	if execErr != nil {
+		t.Fatalf("execute returned hard error: %v", execErr)
+	}
+	if !res.IsError {
+		t.Fatalf("expected rejection when the grant's approved path does not match the request, got: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "changed during approval") {
+		t.Fatalf("expected 'changed during approval' message, got: %s", res.Content)
+	}
+}
+
+func TestListDirectory_Execute_GrantWithMismatchedIdentityIsRejected(t *testing.T) {
+	cwd := t.TempDir()
+	outside := t.TempDir()
+
+	tool := NewListDirectory(cwd, 100, 65536, true)
+	raw, _ := json.Marshal(ListDirectoryArgs{Path: outside})
+
+	grant := ExecGrant{ApprovedPath: outside, Target: FileID{Dev: 999999, Ino: 999999, Valid: true}}
+	res, err := tool.Execute(context.Background(), raw, grant)
+	if err != nil {
+		t.Fatalf("execute returned hard error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected rejection for a fabricated/mismatched identity, got: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "changed during approval") {
+		t.Fatalf("expected 'changed during approval' message, got: %s", res.Content)
+	}
+}
+
+func TestListDirectory_Execute_MissingTargetApprovedStillMissingReportsNotFound(t *testing.T) {
+	cwd := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "does-not-exist")
+
+	tool := NewListDirectory(cwd, 100, 65536, true)
+	raw, _ := json.Marshal(ListDirectoryArgs{Path: outside})
+	grant := ExecGrant{ApprovedPath: outside, Target: FileID{Valid: false}}
+
+	res, err := tool.Execute(context.Background(), raw, grant)
+	if err != nil {
+		t.Fatalf("execute returned hard error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected an error for a still-missing approved target")
+	}
+	if !strings.Contains(res.Content, "not found") {
+		t.Fatalf("expected 'not found' message, got: %s", res.Content)
+	}
+}
+
+// TestListDirectory_Execute_AllowEscapesFalseIgnoresGrant is the defense-in-
+// depth check: even if a caller (mis)constructs a valid-looking grant, a
+// tool built with AllowEscapes=false must still enforce plain containment.
+func TestListDirectory_Execute_AllowEscapesFalseIgnoresGrant(t *testing.T) {
+	cwd := t.TempDir()
+	outside := t.TempDir()
+
+	tool := NewListDirectory(cwd, 100, 65536, false) // deny policy
+	raw, _ := json.Marshal(ListDirectoryArgs{Path: outside})
+
+	id, err := captureIdentity(outside)
+	if err != nil {
+		t.Fatalf("captureIdentity: %v", err)
+	}
+	grant := ExecGrant{ApprovedPath: outside, Target: id}
+	res, execErr := tool.Execute(context.Background(), raw, grant)
+	if execErr != nil {
+		t.Fatalf("execute returned hard error: %v", execErr)
+	}
+	if !res.IsError {
+		t.Fatal("expected containment to apply regardless of a grant when AllowEscapes=false")
+	}
+}
+
+// Edge case: the model asks to list_directory an outside path that turns out
+// to be a file, not a directory. Classification doesn't check file type (it
+// just captures identity), so this must fail gracefully at Execute rather
+// than crash or misreport "changed during approval".
+func TestListDirectory_Execute_EscapeTargetIsFileReportsNotADirectory(t *testing.T) {
+	cwd := t.TempDir()
+	outside := t.TempDir()
+	filePath := filepath.Join(outside, "file.txt")
+	writeFile(t, filePath, "x")
+
+	tool := NewListDirectory(cwd, 100, 65536, true)
+	raw, _ := json.Marshal(ListDirectoryArgs{Path: filePath})
+	req := tool.ClassifyCall(raw)
+	if req == nil {
+		t.Fatal("expected classification to succeed even for a file target")
+	}
+	grant := ExecGrant{ApprovedPath: req.ResolvedPath, Target: req.Target}
+
+	res, err := tool.Execute(context.Background(), raw, grant)
+	if err != nil {
+		t.Fatalf("execute returned hard error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected an error for a file target, got: %s", res.Content)
+	}
+	if !strings.Contains(res.Content, "not a directory") {
+		t.Fatalf("expected 'not a directory' message, got: %s", res.Content)
+	}
+}
+
+// TestListDirectory_Execute_RootPathRoundTrips exercises the actual host
+// filesystem's "/" end to end: classification captures its identity via
+// captureIdentity("/") (no final component), the resulting grant is
+// accepted, and Execute lists it through os.OpenRoot("/"). Contents aren't
+// asserted (environment-dependent) — only that the whole path succeeds.
+func TestListDirectory_Execute_RootPathRoundTrips(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("root path semantics differ on windows")
+	}
+	tool := NewListDirectory(t.TempDir(), 100, 65536, true)
+	raw, _ := json.Marshal(ListDirectoryArgs{Path: "/"})
+	req := tool.ClassifyCall(raw)
+	if req == nil {
+		t.Fatal("expected classification to succeed for /")
+	}
+	if req.ResolvedPath != "/" {
+		t.Fatalf("ResolvedPath = %q, want /", req.ResolvedPath)
+	}
+
+	grant := ExecGrant{ApprovedPath: req.ResolvedPath, Target: req.Target}
+	res, err := tool.Execute(context.Background(), raw, grant)
+	if err != nil {
+		t.Fatalf("execute returned hard error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected error listing /: %s", res.Content)
 	}
 }

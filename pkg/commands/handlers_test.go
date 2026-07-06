@@ -99,3 +99,33 @@ func TestBuildToolRegistry_CapsAndCwdPropagate(t *testing.T) {
 		t.Errorf("list_directory config not propagated: %+v", listDirectory)
 	}
 }
+
+func TestBuildToolRegistry_OutOfWorkdirAccessAskEnablesEscapesOnBothTools(t *testing.T) {
+	cfg := config.Default()
+	cfg.Agent.Tools.OutOfWorkdirAccess = config.WorkdirAccessAsk
+	registry := buildToolRegistry(cfg, t.TempDir())
+
+	rf, _ := registry.Get("read_file")
+	if !rf.(*tools.ReadFile).AllowEscapes {
+		t.Error("expected read_file.AllowEscapes=true under the ask policy")
+	}
+	ld, _ := registry.Get("list_directory")
+	if !ld.(*tools.ListDirectory).AllowEscapes {
+		t.Error("expected list_directory.AllowEscapes=true under the ask policy")
+	}
+}
+
+func TestBuildToolRegistry_OutOfWorkdirAccessDenyDisablesEscapesOnBothTools(t *testing.T) {
+	cfg := config.Default()
+	cfg.Agent.Tools.OutOfWorkdirAccess = config.WorkdirAccessDeny
+	registry := buildToolRegistry(cfg, t.TempDir())
+
+	rf, _ := registry.Get("read_file")
+	if rf.(*tools.ReadFile).AllowEscapes {
+		t.Error("expected read_file.AllowEscapes=false under the deny policy")
+	}
+	ld, _ := registry.Get("list_directory")
+	if ld.(*tools.ListDirectory).AllowEscapes {
+		t.Error("expected list_directory.AllowEscapes=false under the deny policy")
+	}
+}

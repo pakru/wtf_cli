@@ -19,11 +19,20 @@ import (
 )
 
 const (
-	listDirectoryName        = "list_directory"
-	listDirectoryDescription = "List the contents of a directory inside the user's current working directory, like `ls -l`. " +
+	listDirectoryName = "list_directory"
+
+	listDirectoryDescriptionInWorkdirOnly = "List the contents of a directory inside the user's current working directory, like `ls -l`. " +
 		"Returns one entry per line: permissions, owner:group, size in bytes (`-` for directories), modification time, and name. " +
 		"Directories end with `/`; symlinks show their target and are not followed. " +
-		"Use this to discover files before reading them with read_file. The path must be inside the working directory."
+		"Use this to discover files before reading them with read_file. The path must be inside the working directory. " +
+		"`~/` (the user's home directory) is expanded before this check, so it is only usable when it resolves inside the working directory."
+
+	listDirectoryDescriptionWithEscapes = "List the contents of a directory, like `ls -l`. " +
+		"Returns one entry per line: permissions, owner:group, size in bytes (`-` for directories), modification time, and name. " +
+		"Directories end with `/`; symlinks show their target and are not followed. " +
+		"Use this to discover files before reading them with read_file. " +
+		"Paths outside the user's working directory require the user's explicit permission — the harness will ask them; " +
+		"call the tool normally with the path you need. `~/` refers to the user's home directory."
 
 	listDirectoryMinMaxEntries    = 1
 	listDirectoryDefaultScanCap   = 10000
@@ -39,12 +48,26 @@ const (
 	listDirectoryTimeLayout = "2006-01-02 15:04"
 )
 
-var listDirectorySchema = json.RawMessage(`{
+var listDirectorySchemaInWorkdirOnly = json.RawMessage(`{
   "type": "object",
   "properties": {
     "path": {
       "type": "string",
       "description": "Directory to list. Relative paths are resolved against the current working directory; absolute paths must lie inside it. Defaults to \".\" (the working directory)."
+    },
+    "include_hidden": {
+      "type": "boolean",
+      "description": "Include entries whose name starts with a dot. Defaults to false."
+    }
+  }
+}`)
+
+var listDirectorySchemaWithEscapes = json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Directory to list. Relative paths are resolved against the current working directory. Absolute paths and \"~/\" (home directory) paths outside the working directory will prompt the user for permission. Defaults to \".\" (the working directory)."
     },
     "include_hidden": {
       "type": "boolean",
@@ -63,16 +86,23 @@ type ListDirectoryArgs struct {
 //
 // Cwd follows the same convention as ReadFile.Cwd: the shell's cwd
 // snapshotted at agent-loop start. Containment is enforced with os.Root
-// (descriptor-relative traversal), which — unlike read_file's
-// resolveContainedPath — is immune to a check-then-use symlink race.
+// (descriptor-relative traversal), which is immune to a check-then-use
+// symlink race.
 //
 // scanCap and readBatch bound enumeration of pathologically large
 // directories. They default to package constants in NewListDirectory but are
 // unexported so same-package tests can lower them.
+//
+// AllowEscapes mirrors the out_of_workdir_access config policy ("ask" ⇒
+// true). When set, ClassifyCall offers out-of-workdir calls for user
+// approval instead of leaving them silently unreachable. Execute enforces
+// AllowEscapes independently of any grant it is handed — defense in depth,
+// so a grant built under a stale/mismatched policy can never unlock access.
 type ListDirectory struct {
-	Cwd        string
-	MaxEntries int
-	MaxBytes   int
+	Cwd          string
+	MaxEntries   int
+	MaxBytes     int
+	AllowEscapes bool
 
 	scanCap   int
 	readBatch int
@@ -80,7 +110,7 @@ type ListDirectory struct {
 
 // NewListDirectory builds a list_directory tool with caps, normalizing
 // zero/negative values to the package minimums.
-func NewListDirectory(cwd string, maxEntries, maxBytes int) *ListDirectory {
+func NewListDirectory(cwd string, maxEntries, maxBytes int, allowEscapes bool) *ListDirectory {
 	if maxEntries < listDirectoryMinMaxEntries {
 		maxEntries = listDirectoryMinMaxEntries
 	}
@@ -88,31 +118,73 @@ func NewListDirectory(cwd string, maxEntries, maxBytes int) *ListDirectory {
 		maxBytes = listDirectoryMinMaxBytes
 	}
 	return &ListDirectory{
-		Cwd:        cwd,
-		MaxEntries: maxEntries,
-		MaxBytes:   maxBytes,
-		scanCap:    listDirectoryDefaultScanCap,
-		readBatch:  listDirectoryDefaultReadBatch,
+		Cwd:          cwd,
+		MaxEntries:   maxEntries,
+		MaxBytes:     maxBytes,
+		AllowEscapes: allowEscapes,
+		scanCap:      listDirectoryDefaultScanCap,
+		readBatch:    listDirectoryDefaultReadBatch,
 	}
 }
 
 func (t *ListDirectory) Name() string { return listDirectoryName }
 
 func (t *ListDirectory) Definition() ai.ToolDefinition {
+	desc := listDirectoryDescriptionInWorkdirOnly
+	schema := listDirectorySchemaInWorkdirOnly
+	if t.AllowEscapes {
+		desc = listDirectoryDescriptionWithEscapes
+		schema = listDirectorySchemaWithEscapes
+	}
 	return ai.ToolDefinition{
 		Name:        listDirectoryName,
-		Description: listDirectoryDescription,
-		JSONSchema:  listDirectorySchema,
+		Description: desc,
+		JSONSchema:  schema,
 	}
 }
 
-// Execute decodes args, enforces path safety via os.Root, and returns an
-// ls -l-style listing of one directory level.
+// ClassifyCall implements EscapeClassifier. It returns nil (no escape
+// offered — ordinary in-workdir approval/containment applies) when escapes
+// are disabled, the working directory is unconfigured, args can't be
+// decoded, the path can't be resolved, the resolved path is inside the
+// working directory, or identity capture fails.
+func (t *ListDirectory) ClassifyCall(raw json.RawMessage) *EscapeRequest {
+	if !t.AllowEscapes || strings.TrimSpace(t.Cwd) == "" {
+		return nil
+	}
+	var args ListDirectoryArgs
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil
+		}
+	}
+	displayPath := args.Path
+	if displayPath == "" {
+		displayPath = "."
+	}
+	resolved, inside, err := classifyPath(t.Cwd, displayPath)
+	if err != nil || inside {
+		return nil
+	}
+	id, err := captureIdentity(resolved)
+	if err != nil {
+		return nil
+	}
+	return &EscapeRequest{
+		RequestedPath: displayPath,
+		ResolvedPath:  resolved,
+		GrantDir:      resolved, // the directory itself, not its parent
+		Target:        id,
+	}
+}
+
+// Execute decodes args, enforces path safety, and returns an ls -l-style
+// listing of one directory level.
 //
 // All recoverable failures (decode error, missing directory, path rejected,
 // etc.) return Result{IsError: true} so the model sees a useful message and
 // can retry. Only context cancellation propagates as a Go error.
-func (t *ListDirectory) Execute(ctx context.Context, raw json.RawMessage) (Result, error) {
+func (t *ListDirectory) Execute(ctx context.Context, raw json.RawMessage, grant ExecGrant) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
@@ -136,33 +208,9 @@ func (t *ListDirectory) Execute(ctx context.Context, raw json.RawMessage) (Resul
 		return t.errResult("list_directory is not configured: working directory is unknown"), nil
 	}
 
-	cwdAbs, err := filepath.Abs(t.Cwd)
+	dirRoot, err := t.openDirRoot(displayPath, grant)
 	if err != nil {
-		return t.errResult("resolve working directory: %v", err), nil
-	}
-
-	rel, err := normalizeToRootRelative(cwdAbs, displayPath)
-	if err != nil {
-		return t.errResult("path rejected: %v", err), nil
-	}
-
-	root, err := os.OpenRoot(cwdAbs)
-	if err != nil {
-		return t.errResult("open working directory: %v", err), nil
-	}
-	defer root.Close()
-
-	// OpenRoot (rather than Open+Stat) anchors a stable handle to the exact
-	// directory instance being listed. Every subsequent operation —
-	// enumeration and per-entry Lstat/Readlink — resolves against this same
-	// handle instead of re-walking the path string from the outer root. Doing
-	// the metadata lookups by path from root instead of from this handle
-	// would reintroduce the TOCTOU gap os.Root is meant to close (e.g. if rel
-	// is renamed or repointed between enumeration and metadata lookup).
-	// OpenRoot also doubles as the is-this-a-directory check.
-	dirRoot, err := root.OpenRoot(rel)
-	if err != nil {
-		return t.errResult("%s", classifyDirOpenError(displayPath, err)), nil
+		return t.errResult("%s", err.Error()), nil
 	}
 	defer dirRoot.Close()
 
@@ -190,6 +238,102 @@ func (t *ListDirectory) Execute(ctx context.Context, raw json.RawMessage) (Resul
 	return Result{Content: content}, nil
 }
 
+// openDirRoot resolves userPath and returns an os.Root anchored exactly at
+// the directory to list — the existing sub-root-anchoring pattern for
+// in-workdir paths, or a grant- and identity-verified root for
+// out-of-workdir paths. Every downstream operation (enumeration, per-entry
+// Lstat/Readlink) addresses entries by bare name against the returned
+// handle, so this is the single containment/verification choke point.
+func (t *ListDirectory) openDirRoot(userPath string, grant ExecGrant) (*os.Root, error) {
+	cwdAbs, err := filepath.Abs(t.Cwd)
+	if err != nil {
+		return nil, fmt.Errorf("resolve working directory: %v", err)
+	}
+
+	resolved, inside, err := classifyPath(t.Cwd, userPath)
+	if err != nil {
+		return nil, fmt.Errorf("path rejected: %v", err)
+	}
+
+	if inside {
+		return t.openInWorkdirRoot(cwdAbs, userPath)
+	}
+	return t.openEscapeRoot(resolved, grant)
+}
+
+// openInWorkdirRoot anchors a sub-root at userPath (resolved relative to
+// cwdAbs) via os.Root — descriptor-relative traversal that is immune to the
+// check-then-use symlink race, and rejects in-tree symlinks with absolute
+// targets even when the target is itself inside cwd (a known, accepted
+// os.Root limitation).
+func (t *ListDirectory) openInWorkdirRoot(cwdAbs, userPath string) (*os.Root, error) {
+	expanded, err := expandTilde(userPath)
+	if err != nil {
+		return nil, fmt.Errorf("path rejected: %v", err)
+	}
+	rel, err := normalizeToRootRelative(cwdAbs, expanded)
+	if err != nil {
+		return nil, fmt.Errorf("path rejected: %v", err)
+	}
+
+	root, err := os.OpenRoot(cwdAbs)
+	if err != nil {
+		return nil, fmt.Errorf("open working directory: %v", err)
+	}
+	defer root.Close()
+
+	dirRoot, err := root.OpenRoot(rel)
+	if err != nil {
+		return nil, errors.New(classifyDirOpenError(userPath, err))
+	}
+	return dirRoot, nil
+}
+
+// openEscapeRoot opens resolved outside the working directory. It requires a
+// non-empty grant whose ApprovedPath matches the fresh resolution, then
+// anchors a Root at the target and verifies the anchored handle's identity
+// against grant.Target before returning it — path-string equality alone is
+// not sufficient; the directory actually opened must be the one approved.
+func (t *ListDirectory) openEscapeRoot(resolved string, grant ExecGrant) (*os.Root, error) {
+	if !t.AllowEscapes || grant.ApprovedPath == "" {
+		return nil, fmt.Errorf("path outside working directory (not approved): %s", boundedDisplay(resolved))
+	}
+	if resolved != grant.ApprovedPath {
+		return nil, fmt.Errorf("path changed during approval; call the tool again")
+	}
+
+	dirRoot, err := os.OpenRoot(resolved)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if !grant.Target.Valid {
+				return nil, fmt.Errorf("directory not found: %s", boundedDisplay(resolved))
+			}
+			return nil, fmt.Errorf("path changed during approval; call the tool again")
+		}
+		if isNotADirectorySentinel(err) {
+			return nil, fmt.Errorf("path is not a directory: %s (use read_file for files)", boundedDisplay(resolved))
+		}
+		return nil, fmt.Errorf("path changed during approval; call the tool again")
+	}
+
+	if !grant.Target.Valid {
+		dirRoot.Close()
+		return nil, fmt.Errorf("path changed during approval; call the tool again")
+	}
+
+	info, err := dirRoot.Stat(".")
+	if err != nil {
+		dirRoot.Close()
+		return nil, fmt.Errorf("path changed during approval; call the tool again")
+	}
+	id, ok := fileID(info)
+	if !ok || !id.equal(grant.Target) {
+		dirRoot.Close()
+		return nil, fmt.Errorf("path changed during approval; call the tool again")
+	}
+	return dirRoot, nil
+}
+
 // errResult builds a recoverable error Result the same way the package-level
 // errResult does, but additionally enforces this tool's own MaxBytes
 // invariant. Unlike the success path (which routes through renderListing's
@@ -200,27 +344,6 @@ func (t *ListDirectory) errResult(format string, args ...any) Result {
 	res := errResult(format, args...)
 	res.Content = clipToBytes(res.Content, t.MaxBytes)
 	return res
-}
-
-// normalizeToRootRelative converts a model-supplied path into a path relative
-// to cwdAbs, rejecting anything that lexically escapes it. This only improves
-// error messages; os.Root (the actual enforcement boundary) rejects escapes
-// regardless. Absolute paths are compared with filepath.Rel, never a string
-// prefix — a prefix check would wrongly accept siblings like
-// "/tmp/project-other" under cwd "/tmp/project".
-func normalizeToRootRelative(cwdAbs, path string) (string, error) {
-	if filepath.IsAbs(path) {
-		rel, err := filepath.Rel(cwdAbs, path)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return "", errors.New("path outside working directory")
-		}
-		return rel, nil
-	}
-	rel := filepath.Clean(path)
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", errors.New("path outside working directory")
-	}
-	return rel, nil
 }
 
 // classifyDirOpenError maps a root.OpenRoot error to a model-facing message.
