@@ -26,13 +26,17 @@ type Result struct {
 
 // Tool is implemented by anything callable from the agent loop.
 //
-// Execute receives the raw JSON arguments emitted by the model. The
-// implementation is responsible for decoding them, validating, and returning a
-// Result. Returning a non-nil error aborts the loop.
+// Execute receives the raw JSON arguments emitted by the model and the grant
+// the agent loop obtained for this call (the zero value grants nothing
+// beyond each tool's normal working-directory containment). The
+// implementation is responsible for decoding args, validating, and returning
+// a Result. Returning a non-nil error aborts the loop. grant is an explicit
+// parameter rather than a context value because it is security-relevant:
+// callers must not be able to lose it by accident when threading a context.
 type Tool interface {
 	Name() string
 	Definition() ai.ToolDefinition
-	Execute(ctx context.Context, args json.RawMessage) (Result, error)
+	Execute(ctx context.Context, args json.RawMessage, grant ExecGrant) (Result, error)
 }
 
 // Registry holds a set of tools keyed by name.

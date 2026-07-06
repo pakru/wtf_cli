@@ -36,9 +36,22 @@ type AgentConfig struct {
 
 // AgentTools holds per-tool configuration for the agent loop.
 type AgentTools struct {
-	ReadFile      ReadFileToolConfig      `json:"read_file"`
-	ListDirectory ListDirectoryToolConfig `json:"list_directory"`
+	// OutOfWorkdirAccess is the policy for tool calls that target a path
+	// outside the working directory: WorkdirAccessAsk prompts the user for
+	// per-call (or per-session, per-directory) approval; WorkdirAccessDeny
+	// preserves today's behavior — such calls go through ordinary approval
+	// and are rejected by the tool's containment check, with no escape
+	// prompt ever shown.
+	OutOfWorkdirAccess string                  `json:"out_of_workdir_access"`
+	ReadFile           ReadFileToolConfig      `json:"read_file"`
+	ListDirectory      ListDirectoryToolConfig `json:"list_directory"`
 }
+
+// Values accepted for AgentTools.OutOfWorkdirAccess.
+const (
+	WorkdirAccessAsk  = "ask"
+	WorkdirAccessDeny = "deny"
+)
 
 // ReadFileToolConfig configures the read_file tool.
 type ReadFileToolConfig struct {
@@ -158,6 +171,7 @@ func Default() Config {
 		Agent: AgentConfig{
 			MaxIterations: defaultAgentMaxIterations,
 			Tools: AgentTools{
+				OutOfWorkdirAccess: WorkdirAccessAsk,
 				ReadFile: ReadFileToolConfig{
 					Enabled:  true,
 					MaxLines: defaultReadFileMaxLines,
@@ -170,8 +184,8 @@ func Default() Config {
 				},
 			},
 		},
-		BufferSize:    2000,
-		ContextWindow: 1000,
+		BufferSize:    64000,
+		ContextWindow: 32000,
 		StatusBar: StatusBarConfig{
 			Position: "bottom",
 			Colors:   "auto",
@@ -181,7 +195,7 @@ func Default() Config {
 			IntervalHours: defaultUpdateCheckIntervalHours,
 		},
 		LogFile:   defaultLogFilePath(),
-		LogFormat: "json",
+		LogFormat: "text",
 		LogLevel:  "info",
 	}
 }
@@ -291,6 +305,14 @@ func (c Config) Validate() error {
 		return fmt.Errorf("update_check.interval_hours must be positive, got: %d", c.UpdateCheck.IntervalHours)
 	}
 
+	if v := strings.TrimSpace(c.Agent.Tools.OutOfWorkdirAccess); v != "" {
+		switch v {
+		case WorkdirAccessAsk, WorkdirAccessDeny:
+		default:
+			return fmt.Errorf("agent.tools.out_of_workdir_access must be %q or %q, got: %s", WorkdirAccessAsk, WorkdirAccessDeny, c.Agent.Tools.OutOfWorkdirAccess)
+		}
+	}
+
 	if strings.TrimSpace(c.LogLevel) != "" {
 		switch strings.ToLower(strings.TrimSpace(c.LogLevel)) {
 		case "trace", "debug", "info", "warn", "warning", "error":
@@ -371,7 +393,8 @@ func (c Config) validateGoogle() error {
 // inlined at each use site) so the configPresence.Agent.Tools field and the
 // applyAgentDefaults parameter type can't drift out of sync.
 type agentToolsPresence struct {
-	ReadFile *struct {
+	OutOfWorkdirAccess *string `json:"out_of_workdir_access"`
+	ReadFile           *struct {
 		Enabled  *bool `json:"enabled"`
 		MaxLines *int  `json:"max_lines"`
 		MaxBytes *int  `json:"max_bytes"`
@@ -552,6 +575,15 @@ func applyAgentDefaults(cfg AgentConfig, presence *struct {
 func applyAgentToolsDefaults(cfg AgentTools, presence *agentToolsPresence, defaults AgentTools) AgentTools {
 	if presence == nil {
 		return defaults
+	}
+
+	// Normalized here (not just validated) so every downstream comparison —
+	// Validate, buildToolRegistry — can use plain equality against
+	// WorkdirAccessAsk/WorkdirAccessDeny without re-trimming.
+	if presence.OutOfWorkdirAccess == nil || strings.TrimSpace(cfg.OutOfWorkdirAccess) == "" {
+		cfg.OutOfWorkdirAccess = defaults.OutOfWorkdirAccess
+	} else {
+		cfg.OutOfWorkdirAccess = strings.TrimSpace(cfg.OutOfWorkdirAccess)
 	}
 
 	if presence.ReadFile == nil {

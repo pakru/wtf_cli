@@ -107,11 +107,23 @@ func (m Model) handleToolApprovalDecision(msg toolapproval.DecisionMsg) (Model, 
 	case toolapproval.DecisionDeny:
 		decision = commands.ApprovalDecision{Allow: false}
 	}
-	slog.Info("tool_approval_user_decision",
+	logArgs := []any{
 		"tool", msg.Request.Name,
 		"allow", decision.Allow,
 		"persistent", decision.Persistent,
-	)
+	}
+	if msg.Request.Escape != nil {
+		// AllowOutsideWorkdir is not set here: UIApprover.approveEscape
+		// unconditionally sets it on any allowed reply to an escape request
+		// once it receives this decision, independent of what the UI sends —
+		// this branch only adds log context, it carries no authorization.
+		logArgs = append(logArgs,
+			"outside_workdir", true,
+			"resolved_path", msg.Request.Escape.ResolvedPath,
+			"grant_dir", msg.Request.Escape.GrantDir,
+		)
+	}
+	slog.Info("tool_approval_user_decision", logArgs...)
 	if m.toolApproval != nil {
 		m.toolApproval.Hide()
 	}
@@ -201,7 +213,15 @@ func (m Model) handleWtfStreamEvent(msg commands.WtfStreamEvent) (Model, tea.Cmd
 			m.toolApproval.SetSize(m.width, m.height)
 			m.toolApproval.Show(msg.ToolApproval)
 		}
-		slog.Info("tool_approval_show", "tool", msg.ToolApproval.Name)
+		showArgs := []any{"tool", msg.ToolApproval.Name}
+		if esc := msg.ToolApproval.Escape; esc != nil {
+			showArgs = append(showArgs,
+				"outside_workdir", true,
+				"resolved_path", esc.ResolvedPath,
+				"grant_dir", esc.GrantDir,
+			)
+		}
+		slog.Info("tool_approval_show", showArgs...)
 		return m, m.continueStreamListen()
 	}
 

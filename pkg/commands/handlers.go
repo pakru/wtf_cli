@@ -266,14 +266,18 @@ func prepareAgentRun(ctx *Context, tag string) (*agentRunPrep, error) {
 //
 // cwd is snapshotted at agent-loop start so a mid-stream `cd` in the user's
 // shell does not change which directory tools see. Each tool enforces cwd
-// containment against this value.
+// containment against this value by default; when out_of_workdir_access is
+// "ask", out-of-workdir paths instead require per-call user approval (see
+// tools.EscapeClassifier and the agent loop's grant plumbing).
 func buildToolRegistry(cfg config.Config, cwd string) *tools.Registry {
+	allowEscapes := cfg.Agent.Tools.OutOfWorkdirAccess == config.WorkdirAccessAsk
 	registry := tools.NewRegistry()
 	if cfg.Agent.Tools.ReadFile.Enabled {
 		registry.Register(tools.NewReadFile(
 			cwd,
 			cfg.Agent.Tools.ReadFile.MaxLines,
 			cfg.Agent.Tools.ReadFile.MaxBytes,
+			allowEscapes,
 		))
 	}
 	if cfg.Agent.Tools.ListDirectory.Enabled {
@@ -281,6 +285,7 @@ func buildToolRegistry(cfg config.Config, cwd string) *tools.Registry {
 			cwd,
 			cfg.Agent.Tools.ListDirectory.MaxEntries,
 			cfg.Agent.Tools.ListDirectory.MaxBytes,
+			allowEscapes,
 		))
 	}
 	return registry

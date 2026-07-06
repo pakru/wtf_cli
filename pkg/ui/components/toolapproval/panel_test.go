@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"wtf_cli/pkg/ai/tools"
 	"wtf_cli/pkg/commands"
 
 	tea "charm.land/bubbletea/v2"
@@ -15,6 +16,19 @@ func mkRequest(name, args string) *commands.ApprovalRequest {
 	return &commands.ApprovalRequest{
 		Name: name,
 		Args: json.RawMessage(args),
+	}
+}
+
+func mkEscapeRequest(name, requestedPath, resolvedPath, grantDir string) *commands.ApprovalRequest {
+	return &commands.ApprovalRequest{
+		Name: name,
+		Args: json.RawMessage(`{"path":"` + requestedPath + `"}`),
+		Escape: &tools.EscapeRequest{
+			RequestedPath: requestedPath,
+			ResolvedPath:  resolvedPath,
+			GrantDir:      grantDir,
+			Target:        tools.FileID{Dev: 1, Ino: 1, Valid: true},
+		},
 	}
 }
 
@@ -215,6 +229,135 @@ func TestPanel_HiddenPanelIgnoresKeys(t *testing.T) {
 	p.SetSize(80, 24)
 	if cmd := p.Update(tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"})); cmd != nil {
 		t.Fatalf("hidden panel should ignore keys, got cmd")
+	}
+}
+
+// --- Escape variant ---------------------------------------------------
+
+func TestPanel_View_EscapeRequestShowsWarningAndScopedButtonLabel(t *testing.T) {
+	p := NewPanel()
+	p.SetSize(80, 24)
+	p.Show(mkEscapeRequest("read_file", "/etc/hosts", "/etc/hosts", "/etc"))
+	v := ansi.Strip(p.View())
+
+	if !strings.Contains(v, "OUTSIDE your working directory") {
+		t.Errorf("expected the out-of-workdir warning, got:\n%s", v)
+	}
+	if !strings.Contains(v, "Allow dir for session") {
+		t.Errorf("expected the directory-scoped button label, got:\n%s", v)
+	}
+	if strings.Contains(v, "Allow for Session") {
+		t.Errorf("in-workdir button label should not appear on an escape popup, got:\n%s", v)
+	}
+	if !strings.Contains(v, "/etc") {
+		t.Errorf("expected the scope note mentioning the granted directory, got:\n%s", v)
+	}
+}
+
+func TestPanel_View_InWorkdirRequestHasNoEscapeChrome(t *testing.T) {
+	p := NewPanel()
+	p.SetSize(80, 24)
+	p.Show(mkRequest("read_file", `{"path":"foo.go"}`))
+	v := ansi.Strip(p.View())
+
+	if strings.Contains(v, "OUTSIDE your working directory") {
+		t.Errorf("in-workdir popup must not show the escape warning, got:\n%s", v)
+	}
+	if !strings.Contains(v, "Allow for Session") {
+		t.Errorf("expected the ordinary session button label, got:\n%s", v)
+	}
+}
+
+func TestPanel_View_EscapeRequestShowsResolvedPathWhenDifferent(t *testing.T) {
+	p := NewPanel()
+	p.SetSize(100, 24)
+	p.Show(mkEscapeRequest("read_file", "../logs", "/var/log", "/var/log"))
+	v := ansi.Strip(p.View())
+
+	if !strings.Contains(v, "Resolves to") {
+		t.Errorf("expected a 'Resolves to' row when resolution differs from the request, got:\n%s", v)
+	}
+	if !strings.Contains(v, "/var/log") {
+		t.Errorf("expected the resolved path to be shown, got:\n%s", v)
+	}
+}
+
+func TestPanel_View_EscapeRequestHidesResolvedPathWhenSame(t *testing.T) {
+	p := NewPanel()
+	p.SetSize(100, 24)
+	p.Show(mkEscapeRequest("read_file", "/etc/hosts", "/etc/hosts", "/etc"))
+	v := ansi.Strip(p.View())
+
+	if strings.Contains(v, "Resolves to") {
+		t.Errorf("'Resolves to' row should be omitted when the resolved path matches the request, got:\n%s", v)
+	}
+}
+
+// Regression: model-controlled path text must never be rendered raw — a
+// newline or control character could otherwise inject a fake popup line or
+// terminal control sequence.
+func TestPanel_View_ControlCharactersInPathAreEscaped(t *testing.T) {
+	p := NewPanel()
+	p.SetSize(100, 24)
+	hostile := "/etc/\x1b[31mFAKE\x1b[0m"
+	p.Show(mkEscapeRequest("read_file", hostile, hostile, "/etc"))
+	v := ansi.Strip(p.View())
+
+	if strings.Contains(v, "\x1b") {
+		t.Fatalf("raw ESC byte must never reach the rendered view:\n%q", v)
+	}
+	if !strings.Contains(v, `\x1b`) {
+		t.Errorf("expected the escape sequence to be rendered as a quoted, visible escape, got:\n%s", v)
+	}
+}
+
+// Regression: a long path must be truncated preserving the TAIL (the
+// distinguishing suffix), never the prefix — "/safe/.../secret" must not
+// display as "/safe/.../…", which would hide exactly what is being accessed.
+func TestPanel_View_LongPathTailPreservingTruncation(t *testing.T) {
+	p := NewPanel()
+	p.SetSize(40, 24) // narrow panel forces truncation
+	longPath := "/safe/looking/prefix/dir/that/is/quite/long/indeed/secretfile.txt"
+	p.Show(mkEscapeRequest("read_file", longPath, longPath, "/safe"))
+	v := ansi.Strip(p.View())
+
+	if !strings.Contains(v, "secretfile.txt") {
+		t.Errorf("expected the distinguishing suffix to survive truncation, got:\n%s", v)
+	}
+}
+
+// TestRenderEscapeScopeNote_LongGrantDirIsTailPreserved unit-tests
+// renderEscapeScopeNote directly (rather than through the full popup View)
+// with a GrantDir marker absent from RequestedPath/ResolvedPath — a prior
+// version of this test used the same string for both, so it passed even
+// while the scope note itself silently truncated the directory to two
+// unreadable characters: the marker was found in the separately-rendered
+// "Path" row instead, masking the real bug. The marker is short enough to
+// survive alongside its mandatory leading ellipsis even at the narrowest
+// width tested (a marker exactly as long as the width leaves no room for
+// that ellipsis and would need to sacrifice a character — a test artifact,
+// not a real truncation bug).
+func TestRenderEscapeScopeNote_LongGrantDirIsTailPreserved(t *testing.T) {
+	req := mkEscapeRequest("read_file", "/unrelated/path.txt", "/unrelated/path.txt",
+		"/safe/looking/prefix/dir/that/is/quite/long/indeed/GRANTDIR-X")
+
+	for _, width := range []int{80, 56, 40, 24} {
+		got := ansi.Strip(renderEscapeScopeNote(req, width))
+		if !strings.Contains(got, "GRANTDIR-X") {
+			t.Errorf("width=%d: expected the grant directory's distinguishing suffix to survive, got: %q", width, got)
+		}
+	}
+}
+
+func TestPanel_View_LongGrantDirInScopeNoteIsTailPreserved(t *testing.T) {
+	p := NewPanel()
+	p.SetSize(50, 24) // narrow panel forces truncation of the scope note
+	p.Show(mkEscapeRequest("read_file", "/unrelated/path.txt", "/unrelated/path.txt",
+		"/safe/looking/prefix/dir/that/is/quite/long/indeed/GRANTDIR-X"))
+	v := ansi.Strip(p.View())
+
+	if !strings.Contains(v, "GRANTDIR-X") {
+		t.Errorf("expected the grant directory's distinguishing suffix to survive truncation in the scope note, got:\n%s", v)
 	}
 }
 

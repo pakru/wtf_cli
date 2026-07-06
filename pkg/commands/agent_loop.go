@@ -19,10 +19,23 @@ type ApprovalDecision struct {
 	// Allow is true when the call should proceed.
 	Allow bool
 
-	// Persistent indicates the user picked "always allow this session" — the
-	// approver is expected to remember this and auto-allow subsequent calls
-	// to the same tool. Auto-allowed calls do NOT round-trip through Approve.
+	// Persistent indicates the user chose to remember this decision for the
+	// rest of the session. Its scope is contextual: for an ordinary request
+	// (Escape == nil) it means "always allow this tool by name" — the
+	// approver remembers this and auto-allows subsequent calls to the same
+	// tool, which do NOT round-trip through Approve. For an escape request
+	// (Escape != nil) it means "always allow this tool to access this
+	// directory" — recorded per (tool, directory), never bleeding into the
+	// tool-name grant or to other tools.
 	Persistent bool
+
+	// AllowOutsideWorkdir is set only when this decision approves a call
+	// that ClassifyCall identified as targeting a path outside the working
+	// directory. The agent loop passes an ExecGrant to Execute only when
+	// this is true; it is never set as a side effect of an ordinary
+	// Allow=true decision, so a headless or session-only approval can never
+	// silently unlock filesystem access beyond the working directory.
+	AllowOutsideWorkdir bool
 }
 
 // ApprovalRequest is sent by the agent loop when it wants to invoke a tool
@@ -33,6 +46,14 @@ type ApprovalRequest struct {
 	Name  string
 	Args  json.RawMessage
 	Reply chan ApprovalDecision
+
+	// Escape is non-nil when the tool implements tools.EscapeClassifier and
+	// classified this call as targeting a path outside the working
+	// directory. Approvers use it to decide policy (e.g. checking a
+	// per-tool directory grant store) and to show the user what is being
+	// approved; nil means this is an ordinary in-workdir (or classification-
+	// declined) call.
+	Escape *tools.EscapeRequest
 }
 
 // Approver decides whether a tool call should run.
@@ -48,6 +69,13 @@ type Approver interface {
 // AutoAllowApprover approves every tool call without prompting. Used as the
 // default when no UI approver is wired up (e.g. headless tests, PR 2 of the
 // agent rollout where the popup component does not exist yet).
+//
+// It never sets AllowOutsideWorkdir, so a headless run can never silently
+// grant out-of-workdir filesystem access: an escape-classified call is still
+// "Allow"ed here (the tool name / no-UI policy is unconditional), but the
+// loop's grant-building step requires AllowOutsideWorkdir=true before it will
+// hand Execute anything beyond workdir containment, and Execute enforces
+// containment on its own regardless of what the approver said.
 type AutoAllowApprover struct{}
 
 // Approve always returns Allow=true. ctx cancellation is honored.
@@ -323,11 +351,12 @@ func drainStreamText(ctx context.Context, stream ai.ChatStream, out chan<- WtfSt
 	return sb.String(), stream.Err()
 }
 
-// executeOneTool runs the approve+invoke cycle for a single tool call.
-// Returns the tool message to append, the populated ToolCallInfo for the
-// finished event, and a non-nil error only when the loop must abort (hard tool
-// error or context cancellation). Soft failures (denial, unknown tool,
-// Result.IsError) return a nil error — the model message carries the failure.
+// executeOneTool runs the classify+approve+invoke cycle for a single tool
+// call. Returns the tool message to append, the populated ToolCallInfo for
+// the finished event, and a non-nil error only when the loop must abort
+// (hard tool error or context cancellation). Soft failures (denial, unknown
+// tool, Result.IsError) return a nil error — the model message carries the
+// failure.
 func executeOneTool(
 	ctx context.Context,
 	cfg AgentLoopConfig,
@@ -337,12 +366,39 @@ func executeOneTool(
 ) (ai.Message, *ToolCallInfo, error) {
 	finished := *info // copy header fields
 
-	approval := &ApprovalRequest{
-		ID:   tc.ID,
-		Name: tc.Name,
-		Args: tc.Arguments,
+	// Registry lookup happens before approval: a hallucinated tool name
+	// soft-fails immediately rather than prompting the user for a tool that
+	// doesn't exist.
+	tool, ok := cfg.Registry.Get(tc.Name)
+	if !ok {
+		slog.Warn("tool_unknown", "tag", tag, "tool", tc.Name)
+		finished.ErrorMessage = "unknown tool"
+		return ai.Message{
+			Role:       "tool",
+			ToolCallID: tc.ID,
+			Name:       tc.Name,
+			Content:    fmt.Sprintf("Unknown tool: %q. Available tools: %s", tc.Name, strings.Join(toolNames(cfg.Registry), ", ")),
+			IsError:    true,
+		}, &finished, nil
 	}
-	slog.Debug("tool_approval_request", "tag", tag, "tool", tc.Name, "id", tc.ID)
+
+	// If the tool supports user-approved out-of-workdir access, classify the
+	// call before requesting approval so the popup can show the resolved
+	// path and the approver can check a directory grant. A nil result means
+	// "no escape" — the ordinary in-workdir approval/containment applies;
+	// classification is best-effort UX, never an enforcement decision.
+	var escape *tools.EscapeRequest
+	if classifier, ok := tool.(tools.EscapeClassifier); ok {
+		escape = classifier.ClassifyCall(tc.Arguments)
+	}
+
+	approval := &ApprovalRequest{
+		ID:     tc.ID,
+		Name:   tc.Name,
+		Args:   tc.Arguments,
+		Escape: escape,
+	}
+	slog.Debug("tool_approval_request", "tag", tag, "tool", tc.Name, "id", tc.ID, "outside_workdir", escape != nil)
 
 	// The loop does NOT emit a WtfStreamEvent{ToolApproval:...} itself — that
 	// would fire even when the approver auto-allows (no popup needed). Each
@@ -363,8 +419,24 @@ func executeOneTool(
 			IsError:    true,
 		}, &finished, nil
 	}
+	// Audit log: the authoritative record of every decision — allow or deny,
+	// and including ones a session/path-grant store auto-allowed without
+	// ever showing a popup. Built once so the deny and allow paths can never
+	// drift out of sync on which escape fields get logged.
+	logArgs := []any{
+		"tag", tag, "tool", tc.Name, "allow", decision.Allow, "persistent", decision.Persistent,
+		"outside_workdir", escape != nil,
+	}
+	if escape != nil {
+		logArgs = append(logArgs,
+			"resolved_path", escape.ResolvedPath,
+			"grant_dir", escape.GrantDir,
+			"allow_outside_workdir", decision.AllowOutsideWorkdir,
+		)
+	}
+	slog.Info("tool_approval_decision", logArgs...)
+
 	if !decision.Allow {
-		slog.Info("tool_approval_decision", "tag", tag, "tool", tc.Name, "allow", false)
 		finished.Denied = true
 		return ai.Message{
 			Role:       "tool",
@@ -374,24 +446,19 @@ func executeOneTool(
 			IsError:    true,
 		}, &finished, nil
 	}
-	slog.Info("tool_approval_decision", "tag", tag, "tool", tc.Name, "allow", true, "persistent", decision.Persistent)
 
-	tool, ok := cfg.Registry.Get(tc.Name)
-	if !ok {
-		// Hallucinated tool — soft-fail so the model can correct.
-		slog.Warn("tool_unknown", "tag", tag, "tool", tc.Name)
-		finished.ErrorMessage = "unknown tool"
-		return ai.Message{
-			Role:       "tool",
-			ToolCallID: tc.ID,
-			Name:       tc.Name,
-			Content:    fmt.Sprintf("Unknown tool: %q. Available tools: %s", tc.Name, strings.Join(toolNames(cfg.Registry), ", ")),
-			IsError:    true,
-		}, &finished, nil
+	// The grant only ever carries an escape when classification offered one
+	// AND the decision explicitly approved crossing the working-directory
+	// boundary. Every other combination (no escape offered, escape offered
+	// but AllowOutsideWorkdir unset — e.g. AutoAllowApprover) yields the
+	// zero grant, which every tool's Execute treats as workdir-only.
+	var grant tools.ExecGrant
+	if escape != nil && decision.AllowOutsideWorkdir {
+		grant = tools.ExecGrant{ApprovedPath: escape.ResolvedPath, Target: escape.Target}
 	}
 
 	start := time.Now()
-	result, err := tool.Execute(ctx, tc.Arguments)
+	result, err := tool.Execute(ctx, tc.Arguments, grant)
 	finished.Duration = time.Since(start)
 	if err != nil {
 		slog.Error("tool_call_executed", "tag", tag, "tool", tc.Name, "duration_ms", finished.Duration.Milliseconds(), "error", err)

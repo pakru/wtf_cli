@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"wtf_cli/pkg/ai/tools"
 )
 
 func TestSessionApprovals_AllowAndIsAllowed(t *testing.T) {
@@ -50,7 +52,7 @@ func TestUIApprover_SessionAllowSkipsPopup(t *testing.T) {
 	policy.Allow("read_file")
 
 	out := make(chan WtfStreamEvent, 4)
-	approver := NewUIApprover(out, policy)
+	approver := NewUIApprover(out, policy, NewPathGrants())
 
 	d, err := approver.Approve(context.Background(), &ApprovalRequest{Name: "read_file"})
 	if err != nil {
@@ -72,7 +74,7 @@ func TestUIApprover_SessionAllowSkipsPopup(t *testing.T) {
 func TestUIApprover_HappyPath(t *testing.T) {
 	policy := NewSessionApprovals()
 	out := make(chan WtfStreamEvent, 4)
-	approver := NewUIApprover(out, policy)
+	approver := NewUIApprover(out, policy, NewPathGrants())
 
 	// Run Approve in a goroutine; pretend the UI receives the event and
 	// dispatches a decision.
@@ -119,7 +121,7 @@ func TestUIApprover_HappyPath(t *testing.T) {
 func TestUIApprover_NonPersistentAllowDoesNotMutateSession(t *testing.T) {
 	policy := NewSessionApprovals()
 	out := make(chan WtfStreamEvent, 4)
-	approver := NewUIApprover(out, policy)
+	approver := NewUIApprover(out, policy, NewPathGrants())
 
 	resultCh := make(chan ApprovalDecision, 1)
 	go func() {
@@ -140,7 +142,7 @@ func TestUIApprover_NonPersistentAllowDoesNotMutateSession(t *testing.T) {
 // the context's error rather than blocking forever on Reply.
 func TestUIApprover_CtxCancelDuringWait(t *testing.T) {
 	out := make(chan WtfStreamEvent, 4)
-	approver := NewUIApprover(out, NewSessionApprovals())
+	approver := NewUIApprover(out, NewSessionApprovals(), NewPathGrants())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	resultCh := make(chan error, 1)
@@ -174,7 +176,7 @@ func TestUIApprover_CtxCancelDuringWait(t *testing.T) {
 // "deadlock-avoidance" invariant called out in the plan.
 func TestUIApprover_ChannelBufferAvoidsDeadlock(t *testing.T) {
 	out := make(chan WtfStreamEvent, 16)
-	approver := NewUIApprover(out, NewSessionApprovals())
+	approver := NewUIApprover(out, NewSessionApprovals(), NewPathGrants())
 
 	// Start the approver but never read the channel until after a delay.
 	resultCh := make(chan ApprovalDecision, 1)
@@ -211,7 +213,7 @@ func TestUIApprover_ConcurrentDecisionsDistinctTools(t *testing.T) {
 		go func(name string) {
 			defer wg.Done()
 			out := make(chan WtfStreamEvent, 4)
-			approver := NewUIApprover(out, policy)
+			approver := NewUIApprover(out, policy, NewPathGrants())
 			done := make(chan struct{})
 			go func() {
 				_, _ = approver.Approve(context.Background(), &ApprovalRequest{Name: name})
@@ -228,5 +230,196 @@ func TestUIApprover_ConcurrentDecisionsDistinctTools(t *testing.T) {
 		if !policy.IsAllowed(name) {
 			t.Fatalf("expected %q to be allowed", name)
 		}
+	}
+}
+
+func mkEscapeRequest(tool, resolved, grantDir string) *ApprovalRequest {
+	return &ApprovalRequest{
+		Name: tool,
+		Escape: &tools.EscapeRequest{
+			RequestedPath: resolved,
+			ResolvedPath:  resolved,
+			GrantDir:      grantDir,
+			Target:        tools.FileID{Dev: 1, Ino: 1, Valid: true},
+		},
+	}
+}
+
+// TestUIApprover_EscapeRequest_NotAutoAllowedByToolNameSessionGrant is the
+// central regression the whole feature exists to fix: session-allowing a
+// tool by name must never silently unlock out-of-workdir access.
+func TestUIApprover_EscapeRequest_NotAutoAllowedByToolNameSessionGrant(t *testing.T) {
+	policy := NewSessionApprovals()
+	policy.Allow("read_file")
+
+	out := make(chan WtfStreamEvent, 4)
+	approver := NewUIApprover(out, policy, NewPathGrants())
+
+	resultCh := make(chan ApprovalDecision, 1)
+	go func() {
+		d, _ := approver.Approve(context.Background(), mkEscapeRequest("read_file", "/etc/hosts", "/etc"))
+		resultCh <- d
+	}()
+
+	select {
+	case ev := <-out:
+		if ev.ToolApproval == nil {
+			t.Fatalf("expected a popup event for the escape request, got %+v", ev)
+		}
+		ev.ToolApproval.Reply <- ApprovalDecision{Allow: true}
+	case <-time.After(time.Second):
+		t.Fatal("tool-name session grant incorrectly skipped the popup for an escape request")
+	}
+	<-resultCh
+}
+
+func TestUIApprover_EscapeRequest_AutoAllowedByCoveringPathGrant(t *testing.T) {
+	grants := NewPathGrants()
+	grants.Allow("read_file", "/etc")
+	out := make(chan WtfStreamEvent, 4)
+	approver := NewUIApprover(out, NewSessionApprovals(), grants)
+
+	d, err := approver.Approve(context.Background(), mkEscapeRequest("read_file", "/etc/hosts", "/etc"))
+	if err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if !d.Allow || !d.AllowOutsideWorkdir || !d.Persistent {
+		t.Fatalf("expected Allow+AllowOutsideWorkdir+Persistent from a covering grant, got %+v", d)
+	}
+
+	select {
+	case ev := <-out:
+		t.Fatalf("expected no UI event when a path grant already covers the request; got %+v", ev)
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestUIApprover_EscapeRequest_PopupAllowOnceDoesNotPersist(t *testing.T) {
+	grants := NewPathGrants()
+	out := make(chan WtfStreamEvent, 4)
+	approver := NewUIApprover(out, NewSessionApprovals(), grants)
+
+	resultCh := make(chan ApprovalDecision, 1)
+	go func() {
+		d, _ := approver.Approve(context.Background(), mkEscapeRequest("read_file", "/etc/hosts", "/etc"))
+		resultCh <- d
+	}()
+
+	ev := <-out
+	ev.ToolApproval.Reply <- ApprovalDecision{Allow: true, Persistent: false}
+	d := <-resultCh
+
+	if !d.Allow || !d.AllowOutsideWorkdir {
+		t.Fatalf("expected Allow+AllowOutsideWorkdir for an allow-once escape decision, got %+v", d)
+	}
+	if grants.IsAllowed("read_file", "/etc/hosts") {
+		t.Fatal("allow-once must not record a path grant")
+	}
+}
+
+// TestUIApprover_EscapeRequest_PersistentDecisionRecordsInPathGrantsNotSessionApprovals
+// verifies the decision lands in the *directory* grant store, never the
+// tool-name store — the popup said "directory", so that is what must be
+// remembered.
+func TestUIApprover_EscapeRequest_PersistentDecisionRecordsInPathGrantsNotSessionApprovals(t *testing.T) {
+	policy := NewSessionApprovals()
+	grants := NewPathGrants()
+	out := make(chan WtfStreamEvent, 4)
+	approver := NewUIApprover(out, policy, grants)
+
+	resultCh := make(chan ApprovalDecision, 1)
+	go func() {
+		d, _ := approver.Approve(context.Background(), mkEscapeRequest("read_file", "/etc/hosts", "/etc"))
+		resultCh <- d
+	}()
+
+	ev := <-out
+	ev.ToolApproval.Reply <- ApprovalDecision{Allow: true, Persistent: true}
+	d := <-resultCh
+
+	if !d.AllowOutsideWorkdir {
+		t.Fatal("expected AllowOutsideWorkdir=true")
+	}
+	if !grants.IsAllowed("read_file", "/etc/hosts") {
+		t.Fatal("expected the persistent decision to record a path grant for read_file under /etc")
+	}
+	if policy.IsAllowed("read_file") {
+		t.Fatal("a persistent escape decision must never grant blanket tool-name approval")
+	}
+}
+
+// TestUIApprover_EscapeRequest_PersistentRootGrantIsRecorded is the specific
+// regression for a file directly under "/": GrantDir == "/" is the one case
+// a naive `dir + separator` containment check gets wrong (it builds "//",
+// which no real resolved path starts with), so a persistent grant for a
+// root-level file used to silently fail to save even though the ordinary
+// (non-root) case worked fine.
+func TestUIApprover_EscapeRequest_PersistentRootGrantIsRecorded(t *testing.T) {
+	policy := NewSessionApprovals()
+	grants := NewPathGrants()
+	out := make(chan WtfStreamEvent, 4)
+	approver := NewUIApprover(out, policy, grants)
+
+	resultCh := make(chan ApprovalDecision, 1)
+	go func() {
+		d, _ := approver.Approve(context.Background(), mkEscapeRequest("read_file", "/secret.txt", "/"))
+		resultCh <- d
+	}()
+
+	ev := <-out
+	ev.ToolApproval.Reply <- ApprovalDecision{Allow: true, Persistent: true}
+	d := <-resultCh
+
+	if !d.AllowOutsideWorkdir {
+		t.Fatal("expected AllowOutsideWorkdir=true")
+	}
+	if !grants.IsAllowed("read_file", "/secret.txt") {
+		t.Fatal("expected a persistent root-level grant (GrantDir \"/\") to be recorded and to cover a file directly under root")
+	}
+}
+
+// TestUIApprover_EscapeRequest_GrantDirNotContainingResolvedPathIsNotStored
+// covers a malformed EscapeRequest (a tool implementation bug): the approver
+// must not blindly trust GrantDir and store an over-broad grant.
+func TestUIApprover_EscapeRequest_GrantDirNotContainingResolvedPathIsNotStored(t *testing.T) {
+	grants := NewPathGrants()
+	out := make(chan WtfStreamEvent, 4)
+	approver := NewUIApprover(out, NewSessionApprovals(), grants)
+
+	resultCh := make(chan ApprovalDecision, 1)
+	go func() {
+		// GrantDir ("/var/log") does not contain ResolvedPath ("/etc/hosts").
+		d, _ := approver.Approve(context.Background(), mkEscapeRequest("read_file", "/etc/hosts", "/var/log"))
+		resultCh <- d
+	}()
+
+	ev := <-out
+	ev.ToolApproval.Reply <- ApprovalDecision{Allow: true, Persistent: true}
+	d := <-resultCh
+
+	if !d.Allow {
+		t.Fatal("the in-flight decision should still be an allow")
+	}
+	if grants.IsAllowed("read_file", "/etc/hosts") {
+		t.Fatal("a GrantDir that does not contain ResolvedPath must not be stored")
+	}
+}
+
+func TestUIApprover_EscapeRequest_DenyDoesNotSetAllowOutsideWorkdir(t *testing.T) {
+	out := make(chan WtfStreamEvent, 4)
+	approver := NewUIApprover(out, NewSessionApprovals(), NewPathGrants())
+
+	resultCh := make(chan ApprovalDecision, 1)
+	go func() {
+		d, _ := approver.Approve(context.Background(), mkEscapeRequest("read_file", "/etc/hosts", "/etc"))
+		resultCh <- d
+	}()
+
+	ev := <-out
+	ev.ToolApproval.Reply <- ApprovalDecision{Allow: false}
+	d := <-resultCh
+
+	if d.Allow || d.AllowOutsideWorkdir {
+		t.Fatalf("a denial must not carry Allow or AllowOutsideWorkdir, got %+v", d)
 	}
 }

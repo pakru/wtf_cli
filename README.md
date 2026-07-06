@@ -77,6 +77,8 @@ make build
 
 ## ✨ Features
 
+When `/chat` or `/explain` needs to inspect a file, it can only read inside your current directory by default. If it needs a file elsewhere (e.g. `/etc/hosts` or `~/.bashrc`), it asks first — approve once, or for the rest of the session for that specific folder. Set `agent.tools.out_of_workdir_access` to `"deny"` in `~/.wtf_cli/config.json` to disable this and keep the AI strictly confined to the current directory (see [AGENTS.md](AGENTS.md#configuration) for the full config reference).
+
 ### Commands (Available)
 
 | Command | Description |

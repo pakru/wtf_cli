@@ -44,6 +44,10 @@ func TestDefault(t *testing.T) {
 func TestDefault_AgentTools(t *testing.T) {
 	cfg := Default()
 
+	if cfg.Agent.Tools.OutOfWorkdirAccess != WorkdirAccessAsk {
+		t.Errorf("Expected out_of_workdir_access %q by default, got %q", WorkdirAccessAsk, cfg.Agent.Tools.OutOfWorkdirAccess)
+	}
+
 	if !cfg.Agent.Tools.ReadFile.Enabled {
 		t.Error("Expected read_file enabled by default")
 	}
@@ -164,6 +168,43 @@ func TestLoad_AgentToolsPresenceMatrix(t *testing.T) {
 				}
 				if cfg.Agent.Tools.ListDirectory.MaxBytes != defaultListDirectoryMaxBytes {
 					t.Errorf("max_bytes = %d, want default %d", cfg.Agent.Tools.ListDirectory.MaxBytes, defaultListDirectoryMaxBytes)
+				}
+			},
+		},
+		{
+			name: "out_of_workdir_access absent defaults to ask",
+			raw:  `{"agent": {"tools": {"read_file": {"max_lines": 42}}}}`,
+			want: func(t *testing.T, cfg Config) {
+				if cfg.Agent.Tools.OutOfWorkdirAccess != WorkdirAccessAsk {
+					t.Errorf("out_of_workdir_access = %q, want default %q", cfg.Agent.Tools.OutOfWorkdirAccess, WorkdirAccessAsk)
+				}
+			},
+		},
+		{
+			name: "out_of_workdir_access explicit deny is kept",
+			raw:  `{"agent": {"tools": {"out_of_workdir_access": "deny"}}}`,
+			want: func(t *testing.T, cfg Config) {
+				if cfg.Agent.Tools.OutOfWorkdirAccess != WorkdirAccessDeny {
+					t.Errorf("out_of_workdir_access = %q, want %q", cfg.Agent.Tools.OutOfWorkdirAccess, WorkdirAccessDeny)
+				}
+				// Independent of per-tool defaults.
+				if !cfg.Agent.Tools.ReadFile.Enabled || cfg.Agent.Tools.ReadFile.MaxLines != defaultReadFileMaxLines {
+					t.Errorf("expected read_file defaults alongside explicit deny, got %+v", cfg.Agent.Tools.ReadFile)
+				}
+			},
+		},
+		{
+			// Regression: Validate() used to check a TrimSpace'd copy of the
+			// value without writing it back, so a whitespace-padded but
+			// otherwise valid value passed validation while every downstream
+			// consumer's exact-string comparison (e.g. buildToolRegistry)
+			// silently treated it as unset/deny. Defaulting now normalizes
+			// the stored value once so both agree.
+			name: "out_of_workdir_access surrounding whitespace is normalized",
+			raw:  `{"agent": {"tools": {"out_of_workdir_access": "  ask  "}}}`,
+			want: func(t *testing.T, cfg Config) {
+				if cfg.Agent.Tools.OutOfWorkdirAccess != WorkdirAccessAsk {
+					t.Errorf("out_of_workdir_access = %q, want normalized %q", cfg.Agent.Tools.OutOfWorkdirAccess, WorkdirAccessAsk)
 				}
 			},
 		},
@@ -324,6 +365,27 @@ func TestValidate_MissingAPIKey(t *testing.T) {
 	err := cfg.Validate()
 	if err == nil {
 		t.Error("Expected error for missing API key, got nil")
+	}
+}
+
+func TestValidate_OutOfWorkdirAccessAskAndDenyAreValid(t *testing.T) {
+	for _, v := range []string{WorkdirAccessAsk, WorkdirAccessDeny, ""} {
+		cfg := Default()
+		cfg.OpenRouter.APIKey = "test-key"
+		cfg.Agent.Tools.OutOfWorkdirAccess = v
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("Validate() failed for out_of_workdir_access=%q: %v", v, err)
+		}
+	}
+}
+
+func TestValidate_OutOfWorkdirAccessInvalidValueRejected(t *testing.T) {
+	cfg := Default()
+	cfg.OpenRouter.APIKey = "test-key"
+	cfg.Agent.Tools.OutOfWorkdirAccess = "allow-everything"
+
+	if err := cfg.Validate(); err == nil {
+		t.Error("Expected error for an invalid out_of_workdir_access value, got nil")
 	}
 }
 
