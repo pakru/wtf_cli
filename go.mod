@@ -3,20 +3,20 @@ module wtf_cli
 go 1.26.3
 
 require (
-	charm.land/bubbles/v2 v2.1.0
-	charm.land/bubbletea/v2 v2.0.7
-	charm.land/lipgloss/v2 v2.0.4
-	github.com/charmbracelet/x/ansi v0.11.7
-	github.com/charmbracelet/x/exp/golden v0.0.0-20260629091435-9c70f75e26a4
+	charm.land/bubbles/v2 v2.2.1
+	charm.land/bubbletea/v2 v2.0.10
+	charm.land/lipgloss/v2 v2.0.6
+	github.com/charmbracelet/x/ansi v0.11.8
+	github.com/charmbracelet/x/exp/golden v0.1.0
 	github.com/creack/pty v1.1.24
-	github.com/github/copilot-sdk/go v1.0.4
-	github.com/go-git/go-git/v5 v5.19.1
-	github.com/mattn/go-runewidth v0.0.24
-	github.com/openai/openai-go/v3 v3.41.0
-	github.com/vito/midterm v0.2.4
-	golang.org/x/sys v0.46.0
-	golang.org/x/term v0.44.0
-	google.golang.org/genai v1.62.0
+	github.com/github/copilot-sdk/go v1.0.15
+	github.com/go-git/go-git/v5 v5.19.2
+	github.com/mattn/go-runewidth v0.0.30
+	github.com/openai/openai-go/v3 v3.66.0
+	github.com/vito/midterm v0.2.5
+	golang.org/x/sys v0.48.0
+	golang.org/x/term v0.46.0
+	google.golang.org/genai v1.71.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
@@ -32,7 +32,7 @@ require (
 	github.com/aymanbagabas/go-udiff v0.4.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20260525132238-948f4557a654 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20260811164956-006e29f97886 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
@@ -41,10 +41,11 @@ require (
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
-	github.com/danielgatis/go-ansicode v1.0.10 // indirect
+	github.com/danielgatis/go-ansicode v1.0.14 // indirect
 	github.com/danielgatis/go-iterator v0.0.1 // indirect
 	github.com/danielgatis/go-utf8 v1.0.1 // indirect
 	github.com/danielgatis/go-vte v1.0.11 // indirect
+	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
@@ -62,7 +63,7 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
-	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
+	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
@@ -81,10 +82,10 @@ require (
 	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
-	golang.org/x/net v0.53.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/api v0.274.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9 // indirect
 	google.golang.org/grpc v1.81.1 // indirect
